@@ -1,4 +1,137 @@
+const Customer = require('../models/Customer');
 const ExcelJS = require('exceljs');
+
+// @desc    Create new customer/vendor
+// @route   POST /api/customers
+// @access  Private
+const createCustomer = async (req, res) => {
+    try {
+        const {
+            companyName,
+            companyType,
+            gstin,
+            pan,
+            contactPerson,
+            contactNo,
+            email,
+            website,
+            registrationType,
+            billingAddress,
+            shippingAddress,
+            bankDetails,
+            openingBalance,
+            additionalDetails
+        } = req.body;
+
+        const customer = await Customer.create({
+            userId: req.user._id,
+            companyName,
+            companyType,
+            gstin,
+            pan,
+            contactPerson,
+            contactNo,
+            email,
+            website,
+            registrationType,
+            billingAddress,
+            shippingAddress,
+            bankDetails,
+            openingBalance,
+            additionalDetails
+        });
+
+        res.status(201).json(customer);
+    } catch (error) {
+        if (error.name === 'ValidationError') {
+            const messages = Object.values(error.errors).map(val => val.message);
+            return res.status(400).json({ message: messages.join(', ') });
+        }
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
+// @desc    Get all customers
+// @route   GET /api/customers
+// @access  Private
+const getCustomers = async (req, res) => {
+    try {
+        const customers = await Customer.find({ userId: req.user._id });
+        res.status(200).json(customers);
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
+// @desc    Get single customer
+// @route   GET /api/customers/:id
+// @access  Private
+const getCustomerById = async (req, res) => {
+    try {
+        const customer = await Customer.findOne({
+            _id: req.params.id,
+            userId: req.user._id
+        });
+
+        if (!customer) {
+            return res.status(404).json({ message: 'Customer not found' });
+        }
+
+        res.status(200).json(customer);
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
+// @desc    Update customer
+// @route   PUT /api/customers/:id
+// @access  Private
+const updateCustomer = async (req, res) => {
+    try {
+        const customer = await Customer.findOne({
+            _id: req.params.id,
+            userId: req.user._id
+        });
+
+        if (!customer) {
+            return res.status(404).json({ message: 'Customer not found' });
+        }
+
+        const updatedCustomer = await Customer.findByIdAndUpdate(
+            req.params.id,
+            req.body,
+            { new: true, runValidators: true }
+        );
+
+        res.status(200).json(updatedCustomer);
+    } catch (error) {
+        if (error.name === 'ValidationError') {
+            const messages = Object.values(error.errors).map(val => val.message);
+            return res.status(400).json({ message: messages.join(', ') });
+        }
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
+// @desc    Delete customer
+// @route   DELETE /api/customers/:id
+// @access  Private
+const deleteCustomer = async (req, res) => {
+    try {
+        const customer = await Customer.findOneAndDelete({
+            _id: req.params.id,
+            userId: req.user._id
+        });
+
+        if (!customer) {
+            return res.status(404).json({ message: 'Customer not found' });
+        }
+
+        res.status(200).json({ message: 'Customer removed' });
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
 
 // @desc    Download dummy customers Excel file
 // @route   GET /api/customers/download-customers
@@ -167,5 +300,10 @@ const downloadCustomers = async (req, res) => {
 };
 
 module.exports = {
-    downloadCustomers
+    downloadCustomers,
+    createCustomer,
+    getCustomers,
+    getCustomerById,
+    updateCustomer,
+    deleteCustomer
 };

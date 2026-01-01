@@ -5,6 +5,8 @@ const connectDB = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const customerRoutes = require('./routes/customerRoutes');
+const productRoutes = require('./routes/productRoutes');
+const productGroupRoutes = require('./routes/productGroupRoutes');
 
 // Load env vars
 dotenv.config();
@@ -23,6 +25,8 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/customers', customerRoutes);
+app.use('/api/products', productRoutes);
+app.use('/api/product-group', productGroupRoutes);
 
 // Base Route
 app.get('/', (req, res) => {
