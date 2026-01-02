@@ -6,12 +6,29 @@ const {
     getProductById,
     updateProduct,
     deleteProduct,
-    getProductStats
+    getProductStats,
+    getManageStock
 } = require('../controllers/productController');
 const { protect } = require('../middlewares/authMiddleware');
+const upload = require('../middlewares/uploadMiddleware');
+const {
+    importBulkEdit,
+    getBulkEditLogs,
+    getBulkEditLogDetails,
+    exportBulkEdit
+} = require('../controllers/bulkEditController');
+const { getProductSearchCounts } = require('../controllers/productSearchController');
 
-// Stats Route (MUST come before /:id)
+// Stats and Manage Stock Routes
 router.get('/stats', protect, getProductStats);
+router.get('/manage-stock', protect, getManageStock);
+router.get('/search-counts', protect, getProductSearchCounts);
+
+// Bulk Edit Routes
+router.post('/bulk-edit/import', protect, upload.single('file'), importBulkEdit);
+router.get('/bulk-edit/export', protect, exportBulkEdit);
+router.get('/bulk-edit/logs', protect, getBulkEditLogs);
+router.get('/bulk-edit/logs/:id/details', protect, getBulkEditLogDetails);
 
 // CRUD Routes
 router.post('/', protect, createProduct);
