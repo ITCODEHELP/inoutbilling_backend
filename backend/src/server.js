@@ -7,6 +7,12 @@ const userRoutes = require('./routes/userRoutes');
 const customerRoutes = require('./routes/customerRoutes');
 const productRoutes = require('./routes/productRoutes');
 const productGroupRoutes = require('./routes/productGroupRoutes');
+const barcodeCustomizationRoutes = require('./routes/barcodeCustomizationRoutes');
+const importRoutes = require('./routes/importRoutes');
+const barcodeGenerateRoutes = require('./routes/barcodeGenerateRoutes');
+const saleInvoiceRoutes = require('./routes/saleInvoiceRoutes');
+const vendorRoutes = require('./routes/vendorRoutes');
+const customerVendorRoutes = require('./routes/customerVendorRoutes');
 
 // Load env vars
 dotenv.config();
@@ -27,6 +33,12 @@ app.use('/api/user', userRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/product-group', productGroupRoutes);
+app.use('/api/barcode', barcodeCustomizationRoutes);
+app.use('/api/import', importRoutes);
+app.use('/api/barcode-generate', barcodeGenerateRoutes);
+app.use('/api/sale-invoice', saleInvoiceRoutes);
+app.use('/api/vendor', vendorRoutes);
+app.use('/api/customer-vendor', customerVendorRoutes);
 
 // Base Route
 app.get('/', (req, res) => {
