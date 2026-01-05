@@ -16,10 +16,38 @@ const userSchema = new mongoose.Schema({
         unique: true,
         required: true
     },
+    password: {
+        type: String
+    },
+    trackLoginLocation: {
+        type: Boolean,
+        default: false
+    },
     isVerified: {
         type: Boolean,
         default: false
     },
+    eInvoiceEnabled: {
+        type: Boolean,
+        default: false
+    },
+    ewayBillUserId: {
+        type: String
+    },
+    ewayBillPassword: {
+        type: String
+    },
+    displayPhone: { type: String },
+    fullName: { type: String },
+    pan: { type: String },
+    companyType: { type: String },
+    landmark: { type: String },
+    additionalLicense: { type: String },
+    lutNo: { type: String },
+    iecNo: { type: String },
+    website: { type: String },
+    gstAutoFill: { type: Boolean, default: false },
+    updateGstOnPreviousInvoices: { type: Boolean, default: false },
     gstNumber: { type: String },
     companyName: { type: String },
     address: { type: String },

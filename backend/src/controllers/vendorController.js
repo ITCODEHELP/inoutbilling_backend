@@ -1,4 +1,5 @@
 const Vendor = require('../models/Vendor');
+const { recordActivity } = require('../utils/activityLogHelper');
 
 // @desc    Create new vendor
 // @route   POST /api/vendor/create
@@ -31,6 +32,15 @@ const createVendor = async (req, res) => {
             userId: req.user._id,
             isCustomerVendor: false
         });
+
+        // Activity Logging
+        await recordActivity(
+            req,
+            'Insert',
+            'Company',
+            `New Vendor/Company created: ${companyName}`,
+            gstin || ''
+        );
 
         res.status(201).json({ success: true, data: vendor });
     } catch (error) {

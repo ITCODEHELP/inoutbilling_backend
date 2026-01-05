@@ -1,4 +1,8 @@
 const SaleInvoice = require('../models/SaleInvoice');
+const DeliveryChallan = require('../models/DeliveryChallan');
+const Customer = require('../models/Customer');
+const { sendInvoiceEmail } = require('../utils/emailHelper');
+
 
 // Helper for validation
 const validateSaleInvoice = (data) => {
@@ -52,10 +56,12 @@ const createInvoice = async (req, res) => {
             termsTitle,
             termsDetails,
             additionalNotes,
-            documentRemarks
+            documentRemarks,
+            shareOnEmail,
+            createDeliveryChallan
         } = req.body;
 
-        const invoice = await SaleInvoice.create({
+        let invoice = await SaleInvoice.create({
             userId: req.user._id,
             customerInformation,
             invoiceDetails,
@@ -70,11 +76,44 @@ const createInvoice = async (req, res) => {
             documentRemarks
         });
 
+        // Smart Suggestions Logic
+        if (createDeliveryChallan) {
+            const challan = await DeliveryChallan.create({
+                userId: req.user._id,
+                saleInvoiceId: invoice._id,
+                customerInformation,
+                challanDetails: {
+                    challanNumber: `DC-${invoiceDetails.invoiceNumber}`,
+                    date: invoiceDetails.date,
+                    deliveryMode: invoiceDetails.deliveryMode
+                },
+                items,
+                totals,
+                additionalNotes,
+                documentRemarks
+            });
+            invoice.deliveryChallanId = challan._id;
+            await invoice.save();
+        }
+
+        if (shareOnEmail) {
+            // Try to get customer email from database if not in req.body
+            const customer = await Customer.findOne({
+                userId: req.user._id,
+                companyName: customerInformation.ms
+            });
+            if (customer && customer.email) {
+                sendInvoiceEmail(invoice, customer.email);
+            }
+        }
+
         res.status(201).json({
             success: true,
             message: "Invoice saved successfully",
-            invoiceId: invoice._id
+            invoiceId: invoice._id,
+            deliveryChallanId: invoice.deliveryChallanId
         });
+
     } catch (error) {
         if (error.code === 11000) {
             return res.status(400).json({ success: false, message: "Invoice number must be unique" });
@@ -104,10 +143,12 @@ const createInvoiceAndPrint = async (req, res) => {
             termsTitle,
             termsDetails,
             additionalNotes,
-            documentRemarks
+            documentRemarks,
+            shareOnEmail,
+            createDeliveryChallan
         } = req.body;
 
-        const invoice = await SaleInvoice.create({
+        let invoice = await SaleInvoice.create({
             userId: req.user._id,
             customerInformation,
             invoiceDetails,
@@ -122,11 +163,42 @@ const createInvoiceAndPrint = async (req, res) => {
             documentRemarks
         });
 
+        // Smart Suggestions Logic
+        if (createDeliveryChallan) {
+            const challan = await DeliveryChallan.create({
+                userId: req.user._id,
+                saleInvoiceId: invoice._id,
+                customerInformation,
+                challanDetails: {
+                    challanNumber: `DC-${invoiceDetails.invoiceNumber}`,
+                    date: invoiceDetails.date,
+                    deliveryMode: invoiceDetails.deliveryMode
+                },
+                items,
+                totals,
+                additionalNotes,
+                documentRemarks
+            });
+            invoice.deliveryChallanId = challan._id;
+            await invoice.save();
+        }
+
+        if (shareOnEmail) {
+            const customer = await Customer.findOne({
+                userId: req.user._id,
+                companyName: customerInformation.ms
+            });
+            if (customer && customer.email) {
+                sendInvoiceEmail(invoice, customer.email);
+            }
+        }
+
         res.status(201).json({
             success: true,
             message: "Invoice saved successfully",
             data: invoice
         });
+
     } catch (error) {
         if (error.code === 11000) {
             return res.status(400).json({ success: false, message: "Invoice number must be unique" });
