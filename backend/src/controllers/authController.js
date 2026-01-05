@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const OTP = require('../models/OTP');
 const jwt = require('jsonwebtoken');
+const { recordLogin } = require('../utils/securityHelper');
 
 // Generate JWT
 const generateToken = (id) => {
@@ -98,6 +99,9 @@ const verifyOtpSignup = async (req, res) => {
         // Clean up OTP
         await OTP.deleteOne({ phone });
 
+        // Record Login History
+        await recordLogin(req, user);
+
         res.status(200).json({
             message: 'Signup/Verification successful',
             _id: user._id,
@@ -176,6 +180,9 @@ const loginUserId = async (req, res) => {
         // Direct login without OTP? The prompt says "Return JWT token".
         // Usually UserID login might need a password, but none was specified in requirements.
         // Assuming implicit trust or that this is a specific requested flow (maybe kiosk mode?).
+
+        // Record Login History
+        await recordLogin(req, user);
 
         res.status(200).json({
             message: 'Login successful',

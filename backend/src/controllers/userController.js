@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const { recordActivity } = require('../utils/activityLogHelper');
 
 // @desc    Update user profile (GST, Company, Address, Pincode)
 // @route   POST /api/user/update-profile
@@ -24,6 +25,14 @@ const updateProfile = async (req, res) => {
         user.state = state || user.state;
 
         const updatedUser = await user.save();
+
+        // Activity Logging
+        await recordActivity(
+            req,
+            'Update',
+            'Organisation Detail',
+            `Organisation profile updated: ${updatedUser.companyName || updatedUser.fullName}`
+        );
 
         res.status(200).json({
             message: 'Profile updated successfully',

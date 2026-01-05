@@ -64,7 +64,11 @@ const saleInvoiceSchema = new mongoose.Schema({
     termsTitle: { type: String },
     termsDetails: { type: String },
     additionalNotes: { type: String },
-    documentRemarks: { type: String }
+    documentRemarks: { type: String },
+    deliveryChallanId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'DeliveryChallan'
+    }
 }, {
     timestamps: true
 });

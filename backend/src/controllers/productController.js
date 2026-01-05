@@ -1,4 +1,5 @@
 const Product = require('../models/Product');
+const { recordActivity } = require('../utils/activityLogHelper');
 
 // @desc    Get Products for Manage Stock with Filters
 // @route   GET /api/products/manage-stock
@@ -204,6 +205,15 @@ const createProduct = async (req, res) => {
             nonSellableFlag
         });
 
+        // Activity Logging
+        await recordActivity(
+            req,
+            'Insert',
+            'Product',
+            `New ${itemType} created: ${name}`,
+            barcode || ''
+        );
+
         res.status(201).json(product);
     } catch (error) {
         if (error.name === 'ValidationError') {
@@ -290,6 +300,15 @@ const updateProduct = async (req, res) => {
             { new: true, runValidators: true }
         );
 
+        // Activity Logging
+        await recordActivity(
+            req,
+            'Update',
+            'Product',
+            `Product updated: ${updatedProduct.name}`,
+            updatedProduct.barcode || ''
+        );
+
         res.status(200).json(updatedProduct);
     } catch (error) {
         if (error.name === 'ValidationError') {
@@ -313,6 +332,15 @@ const deleteProduct = async (req, res) => {
         if (!product) {
             return res.status(404).json({ message: 'Product not found' });
         }
+
+        // Activity Logging
+        await recordActivity(
+            req,
+            'Delete',
+            'Product',
+            `Product deleted: ${product.name}`,
+            product.barcode || ''
+        );
 
         res.status(200).json({ message: 'Product removed' });
     } catch (error) {
