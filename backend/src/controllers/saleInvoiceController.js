@@ -82,7 +82,7 @@ const createInvoice = async (req, res) => {
                 userId: req.user._id,
                 saleInvoiceId: invoice._id,
                 customerInformation,
-                challanDetails: {
+                deliveryChallanDetails: {
                     challanNumber: `DC-${invoiceDetails.invoiceNumber}`,
                     date: invoiceDetails.date,
                     deliveryMode: invoiceDetails.deliveryMode
@@ -169,7 +169,7 @@ const createInvoiceAndPrint = async (req, res) => {
                 userId: req.user._id,
                 saleInvoiceId: invoice._id,
                 customerInformation,
-                challanDetails: {
+                deliveryChallanDetails: {
                     challanNumber: `DC-${invoiceDetails.invoiceNumber}`,
                     date: invoiceDetails.date,
                     deliveryMode: invoiceDetails.deliveryMode

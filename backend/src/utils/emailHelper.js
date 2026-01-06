@@ -50,4 +50,98 @@ const sendInvoiceEmail = async (invoice, email, isPurchase = false) => {
     }
 };
 
-module.exports = { sendInvoiceEmail };
+const sendProformaEmail = async (proforma, email) => {
+    try {
+        if (!email) {
+            console.log(`No customer email provided, skipping email share.`);
+            return;
+        }
+
+        const { generateProformaPDF } = require('./pdfHelper');
+        const pdfBuffer = await generateProformaPDF(proforma);
+
+        const transporter = nodemailer.createTransport({
+            host: process.env.EMAIL_HOST,
+            port: process.env.EMAIL_PORT,
+            secure: process.env.EMAIL_PORT == 465,
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASS,
+            },
+        });
+
+        const mailOptions = {
+            from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+            to: email,
+            subject: `Proforma Invoice ${proforma.proformaDetails.proformaNumber} from Inout Billing`,
+            text: `Dear Customer,\n\nPlease find attached the proforma invoice ${proforma.proformaDetails.proformaNumber}.\n\nThank you!`,
+            html: `
+                <p>Dear Customer,</p>
+                <p>Please find attached the <strong>proforma invoice ${proforma.proformaDetails.proformaNumber}</strong>.</p>
+                <p>Thank you!</p>
+            `,
+            attachments: [
+                {
+                    filename: `Proforma_${proforma.proformaDetails.proformaNumber}.pdf`,
+                    content: pdfBuffer,
+                    contentType: 'application/pdf'
+                }
+            ]
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Proforma Email sent: %s', info.messageId);
+    } catch (error) {
+        console.error('Error sending proforma email:', error);
+    }
+};
+
+const sendDeliveryChallanEmail = async (challan, email) => {
+    try {
+        if (!email) {
+            console.log(`No customer email provided, skipping email share.`);
+            return;
+        }
+
+        const { generateDeliveryChallanPDF } = require('./pdfHelper');
+        const pdfBuffer = await generateDeliveryChallanPDF(challan);
+
+        const transporter = nodemailer.createTransport({
+            host: process.env.EMAIL_HOST,
+            port: process.env.EMAIL_PORT,
+            secure: process.env.EMAIL_PORT == 465,
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASS,
+            },
+        });
+
+        const mailOptions = {
+            from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+            to: email,
+            subject: `Delivery Challan ${challan.deliveryChallanDetails.challanNumber} from Inout Billing`,
+            text: `Dear Customer,\n\nPlease find attached the delivery challan ${challan.deliveryChallanDetails.challanNumber}.\n\nThank you!`,
+            html: `
+                <p>Dear Customer,</p>
+                <p>Please find attached the <strong>delivery challan ${challan.deliveryChallanDetails.challanNumber}</strong>.</p>
+                <p>Thank you!</p>
+            `,
+            attachments: [
+                {
+                    filename: `DeliveryChallan_${challan.deliveryChallanDetails.challanNumber}.pdf`,
+                    content: pdfBuffer,
+                    contentType: 'application/pdf'
+                }
+            ]
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Delivery Challan Email sent: %s', info.messageId);
+    } catch (error) {
+        console.error('Error sending delivery challan email:', error);
+    }
+};
+
+module.exports = { sendInvoiceEmail, sendProformaEmail, sendDeliveryChallanEmail };
+
+
