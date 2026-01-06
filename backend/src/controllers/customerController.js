@@ -23,11 +23,22 @@ const createCustomer = async (req, res) => {
             additionalDetails
         } = req.body;
 
+        let finalGstin = gstin;
+
+        // Auto-generate GSTIN if not provided but PAN and State are present
+        if (!finalGstin && pan && billingAddress?.state) {
+            const { generateNextGSTIN } = require('../utils/gstinUtils');
+            const generated = await generateNextGSTIN(req.user._id, pan, billingAddress.state, Customer);
+            if (generated) {
+                finalGstin = generated;
+            }
+        }
+
         const customer = await Customer.create({
             userId: req.user._id,
             companyName,
             companyType,
-            gstin,
+            gstin: finalGstin,
             pan,
             contactPerson,
             contactNo,
@@ -95,6 +106,22 @@ const updateCustomer = async (req, res) => {
 
         if (!customer) {
             return res.status(404).json({ message: 'Customer not found' });
+        }
+
+
+        // Auto-generate GSTIN on update if missing
+        let newGstin = req.body.gstin;
+        // Merge effective values to check eligibility
+        const effectivePan = req.body.pan || customer.pan;
+        const effectiveState = req.body.billingAddress?.state || customer.billingAddress?.state;
+        const currentGstin = customer.gstin;
+
+        if (!newGstin && !currentGstin && effectivePan && effectiveState) {
+            const { generateNextGSTIN } = require('../utils/gstinUtils');
+            const generated = await generateNextGSTIN(req.user._id, effectivePan, effectiveState, Customer);
+            if (generated) {
+                req.body.gstin = generated;
+            }
         }
 
         const updatedCustomer = await Customer.findByIdAndUpdate(

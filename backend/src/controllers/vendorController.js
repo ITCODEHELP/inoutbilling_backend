@@ -27,8 +27,26 @@ const createVendor = async (req, res) => {
             return res.status(400).json({ success: false, message: "Vendor with this Company Name or GSTIN already exists" });
         }
 
+
+        // Auto-generate GSTIN if not provided but PAN and State are present
+        // Note: Vendor model has 'pan'. Need to ensure it's in body or extracted.
+        // The read file showed Vendor schema has 'pan'.
+        // createVendor destructures companyName, gstin, billingAddress. It uses ...req.body for others.
+        let finalGstin = gstin;
+        const { pan } = req.body;
+
+        if (!finalGstin && pan && billingAddress?.state) {
+            const { generateNextGSTIN } = require('../utils/gstinUtils');
+            // Ensure we check Vendor collection
+            const generated = await generateNextGSTIN(req.user._id, pan, billingAddress.state, Vendor);
+            if (generated) {
+                finalGstin = generated;
+            }
+        }
+
         const vendor = await Vendor.create({
             ...req.body,
+            gstin: finalGstin,
             userId: req.user._id,
             isCustomerVendor: false
         });

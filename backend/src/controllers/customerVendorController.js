@@ -22,6 +22,19 @@ const createCustomerVendor = async (req, res) => {
         });
 
         if (record) {
+            // Auto-generate GSTIN on update if missing
+            let newGstin = req.body.gstin;
+            const effectivePan = req.body.pan || record.pan;
+            const effectiveState = req.body.billingAddress?.state || record.billingAddress?.state;
+
+            if (!newGstin && !record.gstin && effectivePan && effectiveState) {
+                const { generateNextGSTIN } = require('../utils/gstinUtils');
+                const generated = await generateNextGSTIN(req.user._id, effectivePan, effectiveState, Vendor);
+                if (generated) {
+                    req.body.gstin = generated;
+                }
+            }
+
             // Update existing record
             const updated = await Vendor.findByIdAndUpdate(
                 record._id,
@@ -31,9 +44,21 @@ const createCustomerVendor = async (req, res) => {
             return res.status(200).json({ success: true, message: "Record updated successfully", data: updated });
         }
 
+        // Auto-generate GSTIN for new record
+        let finalGstin = gstin;
+        const { pan } = req.body;
+        if (!finalGstin && pan && billingAddress?.state) {
+            const { generateNextGSTIN } = require('../utils/gstinUtils');
+            const generated = await generateNextGSTIN(req.user._id, pan, billingAddress.state, Vendor);
+            if (generated) {
+                finalGstin = generated;
+            }
+        }
+
         // Create new Customer-Vendor
         const newRecord = await Vendor.create({
             ...req.body,
+            gstin: finalGstin,
             userId: req.user._id,
             isCustomerVendor: true
         });

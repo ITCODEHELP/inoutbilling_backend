@@ -9,6 +9,8 @@ const productRoutes = require('./routes/productRoutes');
 const productGroupRoutes = require('./routes/productGroupRoutes');
 const barcodeCustomizationRoutes = require('./routes/barcodeCustomizationRoutes');
 const importRoutes = require('./routes/importRoutes');
+const deliveryChallanRoutes = require('./routes/deliveryChallanRoutes');
+
 const barcodeGenerateRoutes = require('./routes/barcodeGenerateRoutes');
 const saleInvoiceRoutes = require('./routes/saleInvoiceRoutes');
 const vendorRoutes = require('./routes/vendorRoutes');
@@ -37,6 +39,13 @@ const customHeaderDesignRoutes = require('./routes/customHeaderDesignRoutes');
 const headerShapesRoutes = require('./routes/headerShapesRoutes');
 const inwardPaymentRoutes = require('./routes/inwardPaymentRoutes');
 const outwardPaymentRoutes = require('./routes/outwardPaymentRoutes');
+const dailyExpenseRoutes = require('./routes/dailyExpenseRoutes');
+const expenseCategoryRoutes = require('./routes/expenseCategoryRoutes');
+const otherIncomeRoutes = require('./routes/otherIncomeRoutes');
+const otherIncomeCategoryRoutes = require('./routes/otherIncomeCategoryRoutes');
+const quotationRoutes = require('./routes/quotationRoutes');
+const proformaRoutes = require('./routes/proformaRoutes');
+const purchaseOrderRoutes = require('./routes/purchaseOrderRoutes');
 
 
 
@@ -63,6 +72,8 @@ app.use('/api/products', productRoutes);
 app.use('/api/product-group', productGroupRoutes);
 app.use('/api/barcode', barcodeCustomizationRoutes);
 app.use('/api/import', importRoutes);
+app.use('/api/delivery-challans', deliveryChallanRoutes);
+
 app.use('/api/barcode-generate', barcodeGenerateRoutes);
 app.use('/api/sale-invoice', saleInvoiceRoutes);
 app.use('/api/vendor', vendorRoutes);
@@ -89,9 +100,17 @@ app.use('/api/custom-header-design', customHeaderDesignRoutes);
 app.use('/api/header-shapes', headerShapesRoutes);
 app.use('/api/inward-payments', inwardPaymentRoutes);
 app.use('/api/outward-payments', outwardPaymentRoutes);
-
+app.use('/api/daily-expenses', dailyExpenseRoutes);
+app.use('/api/expense-categories', expenseCategoryRoutes);
+app.use('/api/other-incomes', otherIncomeRoutes);
+app.use('/api/other-income-categories', otherIncomeCategoryRoutes);
+app.use('/api/activities', activityLogRoutes);
 app.use('/api/purchase-invoice', purchaseInvoiceRoutes);
 app.use('/api/additional-charges', additionalChargeRoutes);
+app.use('/api/quotations', quotationRoutes);
+app.use('/api/proformas', proformaRoutes);
+app.use('/api/purchase-orders', purchaseOrderRoutes);
+
 
 
 
