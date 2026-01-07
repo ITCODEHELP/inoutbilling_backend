@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const poItemSchema = new mongoose.Schema({
+const jobWorkItemSchema = new mongoose.Schema({
     productName: { type: String, required: true },
     productGroup: { type: String },
     itemNote: { type: String },
@@ -14,67 +14,54 @@ const poItemSchema = new mongoose.Schema({
     sgst: { type: Number, default: 0 },
     total: { type: Number, default: 0 },
     customFields: {
-        type: Map,
-        of: mongoose.Schema.Types.Mixed,
+        type: mongoose.Schema.Types.Mixed,
         default: {}
     }
 });
 
-const purchaseOrderSchema = new mongoose.Schema({
+const shippingAddressSchema = new mongoose.Schema({
+    street: { type: String },
+    landmark: { type: String },
+    city: { type: String },
+    state: { type: String },
+    country: { type: String },
+    pincode: { type: String },
+    distance: { type: Number, default: 0 }
+});
+
+const jobWorkSchema = new mongoose.Schema({
     userId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
         required: true
     },
-    // Section 1: Vendor Information
-    vendorInformation: {
+    // Section 1: Customer Information
+    customerInformation: {
         ms: { type: String, required: [true, 'ms is required'] },
         address: { type: String },
         contactPerson: { type: String },
         phone: { type: String },
         gstinPan: { type: String },
         reverseCharge: { type: Boolean, default: false },
-        shipTo: { type: String },
         placeOfSupply: { type: String, required: [true, 'placeOfSupply is required'] }
     },
     useSameShippingAddress: { type: Boolean, default: true },
-    shippingAddress: {
-        street: { type: String },
-        landmark: { type: String },
-        city: { type: String },
-        state: { type: String },
-        country: { type: String },
-        pincode: { type: String },
-        distance: { type: Number, default: 0 }
-    },
-    // Section 2: Purchase Order Details
-    purchaseOrderDetails: {
-        purchaseOrderType: {
+    shippingAddress: shippingAddressSchema,
+
+    // Section 2: Job Work Details
+    jobWorkDetails: {
+        jobWorkPrefix: { type: String },
+        jobWorkNumber: { type: String },
+        jobWorkPostfix: { type: String },
+        date: { type: Date, required: [false, 'date is required'] },
+        status: {
             type: String,
-            default: 'REGULAR'
-        },
-        poPrefix: { type: String },
-        poNumber: { type: String, required: [true, 'poNumber is required'] },
-        poPostfix: { type: String },
-        date: { type: Date, required: [true, 'date is required'] },
-        deliveryMode: {
-            type: String,
-            enum: ['HAND DELIVERY', 'TRANSPORT/ROAD REGULAR', 'ROAD-OVER DIMENSIONAL', 'RAIL', 'AIR', 'SHIP', 'SHIP-CUM ROAD/RAIL'],
-            required: true
+            enum: ['PENDING', 'IN PROGRESS', 'COMPLETED', 'CANCELLED'],
+            default: 'PENDING'
         }
     },
-    // Section 3: Transport Details
-    transportDetails: {
-        dispatchThrough: { type: String },
-        transportName: { type: String },
-        transportIdGstin: { type: String },
-        vehicleNo: { type: String },
-        documentNo: { type: String },
-        documentDate: { type: Date },
-        trackingLink: { type: String }
-    },
-    // Section 4: Product Items
-    items: [poItemSchema],
+    // Section 3: Product Items
+    items: [jobWorkItemSchema],
     // Additional Charges
     additionalCharges: [{
         name: String,
@@ -94,21 +81,27 @@ const purchaseOrderSchema = new mongoose.Schema({
         totalInWords: { type: String }
     },
     staff: {
-        type: { type: String }
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Staff',
+        default: null
     },
-    bankDetails: { type: String },
+    branch: {
+        type: mongoose.Schema.Types.Mixed,
+        default: null
+    },
+    bankDetails: { type: mongoose.Schema.Types.Mixed },
     termsTitle: { type: String },
-    termsDetails: { type: String },
+    termsDetails: { type: [String] },
     documentRemarks: { type: String },
+    shareOnEmail: { type: Boolean, default: false },
     customFields: {
-        type: Map,
-        of: mongoose.Schema.Types.Mixed,
+        type: mongoose.Schema.Types.Mixed,
         default: {}
     }
 }, {
     timestamps: true
 });
 
-purchaseOrderSchema.index({ userId: 1, 'purchaseOrderDetails.poNumber': 1 }, { unique: true });
+jobWorkSchema.index({ userId: 1, 'jobWorkDetails.jobWorkNumber': 1 }, { unique: true });
 
-module.exports = mongoose.model('PurchaseOrder', purchaseOrderSchema);
+module.exports = mongoose.model('JobWork', jobWorkSchema);

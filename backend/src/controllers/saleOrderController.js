@@ -1,17 +1,14 @@
-const Proforma = require('../models/Proforma');
-const ProformaCustomField = require('../models/ProformaCustomField');
-const ProformaItemColumn = require('../models/ProformaItemColumn');
+const SaleOrder = require('../models/SaleOrder');
+const SaleOrderCustomField = require('../models/SaleOrderCustomField');
+const SaleOrderItemColumn = require('../models/SaleOrderItemColumn');
 const Staff = require('../models/Staff');
 const mongoose = require('mongoose');
 const { calculateDocumentTotals, getSummaryAggregation } = require('../utils/documentHelper');
 const numberToWords = require('../utils/numberToWords');
-const { generateProformaPDF } = require('../utils/pdfHelper');
 const { calculateShippingDistance } = require('../utils/shippingHelper');
-const { sendProformaEmail } = require('../utils/emailHelper');
-const Customer = require('../models/Customer');
 
-// Helper to build search query (mirrors Quotation buildQuotationQuery)
-const buildProformaQuery = async (userId, queryParams) => {
+// Helper to build search query
+const buildSaleOrderQuery = async (userId, queryParams) => {
     let query = { userId };
     const {
         search, showAll,
@@ -20,13 +17,14 @@ const buildProformaQuery = async (userId, queryParams) => {
         productGroup,
         fromDate, toDate,
         staffName,
-        proformaNo, proformaNumber,
+        soNo, soNumber,
         minAmount, maxAmount,
         lrNo, documentNo,
         itemNote,
         remarks, documentRemarks,
         gstin, gstinPan,
-        proformaType,
+        saleOrderType,
+        status,
         shipTo, shippingAddress,
         advanceFilter, // { field, operator, value } or stringified
         ...otherFilters
@@ -37,7 +35,7 @@ const buildProformaQuery = async (userId, queryParams) => {
     if (search) {
         query.$or = [
             { 'customerInformation.ms': { $regex: search, $options: 'i' } },
-            { 'proformaDetails.proformaNumber': { $regex: search, $options: 'i' } },
+            { 'saleOrderDetails.soNumber': { $regex: search, $options: 'i' } },
             { documentRemarks: { $regex: search, $options: 'i' } },
             { 'items.productName': { $regex: search, $options: 'i' } }
         ];
@@ -56,21 +54,25 @@ const buildProformaQuery = async (userId, queryParams) => {
         query['items.productGroup'] = { $regex: productGroup, $options: 'i' };
     }
 
-    if (proformaNo || proformaNumber) {
-        query['proformaDetails.proformaNumber'] = { $regex: proformaNo || proformaNumber, $options: 'i' };
+    if (soNo || soNumber) {
+        query['saleOrderDetails.soNumber'] = { $regex: soNo || soNumber, $options: 'i' };
     }
 
-    if (proformaType) {
-        query['proformaDetails.proformaType'] = proformaType;
+    if (saleOrderType) {
+        query['saleOrderDetails.saleOrderType'] = saleOrderType;
+    }
+
+    if (status) {
+        query['saleOrderDetails.status'] = status;
     }
 
     if (fromDate || toDate) {
-        query['proformaDetails.date'] = {};
-        if (fromDate) query['proformaDetails.date'].$gte = new Date(fromDate);
+        query['saleOrderDetails.date'] = {};
+        if (fromDate) query['saleOrderDetails.date'].$gte = new Date(fromDate);
         if (toDate) {
             const end = new Date(toDate);
             end.setHours(23, 59, 59, 999);
-            query['proformaDetails.date'].$lte = end;
+            query['saleOrderDetails.date'].$lte = end;
         }
     }
 
@@ -125,8 +127,6 @@ const buildProformaQuery = async (userId, queryParams) => {
                 'Transport Name': 'transportDetails.transportName',
                 'Document Note': 'items.itemNote',
                 'Shipping Name': 'customerInformation.shipTo',
-                'Shipping State': 'customerInformation.shipTo',
-                'Shipping City': 'customerInformation.shipTo'
             };
 
             const dbField = fieldMap[af.field] || af.field;
@@ -172,25 +172,23 @@ const buildProformaQuery = async (userId, queryParams) => {
     return query;
 };
 
-// @desc    Create Proforma
-// @route   POST /api/proformas
-const createProforma = async (req, res) => {
+// @desc    Create Sale Order
+// @route   POST /api/sale-orders
+const createSaleOrder = async (req, res) => {
     try {
         const {
             customerInformation,
-            proformaDetails,
+            saleOrderDetails,
             transportDetails,
             items,
+            additionalCharges,
             totals,
-            paymentType,
-            staff,
             bankDetails,
             termsTitle,
             termsDetails,
             documentRemarks,
             customFields,
-            print,
-            shareOnEmail
+            staff
         } = req.body;
 
         // Distance Calculation
@@ -208,16 +206,26 @@ const createProforma = async (req, res) => {
         const distance = await calculateShippingDistance(req.user._id, finalShippingAddress);
         finalShippingAddress.distance = distance;
 
-
-        // Custom Fields Validation
-        let parsedCustomFields = {};
+        // Custom Fields Validation & Normalization
+        let rawCustomFields = {};
         if (customFields) {
-            parsedCustomFields = typeof customFields === 'string' ? JSON.parse(customFields) : customFields;
+            rawCustomFields = typeof customFields === 'string' ? JSON.parse(customFields) : customFields;
         }
-        const definitions = await ProformaCustomField.find({ userId: req.user._id, status: 'Active' });
+
+        const normalizedCustomFields = Object.keys(rawCustomFields).reduce((acc, key) => {
+            const canonicalKey = key.trim().toLowerCase().replace(/[\s-]+/g, '_');
+            acc[canonicalKey] = rawCustomFields[key];
+            return acc;
+        }, {});
+
+        const definitions = await SaleOrderCustomField.find({ userId: req.user._id, status: 'Active' });
         for (const def of definitions) {
-            if (def.required && !parsedCustomFields[def._id.toString()]) {
-                return res.status(400).json({ success: false, message: `Field '${def.name}' is required` });
+            const canonicalDefName = def.name.trim().toLowerCase().replace(/[\s-]+/g, '_');
+            if (def.required) {
+                const value = normalizedCustomFields[canonicalDefName];
+                if (value === undefined || value === null || value === '') {
+                    return res.status(400).json({ success: false, message: `Field '${def.name}' is required` });
+                }
             }
         }
 
@@ -230,191 +238,195 @@ const createProforma = async (req, res) => {
             additionalCharges: req.body.additionalCharges
         }, req.body.branch);
 
-        const newProforma = new Proforma({
+        const newSaleOrder = new SaleOrder({
             userId: req.user._id,
             customerInformation,
-            useSameShippingAddress: req.body.useSameShippingAddress,
-            shippingAddress: finalShippingAddress,
-            proformaDetails,
+            saleOrderDetails,
             transportDetails,
             items: calculationResults.items,
             totals: calculationResults.totals,
             additionalCharges: req.body.additionalCharges || [],
-            staff,
-            branch: req.body.branch,
             bankDetails,
             termsTitle,
             termsDetails,
             documentRemarks,
-            customFields: parsedCustomFields
+            staff,
+            branch: req.body.branch,
+            useSameShippingAddress: req.body.useSameShippingAddress,
+            shippingAddress: finalShippingAddress,
+            customFields: normalizedCustomFields
         });
 
-        await newProforma.save();
-
-        if (shareOnEmail) {
-            const customer = await Customer.findOne({
-                userId: req.user._id,
-                companyName: customerInformation.ms
-            });
-            if (customer && customer.email) {
-                sendProformaEmail(newProforma, customer.email);
-            }
-        }
-
-
-        if (print) {
-            const pdfBuffer = await generateProformaPDF(newProforma);
-            res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Disposition', `attachment; filename=proforma-${newProforma.proformaDetails.proformaNumber}.pdf`);
-            return res.send(pdfBuffer);
-        }
+        await newSaleOrder.save();
 
         res.status(201).json({
             success: true,
-            message: 'Proforma created successfully',
-            data: newProforma
+            message: 'Sale Order created successfully',
+            data: newSaleOrder
         });
     } catch (error) {
         if (error.code === 11000) {
-            return res.status(400).json({ success: false, message: 'Proforma number must be unique' });
+            return res.status(400).json({ success: false, message: 'Sale Order number must be unique' });
         }
         res.status(500).json({ success: false, message: error.message });
     }
 };
 
-// @desc    Print Proforma
-// @route   GET /api/proformas/:id/print
-const printProforma = async (req, res) => {
+// @desc    Search Sale Orders
+// @route   GET /api/sale-orders/search
+const searchSaleOrders = async (req, res) => {
     try {
-        const proforma = await Proforma.findOne({ _id: req.params.id, userId: req.user._id });
-        if (!proforma) return res.status(404).json({ success: false, message: 'Proforma not found' });
-
-        const pdfBuffer = await generateProformaPDF(proforma);
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename=proforma-${proforma.proformaDetails.proformaNumber}.pdf`);
-        res.send(pdfBuffer);
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
-
-// @desc    Get All Proformas
-// @route   GET /api/proformas
-const getProformas = async (req, res) => {
-    try {
-        const query = await buildProformaQuery(req.user._id, req.query);
+        const query = await buildSaleOrderQuery(req.user._id, req.query);
         const { page = 1, limit = 10, sort = 'createdAt', order = 'desc' } = req.query;
-
         const skip = (page - 1) * limit;
         const sortOptions = { [sort]: order === 'desc' ? -1 : 1 };
 
-        const proformas = await Proforma.find(query)
+        const saleOrders = await SaleOrder.find(query)
             .sort(sortOptions)
             .skip(Number(skip))
             .limit(Number(limit))
             .populate('staff', 'fullName');
 
-        const total = await Proforma.countDocuments(query);
+        const total = await SaleOrder.countDocuments(query);
 
         res.status(200).json({
             success: true,
-            count: proformas.length,
+            count: saleOrders.length,
             total,
             page: Number(page),
             pages: Math.ceil(total / limit),
-            data: proformas
+            data: saleOrders
         });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
 };
 
-// @desc    Get Proforma Summary
-// @route   GET /api/proformas/summary
-const getProformaSummary = async (req, res) => {
+// @desc    Get All Sale Orders
+// @route   GET /api/sale-orders
+const getSaleOrders = async (req, res) => {
     try {
-        const query = await buildProformaQuery(req.user._id, req.query);
+        const { page = 1, limit = 10, sort = 'createdAt', order = 'desc' } = req.query;
+        const skip = (page - 1) * limit;
+        const sortOptions = { [sort]: order === 'desc' ? -1 : 1 };
 
-        const summaryData = await Proforma.aggregate([
-            { $match: query },
-            {
-                $group: {
-                    _id: null,
-                    totalTransactions: { $sum: 1 },
-                    totalCGST: { $sum: "$totals.totalCGST" },
-                    totalSGST: { $sum: "$totals.totalSGST" },
-                    totalIGST: { $sum: "$totals.totalIGST" },
-                    totalTaxable: { $sum: "$totals.totalTaxable" },
-                    totalValue: { $sum: "$totals.grandTotal" }
-                }
-            },
-            {
-                $project: {
-                    _id: 0,
-                    totalTransactions: 1,
-                    totalCGST: 1,
-                    totalSGST: 1,
-                    totalIGST: 1,
-                    totalTaxable: 1,
-                    totalValue: 1
-                }
-            }
-        ]);
+        const query = { userId: req.user._id };
 
-        const summary = summaryData[0] || {
-            totalTransactions: 0,
-            totalCGST: 0,
-            totalSGST: 0,
-            totalIGST: 0,
-            totalTaxable: 0,
-            totalValue: 0
-        };
+        const saleOrders = await SaleOrder.find(query)
+            .sort(sortOptions)
+            .skip(Number(skip))
+            .limit(Number(limit))
+            .populate('staff', 'fullName');
+
+        const total = await SaleOrder.countDocuments(query);
 
         res.status(200).json({
             success: true,
-            data: summary
+            count: saleOrders.length,
+            total,
+            page: Number(page),
+            pages: Math.ceil(total / limit),
+            data: saleOrders
         });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
 };
 
-// @desc    Get Single Proforma
-// @route   GET /api/proformas/:id
-const getProformaById = async (req, res) => {
+// @desc    Get Sale Order Summary
+// @route   GET /api/sale-orders/summary
+const getSaleOrderSummary = async (req, res) => {
     try {
-        const proforma = await Proforma.findOne({ _id: req.params.id, userId: req.user._id });
-        if (!proforma) return res.status(404).json({ success: false, message: 'Proforma not found' });
-        res.status(200).json({ success: true, data: proforma });
+        const query = await buildSaleOrderQuery(req.user._id, req.query);
+        const data = await getSummaryAggregation(req.user._id, query, SaleOrder);
+        res.status(200).json({ success: true, data });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
 };
 
-// @desc    Update Proforma
-// @route   PUT /api/proformas/:id
-const updateProforma = async (req, res) => {
+// @desc    Get Single Sale Order
+// @route   GET /api/sale-orders/:id
+const getSaleOrderById = async (req, res) => {
     try {
-        const proforma = await Proforma.findOneAndUpdate(
+        const saleOrder = await SaleOrder.findOne({ _id: req.params.id, userId: req.user._id }).populate('staff', 'fullName');
+        if (!saleOrder) return res.status(404).json({ success: false, message: 'Sale Order not found' });
+        res.status(200).json({ success: true, data: saleOrder });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Update Sale Order
+// @route   PUT /api/sale-orders/:id
+const updateSaleOrder = async (req, res) => {
+    try {
+        // Distance Calculation
+        if (req.body.shippingAddress || req.body.useSameShippingAddress || req.body.customerInformation) {
+            let currentSO = await SaleOrder.findOne({ _id: req.params.id, userId: req.user._id });
+            let finalShippingAddress = req.body.shippingAddress || {};
+            if (req.body.useSameShippingAddress) {
+                const effectiveCustomerInfo = req.body.customerInformation || (currentSO ? currentSO.customerInformation : null);
+                if (effectiveCustomerInfo) {
+                    finalShippingAddress = {
+                        street: effectiveCustomerInfo.address || '',
+                        city: effectiveCustomerInfo.city || '',
+                        state: effectiveCustomerInfo.state || '',
+                        country: effectiveCustomerInfo.country || 'India',
+                        pincode: effectiveCustomerInfo.pincode || ''
+                    };
+                }
+            }
+            const distance = await calculateShippingDistance(req.user._id, finalShippingAddress);
+            finalShippingAddress.distance = distance;
+            req.body.shippingAddress = finalShippingAddress;
+        }
+
+        // Custom field normalization if provided in update
+        if (req.body.customFields) {
+            const rawCustomFields = typeof req.body.customFields === 'string' ? JSON.parse(req.body.customFields) : req.body.customFields;
+            req.body.customFields = Object.keys(rawCustomFields).reduce((acc, key) => {
+                const canonicalKey = key.trim().toLowerCase().replace(/[\s-]+/g, '_');
+                acc[canonicalKey] = rawCustomFields[key];
+                return acc;
+            }, {});
+        }
+
+        // --- Recalculate Totals ---
+        if (req.body.items || req.body.customerInformation || req.body.additionalCharges || req.body.branch) {
+            const currentSO = await SaleOrder.findOne({ _id: req.params.id, userId: req.user._id });
+            if (currentSO) {
+                const calculationResults = await calculateDocumentTotals(req.user._id, {
+                    customerInformation: req.body.customerInformation || currentSO.customerInformation,
+                    items: req.body.items || currentSO.items,
+                    additionalCharges: req.body.additionalCharges || currentSO.additionalCharges
+                }, req.body.branch || currentSO.branch);
+
+                req.body.items = calculationResults.items;
+                req.body.totals = calculationResults.totals;
+            }
+        }
+
+        const saleOrder = await SaleOrder.findOneAndUpdate(
             { _id: req.params.id, userId: req.user._id },
             req.body,
             { new: true, runValidators: true }
         ).populate('staff', 'fullName');
 
-        if (!proforma) return res.status(404).json({ success: false, message: 'Proforma not found' });
-        res.status(200).json({ success: true, data: proforma });
+        if (!saleOrder) return res.status(404).json({ success: false, message: 'Sale Order not found' });
+        res.status(200).json({ success: true, data: saleOrder });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
 };
 
-// @desc    Delete Proforma
-// @route   DELETE /api/proformas/:id
-const deleteProforma = async (req, res) => {
+// @desc    Delete Sale Order
+// @route   DELETE /api/sale-orders/:id
+const deleteSaleOrder = async (req, res) => {
     try {
-        const proforma = await Proforma.findOneAndDelete({ _id: req.params.id, userId: req.user._id });
-        if (!proforma) return res.status(404).json({ success: false, message: 'Proforma not found' });
-        res.status(200).json({ success: true, message: 'Proforma deleted successfully' });
+        const saleOrder = await SaleOrder.findOneAndDelete({ _id: req.params.id, userId: req.user._id });
+        if (!saleOrder) return res.status(404).json({ success: false, message: 'Sale Order not found' });
+        res.status(200).json({ success: true, message: 'Sale Order deleted successfully' });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -423,7 +435,7 @@ const deleteProforma = async (req, res) => {
 // --- Custom Field Handlers ---
 const getCustomFields = async (req, res) => {
     try {
-        const fields = await ProformaCustomField.find({ userId: req.user._id }).sort({ orderNo: 1 });
+        const fields = await SaleOrderCustomField.find({ userId: req.user._id }).sort({ orderNo: 1 });
         res.status(200).json({ success: true, data: fields });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -432,7 +444,14 @@ const getCustomFields = async (req, res) => {
 
 const createCustomField = async (req, res) => {
     try {
-        const field = await ProformaCustomField.create({ ...req.body, userId: req.user._id });
+        const { name } = req.body;
+        if (!name) return res.status(400).json({ success: false, message: 'Name is required' });
+        const canonicalName = name.trim().toLowerCase().replace(/[\s-]+/g, '_');
+        const existingField = await SaleOrderCustomField.findOne({ userId: req.user._id, name: canonicalName });
+        if (existingField) {
+            return res.status(400).json({ success: false, message: `Custom field with name '${canonicalName}' already exists` });
+        }
+        const field = await SaleOrderCustomField.create({ ...req.body, name: canonicalName, userId: req.user._id });
         res.status(201).json({ success: true, data: field });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -441,9 +460,23 @@ const createCustomField = async (req, res) => {
 
 const updateCustomField = async (req, res) => {
     try {
-        const field = await ProformaCustomField.findOneAndUpdate(
+        const { name } = req.body;
+        let updateData = { ...req.body };
+        if (name) {
+            const canonicalName = name.trim().toLowerCase().replace(/[\s-]+/g, '_');
+            const existingField = await SaleOrderCustomField.findOne({
+                userId: req.user._id,
+                name: canonicalName,
+                _id: { $ne: req.params.id }
+            });
+            if (existingField) {
+                return res.status(400).json({ success: false, message: `Custom field with name '${canonicalName}' already exists` });
+            }
+            updateData.name = canonicalName;
+        }
+        const field = await SaleOrderCustomField.findOneAndUpdate(
             { _id: req.params.id, userId: req.user._id },
-            req.body,
+            updateData,
             { new: true }
         );
         res.status(200).json({ success: true, data: field });
@@ -454,7 +487,7 @@ const updateCustomField = async (req, res) => {
 
 const deleteCustomField = async (req, res) => {
     try {
-        await ProformaCustomField.findOneAndDelete({ _id: req.params.id, userId: req.user._id });
+        await SaleOrderCustomField.findOneAndDelete({ _id: req.params.id, userId: req.user._id });
         res.status(200).json({ success: true, message: 'Deleted' });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -464,7 +497,7 @@ const deleteCustomField = async (req, res) => {
 // --- Item Column Handlers ---
 const getItemColumns = async (req, res) => {
     try {
-        const columns = await ProformaItemColumn.find({ userId: req.user._id }).sort({ orderNo: 1 });
+        const columns = await SaleOrderItemColumn.find({ userId: req.user._id }).sort({ orderNo: 1 });
         res.status(200).json({ success: true, data: columns });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -473,7 +506,7 @@ const getItemColumns = async (req, res) => {
 
 const createItemColumn = async (req, res) => {
     try {
-        const column = await ProformaItemColumn.create({ ...req.body, userId: req.user._id });
+        const column = await SaleOrderItemColumn.create({ ...req.body, userId: req.user._id });
         res.status(201).json({ success: true, data: column });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -482,7 +515,7 @@ const createItemColumn = async (req, res) => {
 
 const updateItemColumn = async (req, res) => {
     try {
-        const column = await ProformaItemColumn.findOneAndUpdate(
+        const column = await SaleOrderItemColumn.findOneAndUpdate(
             { _id: req.params.id, userId: req.user._id },
             req.body,
             { new: true }
@@ -495,7 +528,7 @@ const updateItemColumn = async (req, res) => {
 
 const deleteItemColumn = async (req, res) => {
     try {
-        await ProformaItemColumn.findOneAndDelete({ _id: req.params.id, userId: req.user._id });
+        await SaleOrderItemColumn.findOneAndDelete({ _id: req.params.id, userId: req.user._id });
         res.status(200).json({ success: true, message: 'Deleted' });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -503,13 +536,13 @@ const deleteItemColumn = async (req, res) => {
 };
 
 module.exports = {
-    createProforma,
-    getProformas,
-    getProformaSummary,
-    getProformaById,
-    updateProforma,
-    deleteProforma,
-    printProforma,
+    createSaleOrder,
+    getSaleOrders,
+    getSaleOrderSummary,
+    getSaleOrderById,
+    updateSaleOrder,
+    deleteSaleOrder,
+    searchSaleOrders,
     getCustomFields,
     createCustomField,
     updateCustomField,

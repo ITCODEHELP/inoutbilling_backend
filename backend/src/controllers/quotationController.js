@@ -3,7 +3,10 @@ const QuotationCustomField = require('../models/QuotationCustomField');
 const QuotationItemColumn = require('../models/QuotationItemColumn');
 const Staff = require('../models/Staff');
 const mongoose = require('mongoose');
+const { calculateDocumentTotals, getSummaryAggregation } = require('../utils/documentHelper');
+const numberToWords = require('../utils/numberToWords');
 const { generateQuotationPDF } = require('../utils/pdfHelper');
+const { calculateShippingDistance } = require('../utils/shippingHelper');
 
 // Helper to build search query (mirrors DailyExpense buildExpenseQuery)
 const buildQuotationQuery = async (userId, queryParams) => {
@@ -187,6 +190,23 @@ const createQuotation = async (req, res) => {
             print
         } = req.body;
 
+        const { calculateShippingDistance } = require('../utils/shippingHelper');
+
+        // Distance Calculation
+        let finalShippingAddress = req.body.shippingAddress || {};
+        if (req.body.useSameShippingAddress) {
+            finalShippingAddress = {
+                street: customerInformation.address,
+                city: customerInformation.city || '',
+                state: customerInformation.state || '',
+                country: customerInformation.country || 'India',
+                pincode: customerInformation.pincode || ''
+            };
+        }
+
+        const distance = await calculateShippingDistance(req.user._id, finalShippingAddress);
+        finalShippingAddress.distance = distance;
+
         // Custom Fields Validation (Atomic behavior reuse)
         let parsedCustomFields = {};
         if (customFields) {
@@ -199,18 +219,28 @@ const createQuotation = async (req, res) => {
             }
         }
 
-        // --- Items Processing (Including Item Level Custom Fields) ---
+        // --- Items Processing & Calculation ---
         let parsedItems = Array.isArray(items) ? items : (typeof items === 'string' ? JSON.parse(items) : []);
+
+        const calculationResults = await calculateDocumentTotals(req.user._id, {
+            customerInformation,
+            items: parsedItems,
+            additionalCharges: req.body.additionalCharges
+        }, req.body.branch);
 
         const newQuotation = new Quotation({
             userId: req.user._id,
             customerInformation,
+            useSameShippingAddress: req.body.useSameShippingAddress,
+            shippingAddress: finalShippingAddress,
             quotationDetails,
             transportDetails,
-            items: parsedItems,
-            totals,
+            items: calculationResults.items,
+            totals: calculationResults.totals,
+            additionalCharges: req.body.additionalCharges || [],
             paymentType,
             staff,
+            branch: req.body.branch,
             bankDetails,
             termsTitle,
             termsDetails,
@@ -288,51 +318,11 @@ const getQuotations = async (req, res) => {
     }
 };
 
-// @desc    Get Quotation Summary
-// @route   GET /api/quotations/summary
 const getQuotationSummary = async (req, res) => {
     try {
         const query = await buildQuotationQuery(req.user._id, req.query);
-
-        const summaryData = await Quotation.aggregate([
-            { $match: query },
-            {
-                $group: {
-                    _id: null,
-                    totalTransactions: { $sum: 1 },
-                    totalCGST: { $sum: "$totals.totalCGST" },
-                    totalSGST: { $sum: "$totals.totalSGST" },
-                    totalIGST: { $sum: "$totals.totalIGST" },
-                    totalTaxable: { $sum: "$totals.totalTaxable" },
-                    totalValue: { $sum: "$totals.grandTotal" }
-                }
-            },
-            {
-                $project: {
-                    _id: 0,
-                    totalTransactions: 1,
-                    totalCGST: 1,
-                    totalSGST: 1,
-                    totalIGST: 1,
-                    totalTaxable: 1,
-                    totalValue: 1
-                }
-            }
-        ]);
-
-        const summary = summaryData[0] || {
-            totalTransactions: 0,
-            totalCGST: 0,
-            totalSGST: 0,
-            totalIGST: 0,
-            totalTaxable: 0,
-            totalValue: 0
-        };
-
-        res.status(200).json({
-            success: true,
-            data: summary
-        });
+        const data = await getSummaryAggregation(req.user._id, query, Quotation);
+        res.status(200).json({ success: true, data });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -354,6 +344,48 @@ const getQuotationById = async (req, res) => {
 // @route   PUT /api/quotations/:id
 const updateQuotation = async (req, res) => {
     try {
+        // Distance Calculation
+        // Fetch current quotation to get existing customerInformation if not provided in req.body
+        let currentQuotationForDistance = null;
+        if (req.body.shippingAddress || req.body.useSameShippingAddress || req.body.customerInformation) {
+            currentQuotationForDistance = await Quotation.findOne({ _id: req.params.id, userId: req.user._id });
+            if (!currentQuotationForDistance && (req.body.useSameShippingAddress && !req.body.customerInformation)) {
+                return res.status(404).json({ success: false, message: 'Quotation not found for distance calculation' });
+            }
+
+            let finalShippingAddress = req.body.shippingAddress || {};
+            if (req.body.useSameShippingAddress) {
+                const effectiveCustomerInfo = req.body.customerInformation || (currentQuotationForDistance ? currentQuotationForDistance.customerInformation : null);
+                if (effectiveCustomerInfo) {
+                    finalShippingAddress = {
+                        street: effectiveCustomerInfo.address || '',
+                        city: effectiveCustomerInfo.city || '',
+                        state: effectiveCustomerInfo.state || '',
+                        country: effectiveCustomerInfo.country || 'India',
+                        pincode: effectiveCustomerInfo.pincode || ''
+                    };
+                }
+            }
+            const distance = await calculateShippingDistance(req.user._id, finalShippingAddress);
+            finalShippingAddress.distance = distance;
+            req.body.shippingAddress = finalShippingAddress;
+        }
+
+        // --- Recalculate Totals ---
+        if (req.body.items || req.body.customerInformation || req.body.additionalCharges || req.body.branch) {
+            const currentQuotation = await Quotation.findOne({ _id: req.params.id, userId: req.user._id });
+            if (currentQuotation) {
+                const calculationResults = await calculateDocumentTotals(req.user._id, {
+                    customerInformation: req.body.customerInformation || currentQuotation.customerInformation,
+                    items: req.body.items || currentQuotation.items,
+                    additionalCharges: req.body.additionalCharges || currentQuotation.additionalCharges
+                }, req.body.branch || currentQuotation.branch);
+
+                req.body.items = calculationResults.items;
+                req.body.totals = calculationResults.totals;
+            }
+        }
+
         const quotation = await Quotation.findOneAndUpdate(
             { _id: req.params.id, userId: req.user._id },
             req.body,

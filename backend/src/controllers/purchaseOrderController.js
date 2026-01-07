@@ -4,6 +4,9 @@ const PurchaseOrderItemColumn = require('../models/PurchaseOrderItemColumn');
 const Staff = require('../models/Staff');
 const Vendor = require('../models/Vendor');
 const mongoose = require('mongoose');
+const { calculateDocumentTotals, getSummaryAggregation } = require('../utils/documentHelper');
+const numberToWords = require('../utils/numberToWords');
+const { calculateShippingDistance } = require('../utils/shippingHelper');
 
 // Helper to build search query
 const buildPurchaseOrderQuery = async (userId, queryParams) => {
@@ -187,8 +190,23 @@ const createPurchaseOrder = async (req, res) => {
             documentRemarks,
             customFields,
             staff,
-            shareOnEmail
+            branch
         } = req.body;
+
+        // Distance Calculation
+        let finalShippingAddress = req.body.shippingAddress || {};
+        if (req.body.useSameShippingAddress) {
+            finalShippingAddress = {
+                street: vendorInformation.address,
+                city: vendorInformation.city || '',
+                state: vendorInformation.state || '',
+                country: vendorInformation.country || 'India',
+                pincode: vendorInformation.pincode || ''
+            };
+        }
+
+        const distance = await calculateShippingDistance(req.user._id, finalShippingAddress);
+        finalShippingAddress.distance = distance;
 
         // Custom Fields Validation & Normalization
         let rawCustomFields = {};
@@ -196,7 +214,7 @@ const createPurchaseOrder = async (req, res) => {
             rawCustomFields = typeof customFields === 'string' ? JSON.parse(customFields) : customFields;
         }
 
-        const normalizedCustomFields = Object.keys(rawCustomFields).reduce((acc, key) => {
+        const parsedCustomFields = Object.keys(rawCustomFields).reduce((acc, key) => {
             const canonicalKey = key.trim().toLowerCase().replace(/[\s-]+/g, '_');
             acc[canonicalKey] = rawCustomFields[key];
             return acc;
@@ -207,7 +225,7 @@ const createPurchaseOrder = async (req, res) => {
         for (const def of definitions) {
             const canonicalDefName = def.name.trim().toLowerCase().replace(/[\s-]+/g, '_');
             if (def.required && !validatedFields.has(canonicalDefName)) {
-                const value = normalizedCustomFields[canonicalDefName];
+                const value = parsedCustomFields[canonicalDefName];
                 if (value === undefined || value === null || value === '') {
                     return res.status(400).json({ success: false, message: `Field '${def.name}' is required` });
                 }
@@ -215,28 +233,40 @@ const createPurchaseOrder = async (req, res) => {
             }
         }
 
-        const newPO = new PurchaseOrder({
+        // --- Items Processing & Calculation ---
+        let parsedItems = Array.isArray(items) ? items : (typeof items === 'string' ? JSON.parse(items) : []);
+
+        const calculationResults = await calculateDocumentTotals(req.user._id, {
+            vendorInformation,
+            items: parsedItems,
+            additionalCharges: req.body.additionalCharges
+        }, req.body.branch);
+
+        const newPurchaseOrder = new PurchaseOrder({
             userId: req.user._id,
             vendorInformation,
+            useSameShippingAddress: req.body.useSameShippingAddress,
+            shippingAddress: finalShippingAddress,
             purchaseOrderDetails,
             transportDetails,
-            items: Array.isArray(items) ? items : (typeof items === 'string' ? JSON.parse(items) : []),
-            additionalCharges: Array.isArray(additionalCharges) ? additionalCharges : (typeof additionalCharges === 'string' ? JSON.parse(additionalCharges) : []),
-            totals,
+            items: calculationResults.items,
+            totals: calculationResults.totals,
+            additionalCharges: req.body.additionalCharges || [],
+            staff,
+            branch: req.body.branch,
             bankDetails,
             termsTitle,
             termsDetails,
             documentRemarks,
-            staff,
-            customFields: normalizedCustomFields
+            customFields: parsedCustomFields
         });
 
-        await newPO.save();
+        await newPurchaseOrder.save();
 
         res.status(201).json({
             success: true,
             message: 'Purchase Order created successfully',
-            data: newPO
+            data: newPurchaseOrder
         });
     } catch (error) {
         if (error.code === 11000) {
@@ -311,47 +341,9 @@ const getPurchaseOrders = async (req, res) => {
 // @route   GET /api/purchase-orders/summary
 const getPurchaseOrderSummary = async (req, res) => {
     try {
-        const query = { userId: req.user._id };
-
-        const summaryData = await PurchaseOrder.aggregate([
-            { $match: query },
-            {
-                $group: {
-                    _id: null,
-                    totalTransactions: { $sum: 1 },
-                    totalCGST: { $sum: "$totals.totalCGST" },
-                    totalSGST: { $sum: "$totals.totalSGST" },
-                    totalIGST: { $sum: "$totals.totalIGST" },
-                    totalTaxable: { $sum: "$totals.totalTaxable" },
-                    totalValue: { $sum: "$totals.grandTotal" }
-                }
-            },
-            {
-                $project: {
-                    _id: 0,
-                    totalTransactions: 1,
-                    totalCGST: 1,
-                    totalSGST: 1,
-                    totalIGST: 1,
-                    totalTaxable: 1,
-                    totalValue: 1
-                }
-            }
-        ]);
-
-        const summary = summaryData[0] || {
-            totalTransactions: 0,
-            totalCGST: 0,
-            totalSGST: 0,
-            totalIGST: 0,
-            totalTaxable: 0,
-            totalValue: 0
-        };
-
-        res.status(200).json({
-            success: true,
-            data: summary
-        });
+        const query = await buildPurchaseOrderQuery(req.user._id, req.query);
+        const data = await getSummaryAggregation(req.user._id, query, PurchaseOrder);
+        res.status(200).json({ success: true, data });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -373,13 +365,48 @@ const getPurchaseOrderById = async (req, res) => {
 // @route   PUT /api/purchase-orders/:id
 const updatePurchaseOrder = async (req, res) => {
     try {
-        const po = await PurchaseOrder.findOneAndUpdate(
+        // Distance Calculation
+        if (req.body.shippingAddress || req.body.useSameShippingAddress || req.body.vendorInformation) {
+            let currentPO = await PurchaseOrder.findOne({ _id: req.params.id, userId: req.user._id });
+            let finalShippingAddress = req.body.shippingAddress || {};
+            if (req.body.useSameShippingAddress) {
+                const effectiveVendorInfo = req.body.vendorInformation || (currentPO ? currentPO.vendorInformation : null);
+                if (effectiveVendorInfo) {
+                    finalShippingAddress = {
+                        street: effectiveVendorInfo.address || '',
+                        city: effectiveVendorInfo.city || '',
+                        state: effectiveVendorInfo.state || '',
+                        country: effectiveVendorInfo.country || 'India',
+                        pincode: effectiveVendorInfo.pincode || ''
+                    };
+                }
+            }
+            const distance = await calculateShippingDistance(req.user._id, finalShippingAddress);
+            finalShippingAddress.distance = distance;
+            req.body.shippingAddress = finalShippingAddress;
+        }
+
+        // --- Recalculate Totals ---
+        if (req.body.items || req.body.vendorInformation || req.body.additionalCharges || req.body.branch) {
+            const currentPO = await PurchaseOrder.findOne({ _id: req.params.id, userId: req.user._id });
+            if (currentPO) {
+                const calculationResults = await calculateDocumentTotals(req.user._id, {
+                    vendorInformation: req.body.vendorInformation || currentPO.vendorInformation,
+                    items: req.body.items || currentPO.items,
+                    additionalCharges: req.body.additionalCharges || currentPO.additionalCharges
+                }, req.body.branch || currentPO.branch);
+
+                req.body.items = calculationResults.items;
+                req.body.totals = calculationResults.totals;
+            }
+        }
+
+        const purchaseOrder = await PurchaseOrder.findOneAndUpdate(
             { _id: req.params.id, userId: req.user._id },
             req.body,
             { new: true, runValidators: true }
         );
 
-        if (!po) return res.status(404).json({ success: false, message: 'Purchase Order not found' });
         res.status(200).json({ success: true, data: po });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });

@@ -46,6 +46,14 @@ const otherIncomeCategoryRoutes = require('./routes/otherIncomeCategoryRoutes');
 const quotationRoutes = require('./routes/quotationRoutes');
 const proformaRoutes = require('./routes/proformaRoutes');
 const purchaseOrderRoutes = require('./routes/purchaseOrderRoutes');
+const saleOrderRoutes = require('./routes/saleOrderRoutes');
+const jobWorkRoutes = require('./routes/jobWorkRoutes');
+const letterRoutes = require('./routes/letterRoutes');
+const packingListRoutes = require('./routes/packingListRoutes');
+const manufactureRoutes = require('./routes/manufactureRoutes');
+const creditNoteRoutes = require('./routes/creditNoteRoutes');
+const debitNoteRoutes = require('./routes/debitNoteRoutes');
+const exportInvoiceRoutes = require('./routes/Multi-CurrencyExportInvoiceRoutes');
 
 
 
@@ -110,6 +118,14 @@ app.use('/api/additional-charges', additionalChargeRoutes);
 app.use('/api/quotations', quotationRoutes);
 app.use('/api/proformas', proformaRoutes);
 app.use('/api/purchase-orders', purchaseOrderRoutes);
+app.use('/api/sale-orders', saleOrderRoutes);
+app.use('/api/job-work', jobWorkRoutes);
+app.use('/api/letters', letterRoutes);
+app.use('/api/packing-list', packingListRoutes);
+app.use('/api/manufacture', manufactureRoutes);
+app.use('/api/credit-note', creditNoteRoutes);
+app.use('/api/debit-note', debitNoteRoutes);
+app.use('/api/export-invoice', exportInvoiceRoutes);
 
 
 
