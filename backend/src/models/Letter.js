@@ -6,27 +6,51 @@ const letterSchema = new mongoose.Schema({
         ref: 'User',
         required: true
     },
+    title: {
+        type: String,
+        required: [true, 'Title is required'],
+        trim: true
+    },
+    letterNumber: {
+        prefix: { type: String, trim: true },
+        number: {
+            type: String,
+            required: [true, 'Letter number is required'],
+            trim: true
+        },
+        postfix: { type: String, trim: true }
+    },
     letterDate: {
         type: Date,
-        required: true
+        required: [true, 'Letter date is required']
     },
-    subject: {
+    templateType: {
         type: String,
-        required: true
+        required: [true, 'Template type is required'],
+        enum: {
+            values: ['BLANK', 'LETTER_OF_INTENT', 'JOB_WORK', 'NO_OBJECTION', 'QUOTATION', 'SALES_CONTRACT'],
+            message: 'Invalid template type'
+        }
     },
-    recipientName: {
+    letterBody: {
         type: String,
-        required: true
+        required: [true, 'Letter body is required']
     },
-    content: {
-        type: String,
-        required: true
+    staff: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Staff',
+        default: null
     },
-    letterType: {
-        type: String
+    isDeleted: {
+        type: Boolean,
+        default: false
     }
 }, {
     timestamps: true
 });
+
+// Index for performance
+letterSchema.index({ userId: 1, isDeleted: 1 });
+letterSchema.index({ 'letterNumber.number': 1 });
 
 module.exports = mongoose.model('Letter', letterSchema);

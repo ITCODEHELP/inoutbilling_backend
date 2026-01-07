@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const poItemSchema = new mongoose.Schema({
+const saleOrderItemSchema = new mongoose.Schema({
     productName: { type: String, required: true },
     productGroup: { type: String },
     itemNote: { type: String },
@@ -20,14 +20,14 @@ const poItemSchema = new mongoose.Schema({
     }
 });
 
-const purchaseOrderSchema = new mongoose.Schema({
+const saleOrderSchema = new mongoose.Schema({
     userId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
         required: true
     },
-    // Section 1: Vendor Information
-    vendorInformation: {
+    // Section 1: Customer Information
+    customerInformation: {
         ms: { type: String, required: [true, 'ms is required'] },
         address: { type: String },
         contactPerson: { type: String },
@@ -47,20 +47,26 @@ const purchaseOrderSchema = new mongoose.Schema({
         pincode: { type: String },
         distance: { type: Number, default: 0 }
     },
-    // Section 2: Purchase Order Details
-    purchaseOrderDetails: {
-        purchaseOrderType: {
+    // Section 2: Sale Order Details
+    saleOrderDetails: {
+        saleOrderType: {
             type: String,
+            enum: ['REGULAR', 'BILL_OF_SUPPLY', 'SEZ/EXPORT with IGST', 'SEZ/EXPORT without IGST'],
             default: 'REGULAR'
         },
-        poPrefix: { type: String },
-        poNumber: { type: String, required: [true, 'poNumber is required'] },
-        poPostfix: { type: String },
+        soPrefix: { type: String },
+        soNumber: { type: String, required: [true, 'soNumber is required'] },
+        soPostfix: { type: String },
         date: { type: Date, required: [true, 'date is required'] },
         deliveryMode: {
             type: String,
             enum: ['HAND DELIVERY', 'TRANSPORT/ROAD REGULAR', 'ROAD-OVER DIMENSIONAL', 'RAIL', 'AIR', 'SHIP', 'SHIP-CUM ROAD/RAIL'],
             required: true
+        },
+        status: {
+            type: String,
+            enum: ['NEW', 'PENDING', 'IN_WORK', 'COMPLETED'],
+            default: 'NEW'
         }
     },
     // Section 3: Transport Details
@@ -74,7 +80,7 @@ const purchaseOrderSchema = new mongoose.Schema({
         trackingLink: { type: String }
     },
     // Section 4: Product Items
-    items: [poItemSchema],
+    items: [saleOrderItemSchema],
     // Additional Charges
     additionalCharges: [{
         name: String,
@@ -94,7 +100,7 @@ const purchaseOrderSchema = new mongoose.Schema({
         totalInWords: { type: String }
     },
     staff: {
-        type: { type: String }
+        type: String
     },
     bankDetails: { type: String },
     termsTitle: { type: String },
@@ -109,6 +115,6 @@ const purchaseOrderSchema = new mongoose.Schema({
     timestamps: true
 });
 
-purchaseOrderSchema.index({ userId: 1, 'purchaseOrderDetails.poNumber': 1 }, { unique: true });
+saleOrderSchema.index({ userId: 1, 'saleOrderDetails.soNumber': 1 }, { unique: true });
 
-module.exports = mongoose.model('PurchaseOrder', purchaseOrderSchema);
+module.exports = mongoose.model('SaleOrder', saleOrderSchema);

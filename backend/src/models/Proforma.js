@@ -37,6 +37,16 @@ const proformaSchema = new mongoose.Schema({
         shipTo: { type: String },
         placeOfSupply: { type: String, required: [true, 'placeOfSupply is required'] }
     },
+    useSameShippingAddress: { type: Boolean, default: true },
+    shippingAddress: {
+        street: { type: String },
+        landmark: { type: String },
+        city: { type: String },
+        state: { type: String },
+        country: { type: String },
+        pincode: { type: String },
+        distance: { type: Number, default: 0 }
+    },
     // Section 2: Proforma Details
     proformaDetails: {
         proformaType: {

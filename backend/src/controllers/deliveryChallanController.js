@@ -6,6 +6,9 @@ const Customer = require('../models/Customer');
 const mongoose = require('mongoose');
 const { generateDeliveryChallanPDF } = require('../utils/pdfHelper');
 const { sendDeliveryChallanEmail } = require('../utils/emailHelper');
+const { calculateDocumentTotals, getSummaryAggregation } = require('../utils/documentHelper');
+const numberToWords = require('../utils/numberToWords');
+const { calculateShippingDistance } = require('../utils/shippingHelper');
 
 // Helper to build search query (mirrors Quotation search logic)
 const buildDeliveryChallanQuery = async (userId, queryParams) => {
@@ -172,7 +175,7 @@ const buildDeliveryChallanQuery = async (userId, queryParams) => {
     for (const key in otherFilters) {
         if (key.startsWith('cf_')) {
             const fieldId = key.replace('cf_', '');
-            query[`customFields.${fieldId}`] = otherFilters[key];
+            query[`customFields.${fieldId} `] = otherFilters[key];
         }
     }
 
@@ -189,7 +192,6 @@ const createDeliveryChallan = async (req, res) => {
             transportDetails,
             items,
             additionalCharges,
-            totals,
             bankDetails,
             termsTitle,
             termsDetails,
@@ -199,6 +201,21 @@ const createDeliveryChallan = async (req, res) => {
             print,
             shareOnEmail
         } = req.body;
+
+        // Distance Calculation
+        let finalShippingAddress = req.body.shippingAddress || {};
+        if (req.body.useSameShippingAddress) {
+            finalShippingAddress = {
+                street: customerInformation.address,
+                city: customerInformation.city || '',
+                state: customerInformation.state || '',
+                country: customerInformation.country || 'India',
+                pincode: customerInformation.pincode || ''
+            };
+        }
+
+        const distance = await calculateShippingDistance(req.user._id, finalShippingAddress);
+        finalShippingAddress.distance = distance;
 
         // Custom Fields Validation & Normalization
         let rawCustomFields = {};
@@ -235,19 +252,31 @@ const createDeliveryChallan = async (req, res) => {
             deliveryChallanDetails.deliveryChallanType = deliveryChallanDetails.challanType;
         }
 
+        // --- Items Processing & Calculation ---
+        let parsedItems = Array.isArray(items) ? items : (typeof items === 'string' ? JSON.parse(items) : []);
+
+        const calculationResults = await calculateDocumentTotals(req.user._id, {
+            customerInformation,
+            items: parsedItems,
+            additionalCharges: req.body.additionalCharges
+        }, req.body.branch);
+
         const newChallan = new DeliveryChallan({
             userId: req.user._id,
             customerInformation,
+            useSameShippingAddress: req.body.useSameShippingAddress,
+            shippingAddress: finalShippingAddress,
             deliveryChallanDetails,
             transportDetails,
-            items: Array.isArray(items) ? items : (typeof items === 'string' ? JSON.parse(items) : []),
-            additionalCharges: Array.isArray(additionalCharges) ? additionalCharges : (typeof additionalCharges === 'string' ? JSON.parse(additionalCharges) : []),
-            totals,
+            items: calculationResults.items,
+            additionalCharges: req.body.additionalCharges || [],
+            totals: calculationResults.totals,
             bankDetails,
             termsTitle,
             termsDetails,
             documentRemarks,
             staff,
+            branch: req.body.branch,
             customFields: normalizedCustomFields
         });
 
@@ -263,7 +292,7 @@ const createDeliveryChallan = async (req, res) => {
         if (print) {
             const pdfBuffer = await generateDeliveryChallanPDF(newChallan);
             res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Disposition', `attachment; filename=challan-${newChallan.deliveryChallanDetails.challanNumber}.pdf`);
+            res.setHeader('Content-Disposition', `attachment; filename = challan - ${newChallan.deliveryChallanDetails.challanNumber}.pdf`);
             return res.send(pdfBuffer);
         }
 
@@ -340,51 +369,13 @@ const getDeliveryChallans = async (req, res) => {
     }
 };
 
-// @desc    Get Delivery Challan Summary (No filters as requested)
+// @desc    Get Delivery Challan Summary
 // @route   GET /api/delivery-challans/summary
 const getDeliveryChallanSummary = async (req, res) => {
     try {
-        const query = { userId: req.user._id };
-
-        const summaryData = await DeliveryChallan.aggregate([
-            { $match: query },
-            {
-                $group: {
-                    _id: null,
-                    totalTransactions: { $sum: 1 },
-                    totalCGST: { $sum: "$totals.totalCGST" },
-                    totalSGST: { $sum: "$totals.totalSGST" },
-                    totalIGST: { $sum: "$totals.totalIGST" },
-                    totalTaxable: { $sum: "$totals.totalTaxable" },
-                    totalValue: { $sum: "$totals.grandTotal" }
-                }
-            },
-            {
-                $project: {
-                    _id: 0,
-                    totalTransactions: 1,
-                    totalCGST: 1,
-                    totalSGST: 1,
-                    totalIGST: 1,
-                    totalTaxable: 1,
-                    totalValue: 1
-                }
-            }
-        ]);
-
-        const summary = summaryData[0] || {
-            totalTransactions: 0,
-            totalCGST: 0,
-            totalSGST: 0,
-            totalIGST: 0,
-            totalTaxable: 0,
-            totalValue: 0
-        };
-
-        res.status(200).json({
-            success: true,
-            data: summary
-        });
+        const query = await buildDeliveryChallanQuery(req.user._id, req.query);
+        const data = await getSummaryAggregation(req.user._id, query, DeliveryChallan);
+        res.status(200).json({ success: true, data });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -402,17 +393,78 @@ const getDeliveryChallanById = async (req, res) => {
     }
 };
 
+// @desc    Update Delivery Challan
+// @route   PUT /api/delivery-challans/:id
 const updateDeliveryChallan = async (req, res) => {
     try {
-        let updateData = { ...req.body };
+        // Distance Calculation
+        if (req.body.shippingAddress || req.body.useSameShippingAddress || req.body.customerInformation) {
+            let currentDC = await DeliveryChallan.findOne({ _id: req.params.id, userId: req.user._id });
+            let finalShippingAddress = req.body.shippingAddress || {};
+            if (req.body.useSameShippingAddress) {
+                const effectiveCustomerInfo = req.body.customerInformation || (currentDC ? currentDC.customerInformation : null);
+                if (effectiveCustomerInfo) {
+                    finalShippingAddress = {
+                        street: effectiveCustomerInfo.address || '',
+                        city: effectiveCustomerInfo.city || '',
+                        state: effectiveCustomerInfo.state || '',
+                        country: effectiveCustomerInfo.country || 'India',
+                        pincode: effectiveCustomerInfo.pincode || ''
+                    };
+                }
+            }
+            const distance = await calculateShippingDistance(req.user._id, finalShippingAddress);
+            finalShippingAddress.distance = distance;
+            req.body.shippingAddress = finalShippingAddress;
+        }
+
+        // --- Recalculate Totals ---
+        if (req.body.items || req.body.customerInformation || req.body.additionalCharges || req.body.branch) {
+            const currentDC = await DeliveryChallan.findOne({ _id: req.params.id, userId: req.user._id });
+            if (currentDC) {
+                const calculationResults = await calculateDocumentTotals(req.user._id, {
+                    customerInformation: req.body.customerInformation || currentDC.customerInformation,
+                    items: req.body.items || currentDC.items,
+                    additionalCharges: req.body.additionalCharges || currentDC.additionalCharges
+                }, req.body.branch || currentDC.branch);
+
+                req.body.items = calculationResults.items;
+                req.body.totals = calculationResults.totals;
+            }
+        }
+
+        // Custom Fields Validation & Normalization
+        if (req.body.customFields) {
+            let rawCustomFields = typeof req.body.customFields === 'string' ? JSON.parse(req.body.customFields) : req.body.customFields;
+            const normalizedCustomFields = Object.keys(rawCustomFields).reduce((acc, key) => {
+                const canonicalKey = key.trim().toLowerCase().replace(/[\s-]+/g, '_');
+                acc[canonicalKey] = rawCustomFields[key];
+                return acc;
+            }, {});
+            req.body.customFields = normalizedCustomFields;
+
+            const definitions = await DeliveryChallanCustomField.find({ userId: req.user._id, status: 'Active' });
+            const validatedFields = new Set();
+            for (const def of definitions) {
+                const canonicalDefName = def.name.trim().toLowerCase().replace(/[\s-]+/g, '_');
+                if (def.required && !validatedFields.has(canonicalDefName)) {
+                    const value = normalizedCustomFields[canonicalDefName];
+                    if (value === undefined || value === null || value === '') {
+                        return res.status(400).json({ success: false, message: `Field '${def.name}' is required` });
+                    }
+                    validatedFields.add(canonicalDefName);
+                }
+            }
+        }
+
         // Compatibility for challanType -> deliveryChallanType
-        if (updateData.deliveryChallanDetails && updateData.deliveryChallanDetails.challanType && !updateData.deliveryChallanDetails.deliveryChallanType) {
-            updateData.deliveryChallanDetails.deliveryChallanType = updateData.deliveryChallanDetails.challanType;
+        if (req.body.deliveryChallanDetails && req.body.deliveryChallanDetails.challanType && !req.body.deliveryChallanDetails.deliveryChallanType) {
+            req.body.deliveryChallanDetails.deliveryChallanType = req.body.deliveryChallanDetails.challanType;
         }
 
         const challan = await DeliveryChallan.findOneAndUpdate(
             { _id: req.params.id, userId: req.user._id },
-            updateData,
+            req.body,
             { new: true, runValidators: true }
         );
 
@@ -444,7 +496,7 @@ const printDeliveryChallan = async (req, res) => {
 
         const pdfBuffer = await generateDeliveryChallanPDF(challan);
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename=challan-${challan.deliveryChallanDetails.challanNumber}.pdf`);
+        res.setHeader('Content-Disposition', `attachment; filename = challan - ${challan.deliveryChallanDetails.challanNumber}.pdf`);
         res.send(pdfBuffer);
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });

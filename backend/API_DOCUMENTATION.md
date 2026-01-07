@@ -235,6 +235,23 @@ Authorization: Bearer <token>
   "data": [ ... ],
   "pagination": { "total": 100, "page": 1, "pages": 10 }
 }
+
+### Get Proforma Summary
+Returns aggregated totals for proformas.
+
+**URL** : `/api/proformas/summary`
+**Method** : `GET`
+**Query Parameters** : (Same as List Proformas)
+**Auth required** : YES
+
+**Success Response**:
+- **Code**: 200 OK
+- **Content**: (Matches Quotation Summary format)
+
+### Get Proforma by ID
+```http
+GET /proformas/:id
+Authorization: Bearer <token>
 ```
 
 ### Get Product by ID
@@ -369,6 +386,37 @@ GET /barcode/customization
 Authorization: Bearer <token>
 ```
 
+### Get Quotation Summary
+Returns aggregated totals for quotations based on search filters.
+
+**URL** : `/api/quotations/summary`
+**Method** : `GET`
+**Query Parameters** : (Same as List Quotations)
+**Auth required** : YES
+
+**Success Response**:
+- **Code**: 200 OK
+- **Content**:
+```json
+{
+  "success": true,
+  "data": {
+    "totalTransactions": 15,
+    "totalTaxable": 150000.00,
+    "totalCGST": 13500.00,
+    "totalSGST": 13500.00,
+    "totalIGST": 0.00,
+    "totalValue": 177000.00
+  }
+}
+```
+
+### Get Quotation by ID
+```http
+GET /quotations/:id
+Authorization: Bearer <token>
+```
+
 ### Get Customization by ID
 ```http
 GET /barcode/customization/:id
@@ -492,6 +540,24 @@ GET /vendor
 Authorization: Bearer <token>
 ```
 
+### Get Sale Order Summary
+Returns aggregated totals for sale orders.
+
+**URL** : `/api/sale-orders/summary`
+**Method** : `GET`
+**Query Parameters** : (Same as List Sale Orders)
+**Auth required** : YES
+
+**Success Response**:
+- **Code**: 200 OK
+- **Content**: (Matches Quotation Summary format)
+
+### Get Sale Order by ID
+```http
+GET /sale-orders/:id
+Authorization: Bearer <token>
+```
+
 ### Get Vendor by ID
 ```http
 GET /vendor/:id
@@ -589,6 +655,24 @@ Content-Type: application/json
 **Request Body**
 ```json
 { "extractionId": "...", "continue": "Yes" }
+```
+
+### Get Purchase Order Summary
+Returns aggregated totals for purchase orders.
+
+**URL** : `/api/purchase-orders/summary`
+**Method** : `GET`
+**Query Parameters** : (Same as List Purchase Orders)
+**Auth required** : YES
+
+**Success Response**:
+- **Code**: 200 OK
+- **Content**: (Matches Quotation Summary format)
+
+### Get Purchase Order by ID
+```http
+GET /purchase-orders/:id
+Authorization: Bearer <token>
 ```
 
 ### Get Purchase Invoice by ID
@@ -1559,6 +1643,28 @@ Body:
 `DELETE` /api/other-income-categories/:id
 
 
+## Shared Logic: Backend Calculation Utiltiy
+
+All document modules (Quotation, Proforma, Delivery Challan, Sale Order, Job Work, and Purchase Order) use a centralized backend calculation utility (`calculateDocumentTotals`). 
+
+### Calculation Flow:
+1. **GST Splitting**: 
+   - Compares the `placeOfSupply` (from customer/vendor info) with the source state (from the selected branch or user profile).
+   - If states match: Intra-state (IGST = 0, CGST = Rate/2, SGST = Rate/2).
+   - If states differ: Inter-state (IGST = Rate, CGST = 0, SGST = 0).
+2. **Item Totals**:
+   - `Taxable Value = Quantity * Price * (1 - Discount/100)`.
+   - `Item Total = Taxable Value + CGST + SGST + IGST`.
+3. **Document Aggregates**:
+   - Sums all item-level taxable values, taxes, and additional charges.
+   - Applies rounding to the `Grand Total`.
+   - Automatically generates `Total In Words`.
+
+### Frontend Responsibility:
+The frontend only needs to send `qty`, `price`, `discount`, and the base `igst` rate. All other totals and individual tax amounts will be computed and persisted by the backend.
+
+---
+
 ## Quotations
 
 ### Custom Fields
@@ -1856,8 +1962,976 @@ Body:
 
 ### Delete
 `DELETE` /api/purchase-orders/:id
+## Sale Orders
+
+### Custom Fields
+`GET` /api/sale-orders/custom-fields
+`POST` /api/sale-orders/custom-fields
+`PUT` /api/sale-orders/custom-fields/:id
+`DELETE` /api/sale-orders/custom-fields/:id
+
+### Item Columns
+`GET` /api/sale-orders/item-columns
+`POST` /api/sale-orders/item-columns
+`PUT` /api/sale-orders/item-columns/:id
+`DELETE` /api/sale-orders/item-columns/:id
+
+### List (Paginated)
+`GET` /api/sale-orders
+- Query Params: `page`, `limit`, `sort`, `order`
+
+### Search (Advanced)
+`GET` /api/sale-orders/search
+- Query Params:
+    - `page`, `limit`, `sort`, `order`
+    - `search` (Global search in customer information, SO number, remarks, products)
+    - `showAll` (`true` to disable pagination/filters)
+    - `company` / `customerName`
+    - `product` / `productName`
+    - `productGroup`
+    - `soNo` / `soNumber`
+    - `saleOrderType` (Enum: `REGULAR`, `BILL_OF_SUPPLY`, `SEZ/EXPORT with IGST`, `SEZ/EXPORT without IGST`)
+    - `status` (Enum: `NEW`, `PENDING`, `IN_WORK`, `COMPLETED`)
+    - `fromDate` / `toDate`
+    - `minAmount` / `maxAmount`
+    - `lrNo` / `documentNo`
+    - `itemNote`
+    - `remarks` / `documentRemarks`
+    - `gstin` / `gstinPan`
+    - `shipTo` / `shippingAddress`
+    - `staffName`
+    - `cf_<fieldName>` (Custom field filters)
+    - `advanceFilter` (JSON: `{ "field": "...", "operator": "...", "value": "..." }`)
+
+### Summary
+`GET` /api/sale-orders/summary
+- Supports same filters as search.
+
+### Single SO Detail
+`GET` /api/sale-orders/:id
+
+### Create
+`POST` /api/sale-orders
+- Body: `customerInformation`, `saleOrderDetails`, `transportDetails`, `items`, `additionalCharges`, `totals`, `bankDetails`, `termsTitle`, `termsDetails`, `documentRemarks`, `customFields`, `staff`.
+
+### Update
+`PUT` /api/sale-orders/:id
+
+### Delete
+`DELETE` /api/sale-orders/:id
 
 
+## Job Work
 
+### List
+`GET` /api/job-work
+- Query Params: `page`, `limit`, `sort`, `order`, `search`, `status`, `fromDate`, `toDate`, `jobWorkNumber`, `company`.
 
+### Summary
+`GET` /api/job-work/summary
+- Supports same filters as List (`search`, `status`, `fromDate`, `toDate`, `jobWorkNumber`, `company`).
+- Returns: `totalTransactions`, `totalTaxable`, `totalCGST`, `totalSGST`, `totalIGST`, `totalValue`.
 
+### Search (Advanced)
+`GET` /api/job-work/search
+- Query Params:
+    - `page`, `limit`, `sort`, `order`
+    - `search` (Keyword search)
+    - `company` / `customerName`
+    - `product` / `productName`
+    - `productGroup`
+    - `fromDate` / `toDate`
+    - `staffName`
+    - `jobWorkNumber`
+    - `total`
+    - `lrNo`
+    - `itemNote`
+    - `remarks`
+    - `gstin`
+    - `status` (new, pending, in-work, completed)
+    - `jobWorkType`
+    - `shippingAddress`
+    - `advanceFilters` (JSON Array: `[{ "field": "...", "operator": "...", "value": "..." }]`)
+
+### Single Detail
+`GET` /api/job-work/:id
+
+### Create
+`POST` /api/job-work
+- Body: `customerInformation`, `jobWorkDetails`, `shippingAddress`, `useSameShippingAddress`, `items`, `additionalCharges`, `totals`, `staff`, `branch`, `bankDetails`, `termsTitle`, `termsDetails`, `documentRemarks`, `shareOnEmail`, `customFields`.
+
+### Update
+`PUT` /api/job-work/:id
+
+### Delete
+`DELETE` /api/job-work/:id
+
+---
+
+## Shipping Distance Logic
+All document creation APIs (Quotation, Sales Order, Proforma, Delivery Challan, Purchase Order, Job Work) now automatically calculate and store `distance` in kilometers in the `shippingAddress` object based on the source branch (Dispatch Address or User Profile) and destination pincode.
+If `useSameShippingAddress` is true, billing address details are used.
+
+---
+
+## Letters
+
+### Create Letter
+```http
+POST /api/letters
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+**Request Body**
+```json
+{
+  "title": "Appointment Letter",
+  "letterNumber": {
+    "prefix": "ALT",
+    "number": "001",
+    "postfix": "2024"
+  },
+  "letterDate": "2024-01-01",
+  "templateType": "BLANK",
+  "letterBody": "Dear {{name}}, this is your letter for {{letter-no}} on {{letter-date}}."
+}
+```
+
+### Get All Letters
+```http
+GET /api/letters?page=1&limit=10&sort=createdAt&order=desc
+Authorization: Bearer <token>
+```
+**Response**
+```json
+{
+  "success": true,
+  "count": 1,
+  "total": 1,
+  "page": 1,
+  "pages": 1,
+  "data": [ ... ]
+}
+```
+
+### Search Letters
+```http
+GET /api/letters/search?title=appointment&fromDate=2024-01-01&toDate=2024-12-31&letterNo=ALT&staffName=John
+Authorization: Bearer <token>
+```
+**Query Parameters**
+- `title`: Partial match (case-insensitive)
+- `fromDate`, `toDate`: Date range for `letterDate`
+- `letterNo`: Match prefix, number, or postfix
+- `staffName`: Partial match for staff name (resolves to ID)
+- `page`, `limit`, `sort`, `order`: Pagination and sorting
+
+### Get Letter by ID
+```http
+GET /api/letters/:id
+Authorization: Bearer <token>
+```
+
+### Update Letter
+```http
+PUT /api/letters/:id
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+**Request Body**
+```json
+{
+  "title": "Updated Title",
+  "letterBody": "Updated content with placeholders..."
+}
+```
+
+### Delete Letter (Soft Delete)
+```http
+DELETE /api/letters/:id
+Authorization: Bearer <token>
+```
+
+---
+
+## Packing List
+
+### Create Packing List
+```http
+POST /api/packing-list
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+**Request Body**
+```json
+{
+  "customerInformation": {
+    "ms": "Acme Corp",
+    "address": "123 Street",
+    "contactPerson": "John Doe",
+    "phone": "9876543210",
+    "gstinPan": "27ABCDE1234F1Z1",
+    "placeOfSupply": "Maharashtra"
+  },
+  "packingListDetails": {
+    "prefix": "PK",
+    "number": "001",
+    "invoiceNumber": "INV-101",
+    "invoiceDate": "2024-01-01",
+    "invoiceType": "Regular"
+  },
+  "items": [
+    {
+      "productDescription": "Widget A",
+      "qty": 100,
+      "grossWeight": 50,
+      "netWeight": 45,
+      "productGroup": "Electronics"
+    }
+  ],
+  "totals": {
+    "totalPackages": 1,
+    "totalGrossWeight": 50,
+    "totalNetWeight": 45
+  },
+  "saveAndPrint": true
+}
+```
+> **Note**: Set `saveAndPrint: true` to generate a PDF and store the URL in `pdfUrl`.
+
+### Get Packing Lists (with Search)
+```http
+GET /api/packing-list?company=Acme&productGroup=Electronics&invoiceNo=INV-101&fromDate=2024-01-01&toDate=2024-12-31
+Authorization: Bearer <token>
+```
+**Query Parameters**
+- `company`, `product`, `productGroup`, `invoiceNo`, `challanNo`, `itemNote`, `remarks`, `gstin`, `invoiceType`
+- `fromDate`, `toDate` (based on `invoiceDate`)
+- `staffName` (resolves to staff owner)
+- `page`, `limit`, `sort`, `order`
+
+### Download Packing List PDF
+```http
+GET /api/packing-list/:id/download
+Authorization: Bearer <token>
+```
+
+### Delete Packing List
+DELETE /api/packing-list/:id
+Authorization: Bearer <token>
+```
+
+---
+
+## Manufacture
+
+### Create Manufacture Entry
+```http
+POST /api/manufacture
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+**Request Body**
+```json
+{
+  "product": "507f1f77bcf86cd799439011",
+  "quantity": 100,
+  "uom": "Pieces",
+  "manufactureNumber": "MFG-001",
+  "manufactureDate": "2024-01-15",
+  "rawMaterials": [
+    {
+      "productName": "Steel Sheet",
+      "qty": 50,
+      "uom": "kg",
+      "price": 100,
+      "itemNote": "Grade A"
+    }
+  ],
+  "otherOutcomes": [
+    {
+      "productName": "Scrap Metal",
+      "qty": 5,
+      "price": 20
+    }
+  ],
+  "adjustment": {
+    "type": "Rs",
+    "value": 500,
+    "sign": "+"
+  },
+  "documentRemarks": "First batch",
+  "customFields": {
+    "batchCode": "BATCH-A1"
+  }
+}
+```
+> **Note**: All totals (`rawMaterialTotal`, `otherOutcomeTotal`, `grandTotal`, `unitPrice`, `totalInWords`) are calculated automatically by the backend.
+
+### Get Manufactures (Paginated)
+```http
+GET /api/manufacture?page=1&limit=10&sort=manufactureDate&order=desc
+Authorization: Bearer <token>
+```
+
+### Get Manufacture by ID
+```http
+GET /api/manufacture/:id
+Authorization: Bearer <token>
+```
+
+### Update Manufacture
+```http
+PUT /api/manufacture/:id
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+### Search Manufactures
+```http
+GET /api/manufacture/search?productName=Steel&fromDate=2024-01-01&toDate=2024-12-31
+Authorization: Bearer <token>
+```
+**Query Parameters**
+- `productName`: Search for product names within `rawMaterials` and `otherOutcomes` arrays (case-insensitive partial match)
+- `fromDate`, `toDate`: Date range filter on `manufactureDate`
+- `page`, `limit`: Pagination
+
+**Implementation Note**: This endpoint searches for the product name text within the `rawMaterials.productName` and `otherOutcomes.productName` fields using $regex, not by looking up the referenced Product document.
+
+**Response (No Records)**
+```json
+{
+  "success": true,
+  "data": [],
+  "message": "No record found"
+}
+```
+
+---
+
+## Credit Note
+
+### Create Credit Note
+```http
+POST /api/credit-note
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+**Request Body**
+```json
+{
+  "customerInformation": {
+    "ms": "ABC Corporation",
+    "address": "123 Main St",
+    "gstinPan": "27ABCDE1234F1Z1",
+    "placeOfSupply": "Maharashtra",
+    "reverseCharge": false
+  },
+  "creditNoteDetails": {
+    "cnNumber": "CN-0001",
+    "cnDate": "2024-01-15",
+    "invoiceNumber": "INV-2024-001",
+    "invoiceDate": "2024-01-10",
+    "docType": "Regular",
+    "cnType": "Price Difference",
+    "deliveryMode": "By Hand"
+  },
+  "items": [
+    {
+      "productName": "Product A",
+      "qty": 10,
+      "price": 100,
+      "discount": 5,
+      "igst": 18
+    }
+  ],
+  "additionalCharges": [
+    {
+      "name": "Packing",
+      "amount": 50,
+      "tax": 9
+    }
+  ],
+  "useSameShippingAddress": true
+}
+```
+> **Note**: All totals (totalCreditValue, totalTaxable, totalTax, CGST/SGST/IGST, roundOff, grandTotal, totalInWords) are calculated automatically by the backend using shared calculation utilities. Tax determination (IGST vs CGST+SGST) is based on place of supply comparison.
+
+### Get Credit Notes (Paginated)
+```http
+GET /api/credit-note?page=1&limit=10&sort=createdAt&order=desc
+Authorization: Bearer <token>
+```
+
+### Get Credit Note by ID
+```http
+GET /api/credit-note/:id
+Authorization: Bearer <token>
+```
+
+### Update Credit Note
+```http
+PUT /api/credit-note/:id
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+### Delete Credit Note
+```http
+DELETE /api/credit-note/:id
+Authorization: Bearer <token>
+```
+
+### Search Credit Notes
+```http
+GET /api/credit-note/search?company=ABC&product=Widget&fromDate=2024-01-01&toDate=2024-12-31&cnType=Price%20Difference
+Authorization: Bearer <token>
+```
+**Query Parameters**
+- `search`: Keyword search across M/S, C.N. number, remarks, product names
+- `company`, `customerName`: Filter by customer M/S (partial match)
+- `product`, `productName`: Filter by product name in items (partial match)
+- `productGroup`: Filter by product group (partial match)
+- `fromDate`, `toDate`: Date range filter on C.N. Date
+- `staffName`: Filter by staff name (resolves to ID)
+- `cnNumber`, `creditNoteNumber`: Search in prefix/number/postfix
+- `minTotal`, `maxTotal`: Filter by grand total range
+- `lrNo`: Search in customFields.lr_no
+- `eWayBill`: Search in customFields.eway_bill
+- `itemNote`: Filter by item notes
+- `remarks`: Filter by document remarks
+- `gstin`: Filter by GSTIN/PAN
+- `cnType`, `creditNoteType`: Filter by Credit Note Type
+- `docType`: Filter by Document Type
+- `shippingAddress`: Search in shipping address fields
+- `advField`, `advOperator`, `advValue`: Advanced filter (operators: eq, ne, gt, gte, lt, lte, contains)
+- `page`, `limit`, `sort`, `order`: Pagination and sorting
+
+**Response (No Records)**
+```json
+{
+  "success": true,
+  "data": [],
+  "message": "No record found"
+}
+```
+
+**Response (With Results)**
+```json
+{
+  "success": true,
+  "count": 5,
+  "total": 25,
+  "page": 1,
+  "pages": 3,
+  "data": [...]
+}
+```
+
+### Get Credit Note Summary
+```http
+GET /api/credit-note/summary?company=ABC&fromDate=2024-01-01&toDate=2024-12-31
+Authorization: Bearer <token>
+```
+**Query Parameters**
+- `company`: Filter by customer M/S (partial match)
+- `fromDate`, `toDate`: Date range filter on C.N. Date
+
+**Response**
+```json
+{
+  "success": true,
+  "data": {
+    "totalTransactions": 10,
+    "totalTaxable": 50000,
+    "totalCGST": 4500,
+    "totalSGST": 4500,
+    "totalIGST": 0,
+    "totalValue": 59000
+  }
+}
+```
+
+---
+
+## Debit Note
+
+### Create Debit Note
+```http
+POST /api/debit-note
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+**Request Body**
+```json
+{
+  "customerInformation": {
+    "ms": "XYZ Corporation",
+    "address": "456 Market St",
+    "gstinPan": "27XYZAB1234F1Z1",
+    "placeOfSupply": "Maharashtra",
+    "reverseCharge": false
+  },
+  "debitNoteDetails": {
+    "dnNumber": "DN-0001",
+    "dnDate": "2024-01-20",
+    "invoiceNumber": "INV-2024-005",
+    "invoiceDate": "2024-01-15",
+    "docType": "Regular",
+    "dnType": "Quantity Shortage",
+    "deliveryMode": "Courier"
+  },
+  "items": [
+    {
+      "productName": "Product B",
+      "qty": 5,
+      "price": 200,
+      "discount": 10,
+      "igst": 18
+    }
+  ],
+  "additionalCharges": [
+    {
+      "name": "Freight",
+      "amount": 100,
+      "tax": 18
+    }
+  ],
+  "useSameShippingAddress": true
+}
+```
+> **Note**: All totals (totalDebitValue, totalTaxable, totalTax, CGST/SGST/IGST, roundOff, grandTotal, totalInWords) are calculated automatically by the backend using shared calculation utilities. Tax determination (IGST vs CGST+SGST) is based on place of supply comparison.
+
+### Get Debit Notes (Paginated)
+```http
+GET /api/debit-note?page=1&limit=10&sort=createdAt&order=desc
+Authorization: Bearer <token>
+```
+
+### Get Debit Note by ID
+```http
+GET /api/debit-note/:id
+Authorization: Bearer <token>
+```
+
+### Update Debit Note
+```http
+PUT /api/debit-note/:id
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+### Delete Debit Note
+```http
+DELETE /api/debit-note/:id
+Authorization: Bearer <token>
+```
+
+### Search Debit Notes
+```http
+GET /api/debit-note/search?company=XYZ&product=Widget&fromDate=2024-01-01&toDate=2024-12-31&dnType=goods%20return
+Authorization: Bearer <token>
+```
+**Query Parameters**
+- `search`: Keyword search across M/S, D.N. number, remarks, product names, item notes
+- `company`, `customerName`: Filter by customer M/S (partial match)
+- `product`, `productName`: Filter by product name in items (partial match)
+- `productGroup`: Filter by product group (partial match)
+- `fromDate`, `toDate`: Date range filter on D.N. Date
+- `staffName`: Filter by staff name (resolves to ID)
+- `dnNumber`, `debitNoteNumber`: Search in prefix/number/postfix
+- `minTotal`, `maxTotal`: Filter by grand total range
+- `lrNo`: Search in customFields.lr_no
+- `eWayBill`: E-Way Bill filter with modes:
+  - `without` or `without e-way bill`: Records without E-Way Bill
+  - `with` or `with e-way bill`: Records with active E-Way Bill
+  - `cancelled` or `cancelled e-way bill`: Records with cancelled E-Way Bill
+  - Direct number: Search by E-Way Bill number
+- `itemNote`: Filter by item notes
+- `remarks`: Filter by document remarks
+- `gstin`: Filter by GSTIN/PAN
+- `dnType`, `debitNoteType`: Filter by Debit Note Type (enum: goods return, discount after save, correction in invoice)
+- `docType`: Filter by Document Type (enum: regular, bill of supply, sez debit note (with IGST), sez debit note (without IGST), export debit(with IGST), export debit(without IGST))
+- `shippingAddress`: Search in shipping address fields
+- `advField`, `advOperator`, `advValue`: Advanced filter (operators: eq, ne, gt, gte, lt, lte, contains)
+- `page`, `limit`, `sort`, `order`: Pagination and sorting
+
+**Response (No Records)**
+```json
+{
+  "success": true,
+  "data": [],
+  "message": "No record found"
+}
+```
+
+**Response (With Results)**
+```json
+{
+  "success": true,
+  "count": 5,
+  "total": 25,
+  "page": 1,
+  "pages": 3,
+  "data": [...]
+}
+```
+
+### Get Debit Note Summary
+```http
+GET /api/debit-note/summary?company=XYZ&fromDate=2024-01-01&toDate=2024-12-31
+Authorization: Bearer <token>
+```
+**Query Parameters**
+- `company`: Filter by customer M/S (partial match)
+- `fromDate`, `toDate`: Date range filter on D.N. Date
+
+**Response**
+```json
+{
+  "success": true,
+  "data": {
+    "totalTransactions": 8,
+    "totalTaxable": 40000,
+    "totalCGST": 3600,
+    "totalSGST": 3600,
+    "totalIGST": 0,
+    "totalValue": 47200
+  }
+}
+```
+
+---
+
+## Multi-Currency Export Invoice
+
+### Create Multi-Currency Export Invoice
+```http
+POST /api/export-invoice
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+**Request Body**
+```json
+{
+  "customerInformation": {
+    "ms": "Global Export Corp",
+    "address": "789 Export Street, Mumbai",
+    "contactPerson": "John Doe",
+    "phone": "+91-9876543210",
+    "gstinPan": "27ABCDE1234F1Z1",
+    "placeOfSupply": "Maharashtra",
+    "reverseCharge": false
+  },
+  "invoiceDetails": {
+    "invoiceType": "Export Invoice (With IGST)",
+    "invoicePrefix": "EXP",
+    "invoiceNumber": "EXP-0001",
+    "invoicePostfix": "",
+    "date": "2024-01-25",
+    "deliveryMode": "Sea Freight"
+  },
+  "currency": {
+    "code": "AED",
+    "symbol": "AED"
+  },
+  "exportShippingDetails": {
+    "shipBillNo": "SB-2024-001",
+    "shipBillDate": "2024-01-20",
+    "shipPortCode": "INMUM",
+    "preCarriageBy": "Road",
+    "placeOfPreCarriage": "Mumbai",
+    "vesselOrFlightNo": "MV-OCEAN-123",
+    "portOfLoading": "Mumbai Port",
+    "portOfDischarge": "Dubai Port",
+    "finalDestination": "Dubai, UAE",
+    "countryOfOrigin": "India",
+    "countryOfFinal": "UAE",
+    "weightKg": 5000,
+    "packages": 50
+  },
+  "items": [
+    {
+      "productName": "Textile Goods",
+      "productGroup": "Textiles",
+      "itemNote": "Export quality",
+      "hsnSac": "5208",
+      "qty": 100,
+      "uom": "PCS",
+      "price": 50,
+      "discount": 5,
+      "igst": 0
+    }
+  ],
+  "additionalCharges": [
+    {
+      "name": "Freight Charges",
+      "amount": 500,
+      "tax": 0
+    }
+  ],
+  "useSameShippingAddress": false,
+  "shippingAddress": {
+    "street": "789 Export Street",
+    "city": "Mumbai",
+    "state": "Maharashtra",
+    "country": "India",
+    "pincode": "400001"
+  },
+  "staff": "60f1b2c3d4e5f6a7b8c9d0e1",
+  "branch": {
+    "_id": "60f1b2c3d4e5f6a7b8c9d0e2",
+    "state": "Maharashtra"
+  },
+  "bankDetails": {
+    "bankName": "Export Bank",
+    "accountNumber": "1234567890",
+    "ifscCode": "EXBK0001234"
+  },
+  "termsTitle": "Terms & Conditions",
+  "termsDetails": [
+    "Payment within 30 days",
+    "FOB Mumbai Port"
+  ],
+  "documentRemarks": "Export invoice for UAE shipment",
+  "shareOnEmail": false,
+  "customFields": {}
+}
+```
+**Invoice Type Options**
+- `Export Invoice (With IGST)`: IGST is entered by user, CGST/SGST are derived from IGST when applicable (CGST = IGST ÷ 2, SGST = IGST ÷ 2). Manual CGST/SGST entry is prevented.
+- `Export Invoice (Without IGST)`: No IGST applied, no CGST/SGST.
+
+**Currency Support**
+- Supported currency codes: `AED`, `USD`, `EUR`, `GBP`, `SAR`, `INR`
+- Currency is stored in database and reflected in totals and "total in words"
+
+**Required Fields**
+- `customerInformation.ms`: Customer name (M/S)
+- `customerInformation.placeOfSupply`: Place of supply
+- `invoiceDetails.invoiceType`: Must be "Export Invoice (With IGST)" or "Export Invoice (Without IGST)"
+- `invoiceDetails.invoiceNumber`: Invoice number (auto-generated if not provided)
+- `invoiceDetails.date`: Invoice date
+- `currency.code`: Currency code (default: "AED")
+- `exportShippingDetails.shipBillNo`: Shipping Bill Number
+- `exportShippingDetails.shipBillDate`: Shipping Bill Date
+- `exportShippingDetails.shipPortCode`: Port Code
+- `exportShippingDetails.portOfLoading`: Port of Loading
+- `exportShippingDetails.portOfDischarge`: Port of Discharge
+- `exportShippingDetails.finalDestination`: Final Destination
+- `exportShippingDetails.countryOfOrigin`: Country of Origin
+- `exportShippingDetails.countryOfFinal`: Country of Final Destination
+- `items`: Array of items (at least one item required)
+  - `productName`: Required
+  - `qty`: Required, must be > 0
+  - `price`: Required, must be > 0
+
+> **Note**: All totals (totalInvoiceValue, totalTaxable, totalTax, CGST/SGST/IGST, roundOff, grandTotal, totalInWords) are calculated automatically by the backend using multi-currency export invoice calculation utilities. For Export Invoice (With IGST), IGST is entered by user and CGST/SGST are derived from IGST when applicable (CGST = IGST ÷ 2, SGST = IGST ÷ 2). Manual CGST/SGST entry is prevented. Currency is reflected in "total in words" (e.g., "Dirhams One Thousand Only" for AED).
+
+**Response**
+```json
+{
+  "success": true,
+  "message": "Multi-Currency Export Invoice created successfully",
+  "data": {
+    "_id": "60f1b2c3d4e5f6a7b8c9d0e3",
+    "userId": "60f1b2c3d4e5f6a7b8c9d0e0",
+    "customerInformation": { ... },
+    "invoiceDetails": { ... },
+    "currency": {
+      "code": "AED",
+      "symbol": "AED"
+    },
+    "exportShippingDetails": { ... },
+    "items": [ ... ],
+    "totals": {
+      "totalInvoiceValue": 5250,
+      "totalTaxable": 4750,
+      "totalTax": 0,
+      "totalCGST": 0,
+      "totalSGST": 0,
+      "totalIGST": 0,
+      "roundOff": 0,
+      "grandTotal": 5250,
+      "totalInWords": "Dirhams Five Thousand Two Hundred Fifty Only"
+    },
+    "createdAt": "2024-01-25T10:00:00.000Z",
+    "updatedAt": "2024-01-25T10:00:00.000Z"
+  }
+}
+```
+
+### Get Multi-Currency Export Invoices (Paginated)
+```http
+GET /api/export-invoice?page=1&limit=10&sort=createdAt&order=desc
+Authorization: Bearer <token>
+```
+**Query Parameters**
+- `page`: Page number (default: 1)
+- `limit`: Items per page (default: 10)
+- `sort`: Sort field (default: createdAt)
+- `order`: Sort order - `asc` or `desc` (default: desc)
+
+**Response**
+```json
+{
+  "success": true,
+  "total": 50,
+  "page": 1,
+  "pages": 5,
+  "data": [
+    {
+      "_id": "60f1b2c3d4e5f6a7b8c9d0e3",
+      "customerInformation": { ... },
+      "invoiceDetails": { ... },
+      "currency": { ... },
+      "exportShippingDetails": { ... },
+      "items": [ ... ],
+      "totals": { ... }
+    }
+  ]
+}
+```
+
+### Get Multi-Currency Export Invoice by ID
+```http
+GET /api/export-invoice/:id
+Authorization: Bearer <token>
+```
+**Response**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "60f1b2c3d4e5f6a7b8c9d0e3",
+    "customerInformation": { ... },
+    "invoiceDetails": { ... },
+    "currency": { ... },
+    "exportShippingDetails": { ... },
+    "items": [ ... ],
+    "totals": { ... },
+    "staff": {
+      "_id": "60f1b2c3d4e5f6a7b8c9d0e1",
+      "fullName": "John Smith"
+    }
+  }
+}
+```
+
+### Update Multi-Currency Export Invoice
+```http
+PUT /api/export-invoice/:id
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+**Request Body**
+Same structure as Create Multi-Currency Export Invoice. All fields are optional - only provided fields will be updated.
+
+**Response**
+```json
+{
+  "success": true,
+  "message": "Multi-Currency Export Invoice updated successfully",
+  "data": {
+    "_id": "60f1b2c3d4e5f6a7b8c9d0e3",
+    "customerInformation": { ... },
+    "invoiceDetails": { ... },
+    "currency": { ... },
+    "exportShippingDetails": { ... },
+    "items": [ ... ],
+    "totals": { ... },
+    "updatedAt": "2024-01-25T11:00:00.000Z"
+  }
+}
+```
+
+### Delete Multi-Currency Export Invoice
+```http
+DELETE /api/export-invoice/:id
+Authorization: Bearer <token>
+```
+**Response**
+```json
+{
+  "success": true,
+  "message": "Multi-Currency Export Invoice deleted successfully"
+}
+```
+
+### Search Multi-Currency Export Invoices
+```http
+GET /api/export-invoice/search?company=Global&product=Textile&fromDate=2024-01-01&toDate=2024-12-31&invoiceType=Export%20Invoice%20(With%20IGST)&currency=AED
+Authorization: Bearer <token>
+```
+**Query Parameters**
+- `search`: Keyword search across M/S, invoice number, remarks, product names, item notes, shipping bill number, ports
+- `company`, `customerName`: Filter by customer M/S (partial match)
+- `product`, `productName`: Filter by product name in items (partial match)
+- `productGroup`: Filter by product group (partial match)
+- `fromDate`, `toDate`: Date range filter on invoice date
+- `staffName`: Filter by staff name (resolves to ID)
+- `invoiceNumber`: Search in prefix/number/postfix
+- `invoiceType`: Filter by invoice type - "Export Invoice (With IGST)" or "Export Invoice (Without IGST)"
+- `currency`: Filter by currency code (e.g., AED, USD, EUR)
+- `minTotal`, `maxTotal`: Filter by grand total range
+- `page`, `limit`, `sort`, `order`: Pagination and sorting
+
+**Response (No Records)**
+```json
+{
+  "success": true,
+  "data": [],
+  "message": "No record found"
+}
+```
+
+**Response (With Results)**
+```json
+{
+  "success": true,
+  "count": 5,
+  "total": 25,
+  "page": 1,
+  "pages": 3,
+  "data": [
+    {
+      "_id": "60f1b2c3d4e5f6a7b8c9d0e3",
+      "customerInformation": { ... },
+      "invoiceDetails": { ... },
+      "currency": { ... },
+      "exportShippingDetails": { ... },
+      "items": [ ... ],
+      "totals": { ... }
+    }
+  ]
+}
+```
+
+### Get Multi-Currency Export Invoice Summary
+```http
+GET /api/export-invoice/summary?company=Global&fromDate=2024-01-01&toDate=2024-12-31&invoiceType=Export%20Invoice%20(With%20IGST)&currency=AED
+Authorization: Bearer <token>
+```
+**Query Parameters**
+- `company`: Filter by customer M/S (partial match)
+- `fromDate`, `toDate`: Date range filter on invoice date
+- `invoiceType`: Filter by invoice type
+- `currency`: Filter by currency code
+
+**Response**
+```json
+{
+  "success": true,
+  "data": {
+    "totalTransactions": 15,
+    "totalTaxable": 75000,
+    "totalCGST": 0,
+    "totalSGST": 0,
+    "totalIGST": 6750,
+    "totalValue": 81750
+  }
+}
+```
+
+---
