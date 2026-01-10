@@ -1,78 +1,100 @@
+// 🔴 MUST BE FIRST LINE
+require('dotenv').config({ silent: true });
+
 const express = require('express');
-const dotenv = require('dotenv');
 const cors = require('cors');
+const path = require('path');
+
 const connectDB = require('./config/db');
-const authRoutes = require('./routes/authRoutes');
-const userRoutes = require('./routes/userRoutes');
-const customerRoutes = require('./routes/customerRoutes');
-const productRoutes = require('./routes/productRoutes');
-const productGroupRoutes = require('./routes/productGroupRoutes');
-const barcodeCustomizationRoutes = require('./routes/barcodeCustomizationRoutes');
-const importRoutes = require('./routes/importRoutes');
-const deliveryChallanRoutes = require('./routes/deliveryChallanRoutes');
+const { getInitializer } = require('./utils/initializeOptimizedEnvironment');
+const { getPerformanceMonitor, performanceMiddleware } = require('./utils/performanceMonitor');
 
-const barcodeGenerateRoutes = require('./routes/barcodeGenerateRoutes');
-const saleInvoiceRoutes = require('./routes/saleInvoiceRoutes');
-const vendorRoutes = require('./routes/vendorRoutes');
-const customerVendorRoutes = require('./routes/customerVendorRoutes');
-const purchaseInvoiceRoutes = require('./routes/purchaseInvoiceRoutes');
-const additionalChargeRoutes = require('./routes/additionalChargeRoutes');
-const purchaseInvoiceCustomFieldRoutes = require('./routes/purchaseInvoiceCustomFieldRoutes');
-const productCustomColumnRoutes = require('./routes/productCustomColumnRoutes');
-const membershipRoutes = require('./routes/membershipRoutes');
-const creditRoutes = require('./routes/creditRoutes');
-const settingSecurityRoutes = require('./routes/settingSecurityRoutes');
-const staffRoutes = require('./routes/staffRoutes');
-const goDriveRoutes = require('./routes/goDriveRoutes');
-const digitalSignatureRoutes = require('./routes/digitalSignatureRoutes');
-const activityLogRoutes = require('./routes/activityLogRoutes');
-const generalSettingsRoutes = require('./routes/generalSettingsRoutes');
-const productStockSettingsRoutes = require('./routes/productStockSettingsRoutes');
-const printTemplateSettingsRoutes = require('./routes/printTemplateSettingsRoutes');
-const printOptionsRoutes = require('./routes/printOptionsRoutes');
-const bankDetailsRoutes = require('./routes/bankDetailsRoutes');
-const termsConditionsRoutes = require('./routes/termsConditionsRoutes');
-const shippingEnvelopeSettingsRoutes = require('./routes/shippingEnvelopeSettingsRoutes');
-const messageTemplateSettingsRoutes = require('./routes/messageTemplateSettingsRoutes');
-const paymentReminderSettingsRoutes = require('./routes/paymentReminderSettingsRoutes');
-const customHeaderDesignRoutes = require('./routes/customHeaderDesignRoutes');
-const headerShapesRoutes = require('./routes/headerShapesRoutes');
-const inwardPaymentRoutes = require('./routes/inwardPaymentRoutes');
-const outwardPaymentRoutes = require('./routes/outwardPaymentRoutes');
-const dailyExpenseRoutes = require('./routes/dailyExpenseRoutes');
-const expenseCategoryRoutes = require('./routes/expenseCategoryRoutes');
-const otherIncomeRoutes = require('./routes/otherIncomeRoutes');
-const otherIncomeCategoryRoutes = require('./routes/otherIncomeCategoryRoutes');
-const quotationRoutes = require('./routes/quotationRoutes');
-const proformaRoutes = require('./routes/proformaRoutes');
-const purchaseOrderRoutes = require('./routes/purchaseOrderRoutes');
-const saleOrderRoutes = require('./routes/saleOrderRoutes');
-const jobWorkRoutes = require('./routes/jobWorkRoutes');
-const letterRoutes = require('./routes/letterRoutes');
-const packingListRoutes = require('./routes/packingListRoutes');
-const manufactureRoutes = require('./routes/manufactureRoutes');
-const creditNoteRoutes = require('./routes/creditNoteRoutes');
-const debitNoteRoutes = require('./routes/debitNoteRoutes');
-const exportInvoiceRoutes = require('./routes/Multi-CurrencyExportInvoiceRoutes');
+// Routes
+const authRoutes = require('./routes/Login-Routes/authRoutes');
+const userRoutes = require('./routes/User-Routes/userRoutes');
+const customerRoutes = require('./routes/Customer-Vendor-Routes/customerRoutes');
+const productRoutes = require('./routes/Product-Service-Routes/productRoutes');
+const productGroupRoutes = require('./routes/Product-Service-Routes/productGroupRoutes');
+const barcodeCustomizationRoutes = require('./routes/Product-Service-Routes/barcodeCustomizationRoutes');
+const importRoutes = require('./routes/Import-Routes/importRoutes');
+const deliveryChallanRoutes = require('./routes/Other-Document-Routes/deliveryChallanRoutes');
+const barcodeGenerateRoutes = require('./routes/Product-Service-Routes/barcodeGenerateRoutes');
+const saleInvoiceRoutes = require('./routes/Sales-Invoice-Routes/saleInvoiceRoutes');
+const vendorRoutes = require('./routes/Customer-Vendor-Routes/vendorRoutes');
+const customerVendorRoutes = require('./routes/Customer-Vendor-Routes/customerVendorRoutes');
+const purchaseInvoiceRoutes = require('./routes/Purchase-Invoice-Routes/purchaseInvoiceRoutes');
+const additionalChargeRoutes = require('./routes/Additional-Charge-Routes/additionalChargeRoutes');
+const purchaseInvoiceCustomFieldRoutes = require('./routes/Purchase-Invoice-Routes/purchaseInvoiceCustomFieldRoutes');
+const productCustomColumnRoutes = require('./routes/Product-Service-Routes/productCustomColumnRoutes');
+const membershipRoutes = require('./routes/Setting-Page-Routes/membershipRoutes');
+const creditRoutes = require('./routes/Setting-Page-Routes/creditRoutes');
+const settingSecurityRoutes = require('./routes/Setting-Page-Routes/settingSecurityRoutes');
+const staffRoutes = require('./routes/Setting-Page-Routes/staffRoutes');
+const goDriveRoutes = require('./routes/Other-Document-Routes/goDriveRoutes');
+const digitalSignatureRoutes = require('./routes/Setting-Page-Routes/digitalSignatureRoutes');
+const activityLogRoutes = require('./routes/Activity-Log-Routes/activityLogRoutes');
+const generalSettingsRoutes = require('./routes/Setting-Page-Routes/generalSettingsRoutes');
+const productStockSettingsRoutes = require('./routes/Product-Service-Routes/productStockSettingsRoutes');
+const printTemplateSettingsRoutes = require('./routes/Setting-Page-Routes/printTemplateSettingsRoutes');
+const printOptionsRoutes = require('./routes/Setting-Page-Routes/printOptionsRoutes');
+const bankDetailsRoutes = require('./routes/Bank-Detail-Routes/bankDetailsRoutes');
+const termsConditionsRoutes = require('./routes/Setting-Page-Routes/termsConditionsRoutes');
+const shippingEnvelopeSettingsRoutes = require('./routes/Setting-Page-Routes/shippingEnvelopeSettingsRoutes');
+const messageTemplateSettingsRoutes = require('./routes/Setting-Page-Routes/messageTemplateSettingsRoutes');
+const paymentReminderSettingsRoutes = require('./routes/Setting-Page-Routes/paymentReminderSettingsRoutes');
+const customHeaderDesignRoutes = require('./routes/Setting-Page-Routes/customHeaderDesignRoutes');
+const headerShapesRoutes = require('./routes/Setting-Page-Routes/headerShapesRoutes');
+const inwardPaymentRoutes = require('./routes/Payment-Routes/inwardPaymentRoutes');
+const outwardPaymentRoutes = require('./routes/Payment-Routes/outwardPaymentRoutes');
+const dailyExpenseRoutes = require('./routes/Expenses-Income-Routes/dailyExpenseRoutes');
+const expenseCategoryRoutes = require('./routes/Expenses-Income-Routes/expenseCategoryRoutes');
+const otherIncomeRoutes = require('./routes/Expenses-Income-Routes/otherIncomeRoutes');
+const otherIncomeCategoryRoutes = require('./routes/Expenses-Income-Routes/otherIncomeCategoryRoutes');
+const quotationRoutes = require('./routes/Other-Document-Routes/quotationRoutes');
+const proformaRoutes = require('./routes/Other-Document-Routes/proformaRoutes');
+const purchaseOrderRoutes = require('./routes/Purchase-Invoice-Routes/purchaseOrderRoutes');
+const saleOrderRoutes = require('./routes/Other-Document-Routes/saleOrderRoutes');
+const jobWorkRoutes = require('./routes/Other-Document-Routes/jobWorkRoutes');
+const letterRoutes = require('./routes/Other-Document-Routes/letterRoutes');
+const packingListRoutes = require('./routes/Other-Document-Routes/packingListRoutes');
+const manufactureRoutes = require('./routes/Other-Document-Routes/manufactureRoutes');
+const creditNoteRoutes = require('./routes/Other-Document-Routes/creditNoteRoutes');
+const debitNoteRoutes = require('./routes/Other-Document-Routes/debitNoteRoutes');
+const exportInvoiceRoutes = require('./routes/Other-Document-Routes/Multi-CurrencyExportInvoiceRoutes');
+const reportRoutes = require('./routes/Report-Routes/salesReportRoutes');
+const salesOutstandingReportRoutes = require('./routes/Report-Routes/SalesOutstandingReportRoutes');
+const salesProductReportRoutes = require('./routes/Report-Routes/SalesProductReportRoutes');
+const inwardPaymentReportRoutes = require('./routes/Report-Routes/InwardPaymentReportRoutes');
+const purchaseReportRoutes = require('./routes/Report-Routes/PurchaseReportRoutes');
+const purchaseOutstandingReportRoutes = require('./routes/Report-Routes/PurchaseOutstandingReportRoutes');
+const purchaseProductReportRoutes = require('./routes/Report-Routes/PurchaseProductReportRoutes');
+const outwardPaymentReportRoutes = require('./routes/Report-Routes/OutwardPaymentReportRoutes');
+const otherDocumentReportRoutes = require('./routes/Report-Routes/OtherDocumentReportRoutes');
+const otherDocumentProductReportRoutes = require('./routes/Report-Routes/OtherDocumentProductReportRoutes');
+const companyLedgerReportRoutes = require('./routes/Report-Routes/CompanyLedgerReportRoutes');
+const companyOutstandingReportRoutes = require('./routes/Report-Routes/CompanyOutstandingReportRoutes');
+const profitLossReportRoutes = require('./routes/Report-Routes/Profit-LossReportRoutes');
+const stockReportRoutes = require('./routes/Report-Routes/StockReportRoutes');
+const productReportRoutes = require('./routes/Report-Routes/ProductReportRoutes'); // New Route
+const dailyExpensesReportRoutes = require('./routes/Report-Routes/DailyExpensesReportRoutes');
+const otherIncomeReportRoutes = require('./routes/Report-Routes/OtherIncomeReportRoutes');
+const dayBookReportRoutes = require('./routes/Report-Routes/DayBookReportRoutes');
+const gstr1ReportRoutes = require('./routes/Report-Routes/GSTR1ReportRoutes');
+const gstr2bReportRoutes = require('./routes/Report-Routes/GSTR2BReportRoutes');
 
-
-
-
-// Load env vars
-dotenv.config();
-
-// Connect to Database
-connectDB();
+/* -------------------- ROUTES -------------------- */
+// ... (existing routes)
 
 const app = express();
+const PORT = process.env.PORT || 5000;
 
-// Middleware
+/* -------------------- MIDDLEWARE -------------------- */
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use('/uploads', express.static(require('path').join(__dirname, 'uploads')));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Routes
+/* -------------------- ROUTES -------------------- */
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/customers', customerRoutes);
@@ -81,11 +103,12 @@ app.use('/api/product-group', productGroupRoutes);
 app.use('/api/barcode', barcodeCustomizationRoutes);
 app.use('/api/import', importRoutes);
 app.use('/api/delivery-challans', deliveryChallanRoutes);
-
 app.use('/api/barcode-generate', barcodeGenerateRoutes);
 app.use('/api/sale-invoice', saleInvoiceRoutes);
 app.use('/api/vendor', vendorRoutes);
 app.use('/api/customer-vendor', customerVendorRoutes);
+app.use('/api/purchase-invoice', purchaseInvoiceRoutes);
+app.use('/api/additional-charges', additionalChargeRoutes);
 app.use('/api/purchase-invoice/custom-fields', purchaseInvoiceCustomFieldRoutes);
 app.use('/api/product/custom-columns', productCustomColumnRoutes);
 app.use('/api/setting-membership', membershipRoutes);
@@ -112,9 +135,6 @@ app.use('/api/daily-expenses', dailyExpenseRoutes);
 app.use('/api/expense-categories', expenseCategoryRoutes);
 app.use('/api/other-incomes', otherIncomeRoutes);
 app.use('/api/other-income-categories', otherIncomeCategoryRoutes);
-app.use('/api/activities', activityLogRoutes);
-app.use('/api/purchase-invoice', purchaseInvoiceRoutes);
-app.use('/api/additional-charges', additionalChargeRoutes);
 app.use('/api/quotations', quotationRoutes);
 app.use('/api/proformas', proformaRoutes);
 app.use('/api/purchase-orders', purchaseOrderRoutes);
@@ -126,28 +146,78 @@ app.use('/api/manufacture', manufactureRoutes);
 app.use('/api/credit-note', creditNoteRoutes);
 app.use('/api/debit-note', debitNoteRoutes);
 app.use('/api/export-invoice', exportInvoiceRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/reports', salesOutstandingReportRoutes);
+app.use('/api/reports', salesProductReportRoutes);
+app.use('/api/reports', inwardPaymentReportRoutes);
+app.use('/api/reports', purchaseReportRoutes);
+app.use('/api/reports', purchaseOutstandingReportRoutes);
+app.use('/api/reports', purchaseProductReportRoutes);
+app.use('/api/reports', outwardPaymentReportRoutes);
+app.use('/api/reports', otherDocumentReportRoutes);
+app.use('/api/reports', otherDocumentProductReportRoutes);
+app.use('/api/reports', companyLedgerReportRoutes);
+app.use('/api/reports', companyOutstandingReportRoutes);
+app.use('/api/reports', profitLossReportRoutes);
+app.use('/api/reports', stockReportRoutes);
+app.use('/api/reports', productReportRoutes); // New Route
+app.use('/api/reports', dailyExpensesReportRoutes);
+app.use('/api/reports', otherIncomeReportRoutes);
+app.use('/api/reports', dayBookReportRoutes);
+app.use('/api/reports', gstr1ReportRoutes);
+app.use('/api/reports', gstr2bReportRoutes);
 
+/* -------------------- PERFORMANCE -------------------- */
+const monitor = getPerformanceMonitor();
+app.use(performanceMiddleware(monitor));
 
-
-
-
-// Base Route
+/* -------------------- BASE -------------------- */
 app.get('/', (req, res) => {
     res.send('Inout Billing API is running...');
 });
 
-// Error handling middleware
+/* -------------------- ERROR HANDLER -------------------- */
 app.use((err, req, res, next) => {
-    const statusCode = res.statusCode === 200 ? 500 : res.statusCode;
-    res.status(statusCode);
-    res.json({
+    const status = res.statusCode === 200 ? 500 : res.statusCode;
+    res.status(status).json({
         message: err.message,
-        stack: process.env.NODE_ENV === 'production' ? null : err.stack,
+        stack: process.env.NODE_ENV === 'production' ? null : err.stack
     });
 });
 
-const PORT = process.env.PORT || 5000;
+/* -------------------- SERVER START -------------------- */
+async function startServer() {
+    try {
+        // ✅ DB CONNECTION FIRST
+        await connectDB();
 
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-});
+        // ✅ OPTIMIZED ENV INITIALIZATION (SILENT)
+        const initializer = getInitializer();
+        const initResult = await initializer.initialize();
+
+        if (!initResult.success) {
+            console.error('❌ Optimized init failed:', initResult.message);
+            process.exit(1);
+        }
+
+        const server = app.listen(PORT, () => {
+            console.log(`🌐 Server running on http://localhost:${PORT}`);
+        });
+
+        const shutdown = async () => {
+            server.close(async () => {
+                await initializer.shutdown();
+                process.exit(0);
+            });
+        };
+
+        process.on('SIGINT', shutdown);
+        process.on('SIGTERM', shutdown);
+
+    } catch (error) {
+        console.error('❌ Server startup failed:', error.message);
+        process.exit(1);
+    }
+}
+
+startServer();

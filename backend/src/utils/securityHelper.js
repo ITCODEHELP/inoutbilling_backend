@@ -1,4 +1,4 @@
-const LoginHistory = require('../models/LoginHistory');
+const LoginHistory = require('../models/Login-Model/LoginHistory');
 
 /**
  * Parses user-agent string to extract basic device, browser, and platform info.
