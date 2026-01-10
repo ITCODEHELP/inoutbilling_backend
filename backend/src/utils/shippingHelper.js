@@ -1,5 +1,5 @@
-const DispatchAddress = require('../models/DispatchAddress');
-const User = require('../models/User');
+const DispatchAddress = require('../models/Setting-Model/DispatchAddress');
+const User = require('../models/User-Model/User');
 
 /**
  * Calculates the Haversine distance between two sets of coordinates.

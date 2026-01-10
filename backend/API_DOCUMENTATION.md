@@ -15,13 +15,13 @@ Content-Type: application/json
 
 ### Verify OTP
 ```http
-POST /auth/verify-otp
-Content-Type: application/json
-```
-**Request Body**
-```json
-{ "phone": "9876543210", "otp": "123456" }
-```
+  POST /auth/verify-otp
+  Content-Type: application/json
+  ```
+  **Request Body**
+  ```json
+  { "phone": "9876543210", "otp": "123456" }
+  ```
 
 ### Login
 ```http
@@ -600,16 +600,16 @@ POST /purchase-invoice/create
 Authorization: Bearer <token>
 Content-Type: application/json
 ```
-**Request Body**
-```json
-{
-  "vendorInformation": { "ms": "...", "placeOfSupply": "..." },
-  "invoiceDetails": { "invoiceNumber": "...", "date": "..." },
-  "items": [ { "productName": "...", "qty": 1, "price": 100 } ],
-  "totals": { "grandTotal": 100 },
-  "paymentType": "CASH"
-}
-```
+  **Request Body**
+  ```json
+  {
+    "vendorInformation": { "ms": "...", "placeOfSupply": "..." },
+    "invoiceDetails": { "invoiceNumber": "...", "date": "..." },
+    "items": [ { "productName": "...", "qty": 1, "price": 100 } ],
+    "totals": { "grandTotal": 100 },
+    "paymentType": "CASH"
+  }
+  ```
 
 ### Create & Print Purchase Invoice
 ```http

@@ -1,4 +1,4 @@
-const ActivityLog = require('../models/ActivityLog');
+const ActivityLog = require('../models/Setting-Model/ActivityLog');
 
 /**
  * Centrally records an activity log.
