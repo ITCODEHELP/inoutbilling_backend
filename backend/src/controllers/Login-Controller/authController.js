@@ -28,7 +28,7 @@ const sendOtp = async (req, res) => {
     const startTime = Date.now();
     const monitor = getPerformanceMonitor();
     const cacheManager = getCacheManager();
-    
+
     try {
         const { phone, countryCode, type } = req.body;
 
@@ -56,9 +56,9 @@ const sendOtp = async (req, res) => {
         const validation = SecurityValidation.validateInput(req.body, validationSchema);
         if (!validation.isValid) {
             monitor.trackRequest(req, res, Date.now() - startTime);
-            return res.status(400).json({ 
-                message: 'Validation failed', 
-                errors: validation.errors 
+            return res.status(400).json({
+                message: 'Validation failed',
+                errors: validation.errors
             });
         }
 
@@ -67,11 +67,11 @@ const sendOtp = async (req, res) => {
         // Rate limiting for OTP requests
         const rateLimitKey = `otp:${sanitizedPhone}`;
         const rateLimitResult = await SecurityValidation.checkRateLimit(rateLimitKey, 5, 300000); // 5 OTPs per 5 minutes
-        
+
         if (!rateLimitResult.allowed) {
             monitor.trackRequest(req, res, Date.now() - startTime);
-            return res.status(429).json({ 
-                message: 'Too many OTP requests', 
+            return res.status(429).json({
+                message: 'Too many OTP requests',
                 retryAfter: Math.ceil((rateLimitResult.resetTime - Date.now()) / 1000)
             });
         }
@@ -82,8 +82,8 @@ const sendOtp = async (req, res) => {
 
         if (existingOTP && existingOTP.expiresAt > Date.now()) {
             monitor.trackRequest(req, res, Date.now() - startTime);
-            return res.status(200).json({ 
-                message: 'OTP already sent', 
+            return res.status(200).json({
+                message: 'OTP already sent',
                 expiresIn: Math.ceil((existingOTP.expiresAt - Date.now()) / 1000)
             });
         }
@@ -113,7 +113,7 @@ const sendOtp = async (req, res) => {
         ];
 
         const results = await PerformanceOptimization.executeParallelQueries(queries);
-        
+
         // Check if database save failed
         if (!results[0].success) {
             monitor.trackRequest(req, res, Date.now() - startTime);
@@ -208,8 +208,8 @@ const login = async (req, res) => {
         // Generate JWT
         const token = generateToken(user._id);
 
-        // Record login
-        await recordLogin(user._id, req);
+        // Record login - Fixed parameter order to match recordLogin(req, user)
+        await recordLogin(req, user);
 
         res.status(200).json({
             message: 'Login successful',
@@ -254,8 +254,8 @@ const loginUserId = async (req, res) => {
         // Generate JWT
         const token = generateToken(user._id);
 
-        // Record login
-        await recordLogin(user._id, req);
+        // Record login - Fixed parameter order to match recordLogin(req, user)
+        await recordLogin(req, user);
 
         res.status(200).json({
             message: 'Login successful',

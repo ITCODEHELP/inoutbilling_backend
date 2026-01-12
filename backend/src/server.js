@@ -81,6 +81,13 @@ const otherIncomeReportRoutes = require('./routes/Report-Routes/OtherIncomeRepor
 const dayBookReportRoutes = require('./routes/Report-Routes/DayBookReportRoutes');
 const gstr1ReportRoutes = require('./routes/Report-Routes/GSTR1ReportRoutes');
 const gstr2bReportRoutes = require('./routes/Report-Routes/GSTR2BReportRoutes');
+const dashboardRoutes = require('./routes/Dashboard-Routes/DashboardRoutes');
+const referralRoutes = require('./routes/Setting-Page-Routes/ReferralRoutes');
+const whatsappRoutes = require('./routes/Setting-Page-Routes/whatsappRoutes');
+const supportEmailRoutes = require('./routes/Setting-Page-Routes/supportEmailRoutes');
+const supportPinRoutes = require('./routes/Setting-Page-Routes/supportPinRoutes');
+const shortcutKeyRoutes = require('./routes/Setting-Page-Routes/shortcutKeyRoutes');
+const financialYearRoutes = require('./routes/Setting-Page-Routes/financialYearRoutes');
 
 /* -------------------- ROUTES -------------------- */
 // ... (existing routes)
@@ -166,6 +173,13 @@ app.use('/api/reports', otherIncomeReportRoutes);
 app.use('/api/reports', dayBookReportRoutes);
 app.use('/api/reports', gstr1ReportRoutes);
 app.use('/api/reports', gstr2bReportRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/referral', referralRoutes);
+app.use('/api/whatsapp', whatsappRoutes);
+app.use('/api/support-email', supportEmailRoutes);
+app.use('/api/support-pin', supportPinRoutes);
+app.use('/api/shortcuts', shortcutKeyRoutes);
+app.use('/api/financial-year', financialYearRoutes);
 
 /* -------------------- PERFORMANCE -------------------- */
 const monitor = getPerformanceMonitor();

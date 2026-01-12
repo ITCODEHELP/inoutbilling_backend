@@ -2935,3 +2935,243 @@ Authorization: Bearer <token>
 ```
 
 ---
+
+## Refer-API
+
+### Get Referral Stats
+Returns secure referral code, URL, share links, and counts.
+```http
+GET /api/referral/stats
+Authorization: Bearer <token>
+```
+**Response**
+```json
+{
+  "success": true,
+  "data": {
+    "referralCode": "A1B2C3D4E5",
+    "referralUrl": "http://localhost:5000/api/referral/go/A1B2C3D4E5",
+    "shareLinks": {
+      "whatsapp": "...",
+      "facebook": "...",
+      "twitter": "...",
+      "email": "..."
+    },
+    "totalReferrals": 10,
+    "premiumReferrals": 2
+  }
+}
+```
+
+### Resolve Referral Code
+Public headless endpoint to resolve a referral code and get referrer metadata.
+```http
+GET /api/referral/go/:referralCode
+```
+**Response**
+```json
+{
+  "success": true,
+  "data": {
+    "referralCode": "A1B2C3D4E5",
+    "referrer": {
+      "companyName": "Acme Corp",
+      "countryCode": "+91",
+      "phone": "98******10"
+    },
+    "suggestedRedirect": "/signup"
+  }
+}
+```
+
+### Track Referral
+Link a signup to the referrer using `referralCode`. Validates referred user existence, self-referral, and duplicates.
+```http
+POST /api/referral/track
+Content-Type: application/json
+
+{
+  "referralCode": "A1B2C3D4E5",
+  "referredId": "65866847c20c4a457c123456"
+}
+```
+
+---
+
+## WhatsApp-API
+
+### Get WhatsApp Config
+Returns business number, working hours, and personalized deep link.
+```http
+GET /api/whatsapp/config
+Authorization: Bearer <token>
+```
+**Response**
+```json
+{
+  "success": true,
+  "data": {
+    "businessNumber": "9725306146",
+    "workingHours": "...",
+    "messageTemplate": "...",
+    "deepLink": "https://wa.me/..."
+  }
+}
+```
+
+### Track Interaction
+Logs a click interaction on the WhatsApp link.
+```http
+POST /api/whatsapp/track
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "sourcePage": "Dashboard"
+}
+```
+**Response**
+```json
+{
+  "success": true,
+  "message": "Interaction logged successfully",
+  "data": {
+    "id": "...",
+    "timestamp": "..."
+  }
+}
+```
+
+---
+
+## Email-API
+
+### Get Support Email Config
+Returns business support email, expected response time, and personalized mailto link.
+```http
+GET /api/support-email/config
+Authorization: Bearer <token>
+```
+**Response**
+```json
+{
+  "success": true,
+  "data": {
+    "supportEmail": "support@inoutbilling.com",
+    "expectedResponseTime": "within 24 hours",
+    "subject": "...",
+    "body": "...",
+    "mailtoLink": "mailto:support@inoutbilling.com?subject=..."
+  }
+}
+```
+
+---
+
+## Support-PIN-API
+
+### Generate Support PIN
+Generates an 8-minute 6-digit numeric support PIN.
+```http
+POST /api/support-pin/generate
+Authorization: Bearer <token>
+```
+**Response**
+```json
+{
+  "success": true,
+  "data": {
+    "pin": "123456",
+    "expiresAt": "..."
+  }
+}
+```
+
+### Verify Support PIN
+Verifies a support PIN.
+```http
+POST /api/support-pin/verify
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "pin": "123456",
+  "userId": "..."
+}
+```
+**Response**
+```json
+{
+  "success": true,
+  "message": "PIN verified successfully"
+}
+```
+
+---
+
+## Shortcut-Key-API
+
+### Get Shortcut Definitions
+Returns master shortcut configuration.
+```http
+GET /api/shortcuts/definitions
+Authorization: Bearer <token>
+```
+**Response**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "moduleName": "Sales",
+      "actionLabel": "Create Invoice",
+      "keyCombination": "Alt+S+I",
+      "targetRoute": "/sales/invoice/create"
+    }
+  ]
+}
+```
+
+### Update Shortcut Preference
+Global toggle for shortcut functionality.
+```http
+PATCH /api/shortcuts/preference
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "isEnabled": false
+}
+```
+
+---
+
+## Financial-Year-API
+
+### Get All Financial Years
+Master list of FY options.
+```http
+GET /api/financial-year/years
+Authorization: Bearer <token>
+```
+
+### Get Active Financial Year
+User's currently selected FY context.
+```http
+GET /api/financial-year
+Authorization: Bearer <token>
+```
+
+### Set Active Financial Year
+Globally scope subsequent data requests.
+```http
+PATCH /api/financial-year
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "financialYearId": "658668..."
+}
+```
+
+---
