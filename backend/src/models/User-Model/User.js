@@ -63,7 +63,10 @@ const userSchema = new mongoose.Schema({
     address: { type: String },
     pincode: { type: String },
     city: { type: String },
-    state: { type: String }
+    state: { type: String },
+    businessLogo: { type: String, default: '' },
+    isEmailVerified: { type: Boolean, default: false },
+    emailVerificationToken: { type: String }
 }, {
     timestamps: true,
     // Optimized schema options for 100M+ users
@@ -112,12 +115,12 @@ userSchema.statics = {
             { fields: { phone: 1 }, options: { unique: true } },
             { fields: { userId: 1 }, options: { unique: true } },
             { fields: { email: 1 }, options: { unique: true, sparse: true } },
-            
+
             // Compound indexes for common queries
             { fields: { phone: 1, countryCode: 1 } },
             { fields: { userId: 1, isVerified: 1 } },
             { fields: { createdAt: 1 } },
-            
+
             // Text search for company name
             { fields: { companyName: 'text', gstNumber: 'text' } }
         ];
@@ -135,7 +138,7 @@ userSchema.methods = {
      */
     toLeanObject(fields = []) {
         const userObj = this.toObject();
-        
+
         if (fields.length > 0) {
             const leanObj = {};
             fields.forEach(field => {
@@ -145,17 +148,17 @@ userSchema.methods = {
             });
             return leanObj;
         }
-        
+
         // Remove sensitive fields by default
         delete userObj.password;
         delete userObj.__v;
-        
+
         return userObj;
     }
 };
 
 // Pre-save middleware for optimization
-userSchema.pre('save', function(next) {
+userSchema.pre('save', function (next) {
     // Optimize for bulk operations
     if (this.isNew && this.constructor.bufferCommands === false) {
         return next();
@@ -164,7 +167,7 @@ userSchema.pre('save', function(next) {
 });
 
 // Post-save middleware for cache invalidation
-userSchema.post('save', function(doc) {
+userSchema.post('save', function (doc) {
     // Invalidate user cache entries
     if (global.cacheManager) {
         global.cacheManager.invalidatePattern(`user:${doc._id}:*`);

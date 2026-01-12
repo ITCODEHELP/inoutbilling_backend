@@ -1,0 +1,324 @@
+@import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap');
+
+@page {
+    size: A4;
+    margin: 0;
+}
+
+body {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 13px;
+    line-height: 1.1;
+    color: #000;
+    margin: 20px auto;
+    /* Centered in browser */
+    padding: 30px;
+    width: 210mm;
+    box-sizing: border-box;
+    background: white;
+    min-height: 100vh;
+}
+
+.container {
+    width: 100%;
+    max-width: 100%;
+    margin: 0 auto;
+}
+
+/* Utilities */
+.text-center {
+    text-align: center;
+}
+
+.text-right {
+    text-align: right;
+}
+
+.text-left {
+    text-align: left;
+}
+
+.bold {
+    font-weight: bold;
+}
+
+.flex {
+    display: flex;
+}
+
+.jc-between {
+    justify-content: space-between;
+}
+
+.jc-end {
+    justify-content: flex-end;
+}
+
+.ai-start {
+    align-items: flex-start;
+}
+
+/* Separator */
+.sep {
+    white-space: nowrap;
+    overflow: hidden;
+    text-align: center;
+    margin: 2px 0;
+    /* Tight spacing */
+    font-weight: normal;
+}
+
+/* Header */
+.header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 2px;
+}
+
+.logo {
+    width: 60px;
+    height: 60px;
+    background-color: #f0f0f0;
+    margin-bottom: 2px;
+    object-fit: contain;
+}
+
+.company-name {
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 1px;
+}
+
+.company-details div {
+    margin-bottom: 0;
+}
+
+/* Title */
+.title {
+    font-size: 14px;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin: 1px 0;
+    text-align: center;
+}
+
+/* Billed To Section */
+.bill-to {
+    display: flex;
+    justify-content: space-between;
+    margin: 3px 0;
+}
+
+.bill-left {
+    width: 60%;
+    text-align: left;
+    margin-left: 137px;
+}
+
+.bill-right {
+    width: 40%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    margin-right: 134px;
+}
+
+.label {
+    font-weight: bold;
+    font-size: 12px;
+    text-transform: uppercase;
+    margin-bottom: 0;
+}
+
+.value {
+    margin-bottom: 0;
+}
+
+/* Table - CENTERING */
+.table-header {
+    display: flex;
+    font-weight: bold;
+    width: 100%;
+    margin-bottom: 2px;
+}
+
+.col-item {
+    width: 50%;
+    text-align: left;
+    margin-left: 137px;
+}
+
+.col-qty {
+    width: 17%;
+    text-align: left;
+    margin-right: 30px;
+}
+
+.col-rate {
+    width: 15%;
+    text-align: left;
+    margin-right: 50px;
+}
+
+.col-total {
+    width: 18%;
+    text-align: left;
+    margin-right: 130px;
+}
+
+.item-row {
+    margin-bottom: 5px;
+}
+
+.item-main {
+    display: flex;
+    width: 100%;
+    align-items: flex-start;
+}
+
+.item-meta {
+    font-size: 12px;
+    font-style: italic;
+    margin-left: 10px;
+    display: flex;
+    flex-direction: column;
+    width: 50%;
+    /* Align with item col */
+    text-align: center;
+    /* Center meta too */
+}
+
+.item-meta-2 {
+    font-size: 12px;
+    font-style: italic;
+    margin-left: 3px;
+    display: flex;
+    flex-direction: column;
+    width: 50%;
+    /* Align with item col */
+    text-align: center;
+    /* Center meta too */
+}
+
+.item-meta-3 {
+    font-size: 12px;
+    font-style: italic;
+    margin-left: 10px;
+    display: flex;
+    flex-direction: column;
+    width: 50%;
+    /* Align with item col */
+    text-align: center;
+    /* Center meta too */
+}
+
+.item-meta div {
+    margin-top: 0;
+}
+
+/* Totals */
+.total-section {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+
+/* Total Row Base Style */
+.total-row {
+    display: flex;
+    justify-content: space-between;
+    width: 50%;
+    margin-bottom: 2px;
+    margin-right: 230px;
+}
+
+/* Specific Row Classes */
+.total-taxable {
+    display: flex;
+    justify-content: space-between;
+    width: 50%;
+    margin-bottom: 2px;
+    margin-right: 230px;
+}
+
+.total-igst {
+    display: flex;
+    justify-content: space-between;
+    width: 50%;
+    margin-bottom: 2px;
+    margin-right: 230px;
+}
+
+.total-gst {
+    display: flex;
+    justify-content: space-between;
+    width: 50%;
+    margin-bottom: 2px;
+    margin-right: 230px;
+}
+
+.total-round-off {
+    display: flex;
+    justify-content: space-between;
+    width: 50%;
+    margin-bottom: 2px;
+    margin-right: 230px;
+}
+
+.total-after-tax {
+    display: flex;
+    justify-content: space-between;
+    width: 50%;
+    font-weight: bold;
+    margin-top: 5px;
+    margin-right: 230px;
+}
+
+.grand-total-row {
+    display: flex;
+    justify-content: space-between;
+    width: 50%;
+    font-weight: bold;
+    margin-top: 2px;
+    margin-right: 230px;
+}
+
+/* Values Margin */
+.total-taxable span:last-child,
+.total-igst span:last-child,
+.total-gst span:last-child,
+.total-round-off span:last-child,
+.total-after-tax span:last-child,
+.grand-total-row span:last-child {
+    margin-left: 100px;
+}
+
+/* Terms */
+.terms {
+    margin-top: 5px;
+    margin-bottom: 5px;
+    font-size: 12px;
+    margin-left: 137px;
+}
+
+.term-line {
+    margin-bottom: 1px;
+}
+
+/* UPI */
+.upi-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: 10px;
+}
+
+.qr-code {
+    width: 90px;
+    height: 90px;
+    background-color: white;
+    border: 1px solid black;
+    padding: 2px;
+}

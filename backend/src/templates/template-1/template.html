@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tax Invoice</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <!-- Placeholder Logo -->
+            <img src="https://via.placeholder.com/60" alt="Logo" class="logo">
+            <div class="company-name">Global Securities</div>
+            <div class="company-details text-center">
+                <div>Asmita Garden II</div>
+                <div>Shop No 14</div>
+                <div>Thane, Maharashtra - 401107</div>
+                <div>GSTIN : 27AAUFM1756H1ZT</div>
+                <div>44324</div>
+            </div>
+        </div>
+
+        <div class="sep">===========================================================</div>
+        <div class="title">TAX INVOICE</div>
+        <div class="sep">===========================================================</div>
+
+        <!-- Billed To -->
+        <div class="bill-to">
+            <div class="bill-left">
+                <div class="label">BILLED TO</div>
+                <div class="value bold" style="margin-top: 5px;">Jay EnterPrices</div>
+                <div class="value">24CORPP3239M1ZA</div>
+                <div class="value bold">AAUFM1756H</div>
+            </div>
+            <div class="bill-right">
+                <div style="margin-bottom: 5px;">
+                    <span class="label">INVOICE # :</span><br>
+                    <span class="text-right">2</span>
+                </div>
+                <div>
+                    <span class="label">DATE :</span><br>
+                    <span class="text-right">24-Apr-2025</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="sep">===========================================================</div>
+
+        <!-- Table Header -->
+        <div class="table-header">
+            <div class="col-item"># Items</div>
+            <div class="col-qty">Qty.</div>
+            <div class="col-rate">Rate</div>
+            <div class="col-total">Total</div>
+        </div>
+
+        <div class="sep" style="margin-top: 0;">===========================================================</div>
+
+        <!-- Items -->
+        <div class="items-container">
+            <!-- Item 1 -->
+            <div class="item-row">
+                <div class="item-main">
+                    <div class="col-item">1 Wireless Security</div>
+                    <div class="col-qty">1.00 BOX</div>
+                    <div class="col-rate">4,236.44</div>
+                    <div class="col-total">4,999.00</div>
+                </div>
+                <!-- Need to handle multiline name + details correctly aligned under name -->
+                <div class="item-meta">
+                    <div>Alarm System</div>
+                    <div>S/R NO:</div>
+                    <div>223366554411</div>
+                    <div>Lic No:</div>
+                    <div>23ASC99ASD8</div>
+                    <div>HSN : 830211</div>
+                </div>
+            </div>
+
+            <!-- Item 2 -->
+            <div class="item-row">
+                <div class="item-main">
+                    <div class="col-item">2 Wireless Security</div>
+                    <div class="col-qty">3.00 PCS</div>
+                    <div class="col-rate">2,824.84</div>
+                    <div class="col-total">9,999.93</div>
+                </div>
+                <div class="item-meta-2">
+                    <div>Camera 5MP</div>
+                    <div>SR/No:</div>
+                    <div>45665456654</div>
+                    <div>SR/No:</div>
+                    <div>45665456653</div>
+                    <div>HSN : 830211</div>
+                </div>
+            </div>
+
+            <!-- Item 3 -->
+            <div class="item-row">
+                <div class="item-main">
+                    <div class="col-item">3 50 Mtr High</div>
+                    <div class="col-qty">4.00 BDL</div>
+                    <div class="col-rate">1,000.00</div>
+                    <div class="col-total">4,200.00</div>
+                </div>
+                <div class="item-meta-3">
+                    <div>Quality cable</div>
+                    <div>HSN : 823655</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="sep">===========================================================</div>
+
+        <!-- Total Qty Row -->
+        <div class="table-header"> <!-- Reuse header flex for alignment -->
+            <div class="col-item bold">Total</div>
+            <div class="col-qty bold">8.00</div>
+            <div class="col-rate"></div>
+            <div class="col-total bold">19,198.93</div>
+        </div>
+
+        <!-- Summary -->
+        <div class="total-section" style="margin-top: 5px;">
+            <div class="total-taxable">
+                <span>Taxable Amount</span>
+                <span class="val-taxable">16,710.96</span>
+            </div>
+            <div class="total-igst">
+                <span>Add : IGST</span>
+                <span class="val-igst">2,487.97</span>
+            </div>
+            <div class="total-gst">
+                <span>Total Tax</span>
+                <span class="val-gst">2,487.97</span>
+            </div>
+            <div class="total-round-off">
+                <span>Round off Amount</span>
+                <span class="val-round">0.07</span>
+            </div>
+            <div class="total-after-tax">
+                <span>Total Amount After Tax</span>
+                <span class="val-after-tax">₹19,199.00</span>
+            </div>
+        </div>
+
+        <div class="sep">===========================================================</div>
+
+        <div class="total-section">
+            <div class="grand-total-row">
+                <span>Grand Total :</span>
+                <span class="val-grand">19,199.00</span>
+            </div>
+        </div>
+
+        <div class="sep">===========================================================</div>
+
+        <!-- Terms -->
+        <div class="terms">
+            <div class="bold" style="margin-bottom: 2px;">Terms and Conditions</div>
+            <div class="term-line">Subject to our home Jurisdiction.</div>
+            <div class="term-line">Our Responsibility Ceases as soon as goods</div>
+            <div class="term-line">leaves our Premises.</div>
+            <div class="term-line">Goods once sold will not taken back.</div>
+            <div class="term-line">Delivery Ex-Premises.</div>
+        </div>
+
+        <div class="sep">===========================================================</div>
+
+        <!-- UPI -->
+        <div class="upi-section">
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=upi://pay" class="qr-code">
+            <div class="bold" style="margin-top: 5px;">Pay using UPI</div>
+        </div>
+
+    </div>
+</body>
+
+</html>
