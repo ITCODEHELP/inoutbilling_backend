@@ -400,5 +400,113 @@ const generateDeliveryChallanPDF = (data) => {
     });
 };
 
-module.exports = { generateInvoicePDF, generateReceiptPDF, generateQuotationPDF, generateProformaPDF, generateDeliveryChallanPDF };
+/**
+ * Generates a Ledger Statement PDF as a Buffer.
+ * @param {Object} data - { user, target, rows, totals, fromDate, toDate }
+ * @returns {Promise<Buffer>}
+ */
+const generateLedgerPDF = (data) => {
+    return new Promise((resolve, reject) => {
+        const doc = new PDFDocument({ margin: 40, size: 'A4' });
+        const buffers = [];
+
+        doc.on('data', buffers.push.bind(buffers));
+        doc.on('end', () => resolve(Buffer.concat(buffers)));
+        doc.on('error', reject);
+
+        // Header Title
+        doc.fillColor("#333333").fontSize(18).text("LEDGER STATEMENT", { align: "center" }).moveDown(1);
+
+        const startY = doc.y;
+
+        // Left Section: User (Sender) Information
+        doc.fontSize(10).fillColor("#000000");
+        doc.text(data.user.companyName || "My Company", 40, startY, { bold: true });
+        doc.text(data.user.address || "", 40, doc.y);
+        doc.text(`${data.user.city || ""}, ${data.user.state || ""} - ${data.user.pincode || ""}`, 40, doc.y);
+        doc.text(data.user.country || "India", 40, doc.y);
+        if (data.user.gstNumber) doc.text(`GSTIN: ${data.user.gstNumber}`, 40, doc.y);
+
+        // Right Section: Customer/Vendor Information
+        const rightColX = 350;
+        doc.text("To:", rightColX, startY, { bold: true });
+        doc.text(data.target.companyName || "", rightColX, doc.y);
+        doc.text(data.target.address || data.target.billingAddress?.street || "", rightColX, doc.y);
+        if (data.target.gstin) doc.text(`GSTIN: ${data.target.gstin}`, rightColX, doc.y);
+
+        doc.moveDown(2);
+
+        // Date Range
+        doc.fontSize(9).text(`Period: ${new Date(data.fromDate).toLocaleDateString()} to ${new Date(data.toDate).toLocaleDateString()}`, 40, doc.y, { align: "right" });
+        doc.moveDown(0.5);
+
+        // Draw Line
+        doc.moveTo(40, doc.y).lineTo(550, doc.y).strokeColor("#cccccc").stroke();
+        doc.moveDown(0.5);
+
+        // Table Header
+        const tableTop = doc.y;
+        doc.fontSize(9).fillColor("#444444");
+        doc.text("Date", 40, tableTop, { width: 60 });
+        doc.text("Particulars", 100, tableTop, { width: 140 });
+        doc.text("Type", 240, tableTop, { width: 60 });
+        doc.text("Vch No.", 300, tableTop, { width: 60 });
+        doc.text("Debit", 360, tableTop, { width: 60, align: "right" });
+        doc.text("Credit", 420, tableTop, { width: 60, align: "right" });
+        doc.text("Balance", 480, tableTop, { width: 70, align: "right" });
+
+        doc.moveDown(0.5);
+        doc.moveTo(40, doc.y).lineTo(550, doc.y).stroke();
+        doc.moveDown(0.5);
+
+        // Table Body
+        let currentY = doc.y;
+        data.rows.forEach(row => {
+            if (currentY > 750) {
+                doc.addPage();
+                currentY = 50;
+            }
+            doc.fontSize(8.5).fillColor("#000000");
+            doc.text(row.date ? new Date(row.date).toLocaleDateString() : "-", 40, currentY, { width: 60 });
+            doc.text(row.particulars || "-", 100, currentY, { width: 140 });
+            doc.text(row.voucherType || "-", 240, currentY, { width: 60 });
+            doc.text(row.invoiceNo || "-", 300, currentY, { width: 60 });
+            doc.text(row.debit > 0 ? row.debit.toFixed(2) : "-", 360, currentY, { width: 60, align: "right" });
+            doc.text(row.credit > 0 ? row.credit.toFixed(2) : "-", 420, currentY, { width: 60, align: "right" });
+            doc.text(row.balance.toFixed(2), 480, currentY, { width: 70, align: "right" });
+            currentY += 18;
+        });
+
+        // Summary Line
+        doc.moveTo(40, currentY).lineTo(550, currentY).stroke();
+        currentY += 10;
+
+        doc.fontSize(10).fillColor("#000000");
+        doc.text("Total Debit:", 300, currentY, { width: 120, align: "right" });
+        doc.text(data.totals.totalDebit.toFixed(2), 420, currentY, { width: 60, align: "right" });
+        currentY += 15;
+        doc.text("Total Credit:", 300, currentY, { width: 120, align: "right" });
+        doc.text(data.totals.totalCredit.toFixed(2), 420, currentY, { width: 60, align: "right" });
+        currentY += 20;
+
+        doc.fontSize(11).fillColor("#000000");
+        doc.text("Closing Balance:", 300, currentY, { width: 120, align: "right", bold: true });
+        doc.text(data.totals.closingBalance.toFixed(2), 420, currentY, { width: 70, align: "right", bold: true });
+
+        // Footer
+        const footerY = 800;
+        doc.fontSize(8).fillColor("#999999").text("This is a computer-generated statement.", 40, footerY, { align: "center", width: 500 });
+
+        doc.end();
+    });
+};
+
+module.exports = {
+    generateInvoicePDF,
+    generateReceiptPDF,
+    generateQuotationPDF,
+    generateProformaPDF,
+    generateDeliveryChallanPDF,
+    generateLedgerPDF
+};
 
