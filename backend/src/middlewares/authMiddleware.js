@@ -10,8 +10,8 @@ const rateLimitMap = new Map();
  * Features: caching, rate limiting, lean queries, parallel execution
  */
 const protect = async (req, res, next) => {
+    let token;
     try {
-        let token;
 
         // 1. Get raw header (handles 'authorization', 'Authorization', etc.)
         const authHeader = req.header('Authorization');

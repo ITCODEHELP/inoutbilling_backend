@@ -62,15 +62,39 @@ const createCustomer = async (req, res) => {
     }
 };
 
-// @desc    Get all customers
+const { _buildUnifiedSearchQuery, _getSearchSummary } = require('./customerVendorController');
+
+// @desc    Get all customers with search & pagination & summary
 // @route   GET /api/customers
 // @access  Private
 const getCustomers = async (req, res) => {
     try {
-        const customers = await Customer.find({ userId: req.user._id });
-        res.status(200).json(customers);
+        const queryParams = { ...req.query, ...req.body };
+        const query = await _buildUnifiedSearchQuery(req.user._id, queryParams);
+
+        const { page = 1, limit = 10, sort = 'createdAt', order = 'desc' } = queryParams;
+        const skip = (page - 1) * limit;
+
+        const [customers, totalRecordsInType, summary] = await Promise.all([
+            Customer.find(query)
+                .sort({ [sort]: order === 'desc' ? -1 : 1 })
+                .skip(Number(skip))
+                .limit(Number(limit)),
+            Customer.countDocuments(query),
+            _getSearchSummary(query)
+        ]);
+
+        res.status(200).json({
+            success: true,
+            count: customers.length,
+            totalRecords: totalRecordsInType,
+            page: Number(page),
+            pages: Math.ceil(totalRecordsInType / (Number(limit) || 10)),
+            summary,
+            data: customers
+        });
     } catch (error) {
-        res.status(500).json({ message: 'Server Error', error: error.message });
+        res.status(500).json({ success: false, message: 'Server Error', error: error.message });
     }
 };
 
