@@ -158,12 +158,29 @@ userSchema.methods = {
 };
 
 // Pre-save middleware for optimization
-userSchema.pre('save', function (next) {
-    // Optimize for bulk operations
-    if (this.isNew && this.constructor.bufferCommands === false) {
-        return next();
+// In User schema definition (e.g., before module.exports)
+userSchema.pre('save', async function (next) {  // ← 'function' not 'function (doc, next)' for this=doc
+    try {
+        // Your logic here (e.g., hash password if changed)
+        if (this.isModified('password') && this.password) {
+            this.password = await bcrypt.hash(this.password, 10);
+        }
+
+        // Other pre-save logic (e.g., timestamps, defaults)...
+
+        // Handle both middleware & bulk contexts
+        if (typeof next === 'function') {
+            next();  // Route middleware: continue chain
+        } else {
+            return this;  // Bulk/create: return doc to chain
+        }
+    } catch (err) {
+        if (typeof next === 'function') {
+            next(err);  // Pass error to middleware
+        } else {
+            throw err;  // Re-throw for bulk
+        }
     }
-    next();
 });
 
 // Post-save middleware for cache invalidation

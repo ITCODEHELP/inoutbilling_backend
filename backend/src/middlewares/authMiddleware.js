@@ -13,15 +13,33 @@ const protect = async (req, res, next) => {
     try {
         let token;
 
-        // Extract token from header
-        if (
-            req.headers.authorization &&
-            req.headers.authorization.startsWith('Bearer')
-        ) {
-            token = req.headers.authorization.split(' ')[1];
+        // 1. Get raw header (handles 'authorization', 'Authorization', etc.)
+        const authHeader = req.header('Authorization');
+
+        // Debug: Log all headers to see what's actually arriving
+        if (!authHeader) {
+            console.log('[Auth Middleware] ⚠️ NO Authorization header found.');
+            console.log('[Auth Middleware] Available Headers:', JSON.stringify(req.headers, null, 2));
+        } else {
+            console.log('[Auth Middleware] Authorization Header found:', authHeader.substring(0, 20) + '...');
+        }
+
+        if (authHeader) {
+            if (authHeader.toLowerCase().startsWith('bearer ')) {
+                // Standard Bearer token
+                token = authHeader.split(' ')[1];
+            } else {
+                // Fallback: Client sent raw token without 'Bearer ' prefix
+                // Check if it looks like a JWT (3 parts separated by dots)
+                if (authHeader.split('.').length === 3) {
+                    console.log('[Auth Middleware] ⚠️ Warning: Raw token received without Bearer prefix. Accepting it.');
+                    token = authHeader;
+                }
+            }
         }
 
         if (!token) {
+            console.error('[Auth Middleware] ❌ Failed to extract token.');
             return res.status(401).json({ message: 'Not authorized, no token' });
         }
 
@@ -43,7 +61,7 @@ const protect = async (req, res, next) => {
 
         // Build cache key for token verification
         const cacheKey = PerformanceOptimization.buildCacheKey('auth', { token }, 'global');
-        
+
         // Try to get from cache first
         let userData;
         if (global.cacheManager) {
@@ -88,7 +106,7 @@ const protect = async (req, res, next) => {
         return next();
     } catch (error) {
         console.error('Auth middleware error:', error.message);
-        
+
         // Clear cache on error
         if (global.cacheManager && token) {
             const cacheKey = PerformanceOptimization.buildCacheKey('auth', { token }, 'global');
@@ -98,7 +116,7 @@ const protect = async (req, res, next) => {
         if (error.name === 'JsonWebTokenError') {
             return res.status(401).json({ message: 'Not authorized, invalid token' });
         }
-        
+
         if (error.name === 'TokenExpiredError') {
             return res.status(401).json({ message: 'Not authorized, token expired' });
         }
@@ -114,11 +132,14 @@ const optionalAuth = async (req, res, next) => {
     try {
         let token;
 
-        if (
-            req.headers.authorization &&
-            req.headers.authorization.startsWith('Bearer')
-        ) {
-            token = req.headers.authorization.split(' ')[1];
+        const authHeader = req.header('Authorization');
+
+        if (authHeader) {
+            if (authHeader.toLowerCase().startsWith('bearer ')) {
+                token = authHeader.split(' ')[1];
+            } else if (authHeader.split('.').length === 3) {
+                token = authHeader;
+            }
         }
 
         if (!token) {
@@ -128,7 +149,7 @@ const optionalAuth = async (req, res, next) => {
         // Try to authenticate but don't fail if it fails
         const cacheKey = PerformanceOptimization.buildCacheKey('auth', { token }, 'global');
         let userData;
-        
+
         if (global.cacheManager) {
             userData = await global.cacheManager.get(cacheKey);
         }
@@ -137,7 +158,7 @@ const optionalAuth = async (req, res, next) => {
             try {
                 const decoded = jwt.verify(token, process.env.JWT_SECRET);
                 const user = await User.findById(decoded.id).select('-password').lean();
-                
+
                 if (user) {
                     userData = user;
                     if (global.cacheManager) {
@@ -180,7 +201,7 @@ const authorize = (...allowedRoles) => {
 
         // Check if user has required role (implement role system as needed)
         const userRole = req.user.role || 'user';
-        
+
         if (allowedRoles.length > 0 && !allowedRoles.includes(userRole)) {
             return res.status(403).json({ message: 'Not authorized, insufficient permissions' });
         }
@@ -204,7 +225,7 @@ const selfOrAdmin = (req, res, next) => {
 
     const userRole = req.user.role || 'user';
     const targetUserId = req.params.userId || req.params.id;
-    
+
     // Allow access if user is admin or accessing their own data
     if (userRole === 'admin' || userRole === 'superadmin' || req.user._id.toString() === targetUserId) {
         return next();
