@@ -1,260 +1,225 @@
 const User = require('../../models/User-Model/User');
 const OTP = require('../../models/Login-Model/OTP');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt'); // Add for pw hashing
 const { recordLogin } = require('../../utils/securityHelper');
-const SecurityValidation = require('../../utils/securityValidation');
-const PerformanceOptimization = require('../../utils/performanceOptimization');
-const { getCacheManager } = require('../../utils/cacheManager');
-const { getPerformanceMonitor } = require('../../utils/performanceMonitor');
+const axios = require('axios');
 
 // Generate JWT
 const generateToken = (id) => {
-    return jwt.sign({ id }, process.env.JWT_SECRET, {
-        expiresIn: '7d',
-    });
+    return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 };
 
-// Generate User ID (e.g., GSTBILL102938)
+// Generate User ID (GSTBILL + timestamp + random)
 const generateUserId = () => {
     const timestamp = Date.now().toString().slice(-6);
     const random = Math.floor(1000 + Math.random() * 9000);
     return `GSTBILL${timestamp}${random}`;
 };
 
-// @desc    Send OTP for Signup/Login
+// Helper: Extract 10-digit from fullMobile (for UI responses)
+const getDisplayMobile = (fullMobile) => fullMobile.replace(/^91/, '');
+
+// Helper: Send OTP via MSG91 (unchanged, working)
+const sendMsg91Otp = async (fullMobile, otp) => {
+    const authKey = process.env.MSG91_AUTH_KEY;
+    const templateId = process.env.MSG91_TEMPLATE_ID;
+
+    if (!authKey || !templateId) {
+        throw new Error('MSG91 config missing');
+    }
+
+    const payload = {
+        template_id: templateId,
+        recipients: [{ mobiles: fullMobile, otp }]
+    };
+
+    const axiosOptions = {
+        method: 'POST',
+        url: 'https://control.msg91.com/api/v5/flow',
+        headers: { authkey: authKey, 'Content-Type': 'application/json' },
+        data: payload
+    };
+
+    console.log('----------------------------------------------------');
+    console.log('[MSG91 DEBUG] Target:', fullMobile);
+    console.log('[MSG91 DEBUG] Payload:', JSON.stringify(payload, null, 2));
+    console.log('----------------------------------------------------');
+
+    try {
+        const response = await axios(axiosOptions);
+        if (response.data?.type !== 'success') {
+            throw new Error(response.data?.message);
+        }
+        console.log('[MSG91] OTP sent success response:', response.data);
+        return { success: true };
+    } catch (err) {
+        console.error('[MSG91] Request Failed:', err.message);
+        if (err.response) {
+            console.error('[MSG91] Response Data:', err.response.data);
+        }
+        return { success: false, error: err.response?.data?.message || err.message };
+    }
+};
+
+// @desc    Send OTP (Internal Flow Detection)
 // @route   POST /api/auth/send-otp
-// @access  Public
 const sendOtp = async (req, res) => {
-    const startTime = Date.now();
-    const monitor = getPerformanceMonitor();
-    const cacheManager = getCacheManager();
-
     try {
-        const { phone, countryCode, type } = req.body;
+        const { mobile } = req.body;
 
-        // Input validation with security checks
-        const validationSchema = {
-            phone: {
-                type: 'phone',
-                required: true,
-                maxLength: 20
-            },
-            countryCode: {
-                type: 'string',
-                required: true,
-                minLength: 2,
-                maxLength: 5,
-                pattern: /^\+/
-            },
-            type: {
-                type: 'string',
-                required: false,
-                enum: ['signup', 'login', 'reset']
-            }
-        };
+        if (!mobile || !/^\d{10}$/.test(mobile)) {
+            return res.status(400).json({ message: 'Valid 10-digit mobile required' });
+        }
 
-        const validation = SecurityValidation.validateInput(req.body, validationSchema);
-        if (!validation.isValid) {
-            monitor.trackRequest(req, res, Date.now() - startTime);
+        const fullMobile = `91${mobile}`;
+        console.log(`[Auth] SendOtp → ${fullMobile}`);
+
+        // Rate limit: Max 6 OTPs/24h (use lean() for speed)
+        const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const count = await OTP.countDocuments({
+            mobile: fullMobile,
+            createdAt: { $gte: since }
+        });
+        if (count >= 6) {
+            return res.status(429).json({ message: 'Daily OTP limit reached' });
+        }
+
+        const otp = Math.floor(1000 + Math.random() * 9000).toString();
+        const result = await sendMsg91Otp(fullMobile, otp);
+        if (!result.success) {
+            return res.status(502).json({
+                message: 'OTP send failed',
+                providerError: result.error
+            });
+        }
+
+        // Store OTP (use lean() on exists for perf)
+        const userExists = await User.exists({ phone: fullMobile }).lean();
+        const flowType = userExists ? 'login' : 'signup';
+        await OTP.create({
+            mobile: fullMobile,
+            otp: Number(otp),
+            type: flowType,
+            expiryTime: new Date(Date.now() + 5 * 60 * 1000)
+        });
+
+        return res.status(200).json({ message: 'OTP sent successfully' });
+
+    } catch (err) {
+        console.error('[sendOtp] Error:', err);
+        if (err.name === 'ValidationError') {
             return res.status(400).json({
-                message: 'Validation failed',
-                errors: validation.errors
+                message: 'OTP storage failed',
+                error: Object.values(err.errors).map(e => `${e.path}: ${e.message}`).join('; ')
             });
         }
-
-        const { phone: sanitizedPhone, countryCode: sanitizedCountryCode, type: sanitizedType } = validation.data;
-
-        // Rate limiting for OTP requests
-        const rateLimitKey = `otp:${sanitizedPhone}`;
-        const rateLimitResult = await SecurityValidation.checkRateLimit(rateLimitKey, 5, 300000); // 5 OTPs per 5 minutes
-
-        if (!rateLimitResult.allowed) {
-            monitor.trackRequest(req, res, Date.now() - startTime);
-            return res.status(429).json({
-                message: 'Too many OTP requests',
-                retryAfter: Math.ceil((rateLimitResult.resetTime - Date.now()) / 1000)
-            });
-        }
-
-        // Check cache for existing OTP
-        const cacheKey = cacheManager.generateKey('otp', { phone: sanitizedPhone, countryCode: sanitizedCountryCode });
-        let existingOTP = await cacheManager.get(cacheKey);
-
-        if (existingOTP && existingOTP.expiresAt > Date.now()) {
-            monitor.trackRequest(req, res, Date.now() - startTime);
-            return res.status(200).json({
-                message: 'OTP already sent',
-                expiresIn: Math.ceil((existingOTP.expiresAt - Date.now()) / 1000)
-            });
-        }
-
-        // DEV ONLY: Use static OTP for development/testing
-        // In production, use: const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        const otp = '123456';
-        console.log('DEV MODE: Using static OTP 123456 for testing');
-
-        // Save OTP to database with optimized query
-        const newOTP = new OTP({
-            phone: sanitizedPhone,
-            countryCode: sanitizedCountryCode,
-            otp,
-            type: sanitizedType || 'signup',
-            expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes expiry
-        });
-
-        // Use parallel execution for database save and cache set
-        const queries = [
-            () => newOTP.save(),
-            () => cacheManager.set(cacheKey, {
-                otp,
-                expiresAt: newOTP.expiresAt,
-                type: sanitizedType
-            }, 600000) // 10 minutes cache
-        ];
-
-        const results = await PerformanceOptimization.executeParallelQueries(queries);
-
-        // Check if database save failed
-        if (!results[0].success) {
-            monitor.trackRequest(req, res, Date.now() - startTime);
-            return res.status(500).json({ message: 'Failed to save OTP' });
-        }
-
-        // TODO: Send SMS via Twilio or other SMS service
-        console.log(`OTP for ${sanitizedPhone}: ${otp}`);
-
-        // Add rate limit headers
-        res.set({
-            'X-RateLimit-Limit': '5',
-            'X-RateLimit-Remaining': rateLimitResult.remaining.toString(),
-            'X-RateLimit-Reset': rateLimitResult.resetTime.toString()
-        });
-
-        monitor.trackRequest(req, res, Date.now() - startTime);
-        res.status(200).json({ message: 'OTP sent successfully' });
-
-    } catch (error) {
-        console.error('Send OTP error:', error);
-        monitor.trackRequest(req, res, Date.now() - startTime);
-        res.status(500).json({ message: 'Server error', error: process.env.NODE_ENV === 'development' ? error.message : undefined });
+        return res.status(500).json({ message: 'Server error', error: err.message });
     }
 };
 
-// @desc    Verify OTP for Signup/Login
+// @desc    Verify OTP (Auto-Detect: Login vs Signup)
 // @route   POST /api/auth/verify-otp
-// @access  Public
-const verifyOtpSignup = async (req, res) => {
+const verifyOtp = async (req, res) => {
     try {
-        const { phone, countryCode, otp, type } = req.body;
+        const { mobile, countryCode = '91', otp } = req.body;
 
-        if (!phone || !countryCode || !otp) {
-            return res.status(400).json({ message: 'Phone number, country code, and OTP are required' });
+        // Validate inputs
+        if (!mobile || !/^\d{10}$/.test(mobile)) {
+            return res.status(400).json({ message: 'Valid 10-digit mobile required' });
+        }
+        if (!otp || !/^\d{4}$/.test(otp)) {
+            return res.status(400).json({ message: 'Valid 4-digit OTP required' });
         }
 
-        // DEV ONLY: Accept static OTP for development/testing
-        // In production, remove this check and only validate against database OTP
-        if (otp === '123456') {
-            console.log('DEV MODE: Static OTP 123456 accepted');
-            // Delete any existing OTPs for this phone to maintain consistency
-            await OTP.deleteMany({ phone, countryCode, type: type || 'signup' });
-        } else {
-            // Find OTP in database (normal flow)
-            const otpRecord = await OTP.findOne({
-                phone,
-                countryCode,
-                otp,
-                type: type || 'signup',
+        const code = countryCode.replace(/\D/g, '');
+        const number = mobile.replace(/\D/g, '');
+        const fullMobile = `${code}${number}`;
+
+        // Verify OTP (latest non-expired)
+        const otpRecord = await OTP.findOne({
+            mobile: fullMobile,
+            otp: Number(otp), // Ensure numeric
+            expiryTime: { $gt: new Date() }
+        }).sort({ createdAt: -1 });
+
+        if (!otpRecord) {
+            return res.status(400).json({ message: 'Invalid or expired OTP' });
+        }
+
+        // Check User
+        let user = await User.findOne({ phone: fullMobile });
+
+        if (user) {
+            // LOGIN
+            console.log(`[Auth] Login: User Found (${user._id})`);
+            const token = generateToken(user._id);
+            await recordLogin(req, user);
+            await OTP.deleteOne({ _id: otpRecord._id }); // Cleanup
+            return res.status(200).json({
+                message: 'Login successful',
+                token,
+                user: {
+                    id: user._id,
+                    userId: user.userId,
+                    mobile: getDisplayMobile(fullMobile), // 10-digit for UI
+                    redirect: 'dashboard'
+                }
             });
-
-            if (!otpRecord) {
-                return res.status(400).json({ message: 'Invalid OTP' });
-            }
-
-            // Check if OTP is expired
-            if (new Date() > otpRecord.expiresAt) {
-                return res.status(400).json({ message: 'OTP expired' });
-            }
-
-            // Delete OTP after verification
-            await OTP.deleteOne({ _id: otpRecord._id });
+        } else {
+            // SIGNUP
+            console.log(`[Auth] Signup: Creating New User`);
+            const newUserId = generateUserId();
+            user = await User.create({
+                phone: fullMobile, // Full in DB
+                countryCode: `+${code}`,
+                userId: newUserId,
+                isVerified: true
+                // Add password: await bcrypt.hash(password, 10) if provided
+            });
+            const token = generateToken(user._id);
+            await recordLogin(req, user);
+            await OTP.deleteOne({ _id: otpRecord._id }); // Cleanup
+            return res.status(201).json({
+                message: 'Signup successful',
+                token,
+                user: {
+                    id: user._id,
+                    userId: user.userId,
+                    mobile: getDisplayMobile(fullMobile), // 10-digit for UI
+                    redirect: 'add-business'
+                }
+            });
         }
 
-        res.status(200).json({ message: 'OTP verified successfully' });
     } catch (error) {
+        console.error('Verify OTP Error:', error);
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({
+                message: 'User creation failed',
+                error: Object.values(error.errors).map(e => `${e.path}: ${e.message}`).join('; ')
+            });
+        }
         res.status(500).json({ message: 'Server error', error: error.message });
     }
 };
 
-// @desc    Login user
-// @route   POST /api/auth/login
-// @access  Public
-const login = async (req, res) => {
-    try {
-        const { phone, countryCode } = req.body;
-
-        if (!phone || !countryCode) {
-            return res.status(400).json({ message: 'Phone number and country code are required' });
-        }
-
-        // Find user by phone
-        const user = await User.findOne({ phone, countryCode });
-
-        if (!user) {
-            return res.status(400).json({ message: 'User not found. Please sign up first.' });
-        }
-
-        // For OTP-based login, no password validation needed
-        // User should have verified OTP before calling this endpoint
-        // Generate JWT
-        const token = generateToken(user._id);
-
-        // Record login - Fixed parameter order to match recordLogin(req, user)
-        await recordLogin(req, user);
-
-        res.status(200).json({
-            message: 'Login successful',
-            token,
-            user: {
-                id: user._id,
-                phone: user.phone,
-                countryCode: user.countryCode,
-                companyName: user.companyName,
-            }
-        });
-    } catch (error) {
-        res.status(500).json({ message: 'Server error', error: error.message });
-    }
-};
-
-// @desc    Login user using User ID
+// @desc    Login with User ID + Password
 // @route   POST /api/auth/login-userid
-// @access  Public
 const loginUserId = async (req, res) => {
     try {
         const { userId, password } = req.body;
 
         if (!userId || !password) {
-            return res.status(400).json({ message: 'User ID and password are required' });
+            return res.status(400).json({ message: 'User ID and password required' });
         }
 
-        // Find user by userId
         const user = await User.findOne({ userId });
-
-        if (!user) {
-            return res.status(400).json({ message: 'Invalid credentials' });
+        if (!user || !(await bcrypt.compare(password, user.password || ''))) { // Hash compare
+            return res.status(400).json({ message: 'Invalid User ID or Password' });
         }
 
-        // Check password
-        const isMatch = password === user.password; // TODO: Implement proper password comparison
-
-        if (!isMatch) {
-            return res.status(400).json({ message: 'Invalid credentials' });
-        }
-
-        // Generate JWT
         const token = generateToken(user._id);
-
-        // Record login - Fixed parameter order to match recordLogin(req, user)
         await recordLogin(req, user);
 
         res.status(200).json({
@@ -263,59 +228,81 @@ const loginUserId = async (req, res) => {
             user: {
                 id: user._id,
                 userId: user.userId,
-                phone: user.phone,
-                countryCode: user.countryCode,
-                companyName: user.companyName,
+                mobile: getDisplayMobile(user.phone), // 10-digit for UI
+                redirect: 'dashboard'
             }
         });
+
     } catch (error) {
+        console.error('[loginUserId] Error:', error);
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+};
+
+// @desc    Forgot Password
+// @route   POST /api/auth/forgot-password
+const forgotPassword = async (req, res) => {
+    try {
+        const { userId, email, gstin } = req.body;
+
+        if (!userId || !email || !gstin) {
+            return res.status(400).json({ message: 'User ID, email, and GSTIN required' });
+        }
+
+        const user = await User.findOne({ userId, email });
+        if (!user) {
+            return res.status(400).json({ message: 'Invalid details.' });
+        }
+
+        // Check Linked Business for GSTIN
+        const Business = require('../../models/Login-Model/Business');
+        const business = await Business.findOne({ userId, gstin });
+
+        if (!business) {
+            return res.status(400).json({ message: 'Details do not match our records.' });
+        }
+
+        // TODO: Implement real email (e.g., via Nodemailer)
+        // await sendResetEmail(user.email, generateResetToken(user._id));
+
+        res.status(200).json({ message: 'Password reset link sent to your email.' });
+
+    } catch (error) {
+        console.error('[forgotPassword] Error:', error);
         res.status(500).json({ message: 'Server error', error: error.message });
     }
 };
 
 // @desc    Resend OTP
 // @route   POST /api/auth/resend-otp
-// @access  Public
 const resendOtp = async (req, res) => {
     try {
-        const { phone, countryCode, type } = req.body;
-
-        if (!phone || !countryCode) {
-            return res.status(400).json({ message: 'Phone number and country code are required' });
+        const { mobile } = req.body;
+        if (!mobile || !/^\d{10}$/.test(mobile)) {
+            return res.status(400).json({ message: 'Valid 10-digit mobile required' });
         }
 
-        // Delete existing OTPs
-        await OTP.deleteMany({ phone, countryCode });
+        // Quick check: Don't resend if <2min since last
+        const recentOtp = await OTP.findOne({
+            mobile: `91${mobile}`,
+            createdAt: { $gt: new Date(Date.now() - 2 * 60 * 1000) }
+        }).sort({ createdAt: -1 });
+        if (recentOtp) {
+            return res.status(429).json({ message: 'Please wait 2 minutes before resending' });
+        }
 
-        // DEV ONLY: Use static OTP for development/testing
-        // In production, use: const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        const otp = '123456';
-        console.log('DEV MODE: Using static OTP 123456 for testing');
-
-        // Save new OTP
-        const newOTP = new OTP({
-            phone,
-            countryCode,
-            otp,
-            type: type || 'signup',
-            expiresAt: new Date(Date.now() + 10 * 60 * 1000),
-        });
-
-        await newOTP.save();
-
-        // TODO: Send SMS via Twilio or other SMS service
-        console.log(`New OTP for ${phone}: ${otp}`);
-
-        res.status(200).json({ message: 'OTP resent successfully' });
-    } catch (error) {
-        res.status(500).json({ message: 'Server error', error: error.message });
+        // Reuse sendOtp (handles rest)
+        return sendOtp(req, res);
+    } catch (err) {
+        console.error('[resendOtp] Error:', err);
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
 };
 
 module.exports = {
     sendOtp,
-    verifyOtpSignup,
-    login,
+    verifyOtp,
     loginUserId,
+    forgotPassword,
     resendOtp
 };

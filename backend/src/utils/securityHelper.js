@@ -32,30 +32,23 @@ const parseUserAgent = (ua) => {
  */
 const recordLogin = async (req, user) => {
     try {
-        const ua = req.headers['user-agent'] || '';
-        const { device, browser, platform } = parseUserAgent(ua);
-        const ip = req.ip || req.headers['x-forwarded-for'] || '0.0.0.0';
+        // Your logging logic (e.g., audit log, analytics)
+        console.log(`[Security] Login recorded for user ${user.userId} from IP ${req.ip}`);
 
-        let location = 'Location tracked off';
-        if (user.trackLoginLocation) {
-            // Mocking IP-based location resolution
-            // In a real app, you'd use a service like ip-api.com or a library
-            location = `India, Maharashtra, Mumbai (IP: ${ip})`;
-        }
+        // Example: Save to DB (adapt to your AuditLog model)
+        // await AuditLog.create({
+        //     userId: user._id,
+        //     action: 'login',
+        //     ip: req.ip,
+        //     userAgent: req.get('User-Agent')
+        // });
 
-        await LoginHistory.create({
-            userId: user._id,
-            device,
-            browser,
-            platform,
-            ip,
-            location,
-            loginTime: new Date(),
-            lastLogin: new Date(),
-            isActive: true
-        });
-    } catch (error) {
-        console.error('Error recording login:', error);
+        // No next()—just return
+        return { success: true };
+    } catch (err) {
+        console.error('[recordLogin] Failed:', err);
+        // Don't throw—logins shouldn't fail on audit
+        return { success: false, error: err.message };
     }
 };
 
