@@ -1,5 +1,8 @@
 **Base URL**: `http://localhost:5000/api`
 
+> [!NOTE]
+> All **GSTIN & E-Way Bill Auto-Fill** APIs are available across `/api/customers`, `/api/vendor`, and `/api/customer-vendor` endpoints.
+
 ## Customer
 
 ### Download Customers
@@ -154,3 +157,88 @@ GET /customer-vendor
 Authorization: Bearer <token>
 ```
 
+### GSTIN Auto-Fill (GET)
+```http
+GET /customer-vendor/gst-autofill/:gstin
+Authorization: Bearer <token>
+```
+
+### GSTIN Auto-Fill (POST)
+```http
+POST /customer-vendor/gst-autofill
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "gstin": "27ABCDE1234F1Z5"
+}
+```
+
+**Response**
+```json
+{
+  "success": true,
+  "data": {
+    "companyName": "MOCK BUSINESS SOLUTIONS PVT LTD",
+    "legalName": "...",
+    "tradeName": "...",
+    "gstin": "27ABCDE1234F1Z5",
+    "pan": "ABCDE1234F",
+    "registrationType": "Regular",
+    "billingAddress": {
+        "street": "101, TECH PLAZA, MAIN ROAD",
+        "landmark": "NEAR METRO STATION",
+        "city": "Pune",
+        "state": "Maharashtra",
+        "pincode": "411001",
+        "country": "India"
+    },
+    "contactPerson": "John Doe",
+    "contactNo": "9876543210",
+    "email": "demo@mockbusiness.com"
+  }
+}
+```
+
+### E-Way Bill Auto-Fill (GET)
+```http
+GET /customer-vendor/ewaybill-autofill/:ewayBillNo
+Authorization: Bearer <token>
+```
+
+### E-Way Bill Auto-Fill (POST)
+```http
+POST /customer-vendor/ewaybill-autofill
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "ewayBillNo": "123456789012"
+}
+```
+
+**Response**
+```json
+{
+  "success": true,
+  "data": {
+    "ewayBillNo": "123456789012",
+    "billDate": "13/01/2026",
+    "distance": 350,
+    "from": {
+        "companyName": "SOURCE LOGISTICS",
+        "gstin": "27SOURCE1234G1Z",
+        "state": "Maharashtra",
+        "city": "Pune",
+        "pincode": "411001"
+    },
+    "to": {
+        "companyName": "DESTINATION RETAIL",
+        "gstin": "24DEST1234F1Z5",
+        "state": "Gujarat",
+        "city": "Surat",
+        "pincode": "395006"
+    }
+  }
+}
+```
