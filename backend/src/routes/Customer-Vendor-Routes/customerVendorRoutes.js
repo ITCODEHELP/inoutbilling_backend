@@ -1,12 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const { createCustomerVendor, getCustomerVendors, gstAutofill, ewayBillAutofill } = require('../../controllers/Customer-Vendor-Controller/customerVendorController');
+const { createCustomerVendor, getCustomerVendors, gstAutofill, ewayBillAutofill, searchParties } = require('../../controllers/Customer-Vendor-Controller/customerVendorController');
 const { protect } = require('../../middlewares/authMiddleware');
 
 router.use(protect);
 
 router.post('/create', createCustomerVendor);
 router.get('/', getCustomerVendors);
+router.get('/search-all', searchParties);
 
 // Auto-fill Routes (GET)
 router.get('/gst-autofill/:gstin', gstAutofill);
