@@ -3,6 +3,59 @@
 > [!NOTE]
 > All **GSTIN & E-Way Bill Auto-Fill** APIs are available across `/api/customers`, `/api/vendor`, and `/api/customer-vendor` endpoints.
 
+---
+
+## Search API (Universal)
+
+> [!TIP]
+> This feature is available identically across `/customers`, `/vendor`, and `/customer-vendor`. It extends existing listing behavior without modifying existing API structures.
+
+### Search Parameters
+Available via **Query Parameters** (GET) or **Request Body** (POST/GET). All filters use case-insensitive partial matching.
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `search` | String | Generic match for Name or GSTIN |
+| `companyName` | String | Filter by Company Name |
+| `gstin` | String | Filter by GSTIN |
+| `companyType` | String | Filter by Company/Registration Type |
+| `contactPerson` | String | Filter by Contact Person |
+| `licenseNo` | String | Filter by License Number |
+| `customField1` | String | Filter by Custom Field 1 |
+| `customField2` | String | Filter by Custom Field 2 |
+| `staffName` | String | Filter by Staff Name (matches Staff collection) |
+| `showAll` | Boolean | If `true`, returns all records bypassing search filters |
+| `page` | Number | Page number for pagination (Default: 1) |
+| `limit` | Number | Records per page (Default: 10) |
+
+### Summary Response Format
+When any search is performed (or `showAll` is used), the response includes a `summary` object containing counts from the *filtered* dataset across all models.
+
+```json
+{
+  "success": true,
+  "summary": {
+    "total": 15,
+    "customer": 10,
+    "vendor": 3,
+    "customerVendor": 2
+  },
+  "count": 10,
+  "totalRecords": 100,
+  "page": 1,
+  "pages": 10,
+  "data": [ ... ]
+}
+```
+
+### Example: Unified Search
+```http
+GET /api/customers?search=Acme&staffName=Rajesh
+Authorization: Bearer <token>
+```
+
+---
+
 ## Customer
 
 ### Download Customers

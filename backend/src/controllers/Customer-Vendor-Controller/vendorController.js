@@ -72,7 +72,9 @@ const createVendor = async (req, res) => {
     }
 };
 
-// @desc    Get all vendors
+const { _buildUnifiedSearchQuery, _getSearchSummary } = require('./customerVendorController');
+
+// @desc    Get all vendors with search & pagination & summary
 // @route   GET /api/vendor
 // @access  Private
 const getVendors = async (req, res) => {

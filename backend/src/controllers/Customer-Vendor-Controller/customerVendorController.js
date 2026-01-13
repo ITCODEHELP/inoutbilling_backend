@@ -1,4 +1,7 @@
 const Vendor = require('../../models/Customer-Vendor-Model/Vendor');
+const Customer = require('../../models/Customer-Vendor-Model/Customer');
+const Staff = require('../../models/Setting-Model/Staff');
+const mongoose = require('mongoose');
 
 // @desc    Create or update customer-vendor
 // @route   POST /api/customer-vendor/create
@@ -69,13 +72,152 @@ const createCustomerVendor = async (req, res) => {
     }
 };
 
+/**
+ * Shared helper to build search query for Customers and Vendors
+ * Supports: Name, GSTIN, Company Type, Contact Person, License No., customField1, customField2, Staff Name
+ */
+const _buildUnifiedSearchQuery = async (userId, queryParams) => {
+    const {
+        search, showAll,
+        companyName, name,
+        gstin,
+        companyType, registrationType,
+        contactPerson,
+        licenseNo,
+        customField1, customField2,
+        staffName
+    } = queryParams;
+
+    // Show All returns everything for this user
+    if (showAll === 'true' || showAll === true) {
+        return { userId };
+    }
+
+    let query = { userId };
+
+    // Generic search (matches Name or GSTIN)
+    if (search) {
+        query.$or = [
+            { companyName: { $regex: search, $options: 'i' } },
+            { gstin: { $regex: search, $options: 'i' } }
+        ];
+    }
+
+    // Specific field filters
+    if (companyName || name) {
+        query.companyName = { $regex: companyName || name, $options: 'i' };
+    }
+
+    if (gstin) {
+        query.gstin = { $regex: gstin, $options: 'i' };
+    }
+
+    if (companyType || registrationType) {
+        query.$or = [
+            { companyType: { $regex: companyType || registrationType, $options: 'i' } },
+            { registrationType: { $regex: companyType || registrationType, $options: 'i' } }
+        ];
+    }
+
+    if (contactPerson) {
+        query.contactPerson = { $regex: contactPerson, $options: 'i' };
+    }
+
+    // Handle License No. and Custom Fields (look in root and additionalDetails)
+    if (licenseNo) {
+        query.$or = [
+            ...(query.$or || []),
+            { licenseNo: { $regex: licenseNo, $options: 'i' } },
+            { "additionalDetails.licenseNo": { $regex: licenseNo, $options: 'i' } }
+        ];
+    }
+
+    if (customField1) {
+        query.$or = [
+            ...(query.$or || []),
+            { customField1: { $regex: customField1, $options: 'i' } },
+            { "additionalDetails.customField1": { $regex: customField1, $options: 'i' } }
+        ];
+    }
+
+    if (customField2) {
+        query.$or = [
+            ...(query.$or || []),
+            { customField2: { $regex: customField2, $options: 'i' } },
+            { "additionalDetails.customField2": { $regex: customField2, $options: 'i' } }
+        ];
+    }
+
+    // Staff Name resolution
+    if (staffName) {
+        const staffDocs = await Staff.find({
+            ownerRef: userId,
+            fullName: { $regex: staffName, $options: 'i' }
+        }).select('_id');
+
+        if (staffDocs.length > 0) {
+            query.staff = { $in: staffDocs.map(s => s._id) };
+        } else {
+            // Force empty results if staff name doesn't match existing staff
+            query.staff = new mongoose.Types.ObjectId();
+        }
+    }
+
+    return query;
+};
+
+/**
+ * Shared helper to compute search summary (Total, Customer, Vendor, Customer Vendor)
+ */
+const _getSearchSummary = async (query) => {
+    // Note: We strip collection-specific fields like isCustomerVendor from the base query
+    const baseQuery = { ...query };
+    delete baseQuery.isCustomerVendor;
+
+    const [customerCount, vendorOnlyCount, customerVendorCount] = await Promise.all([
+        Customer.countDocuments(baseQuery),
+        Vendor.countDocuments({ ...baseQuery, isCustomerVendor: false }),
+        Vendor.countDocuments({ ...baseQuery, isCustomerVendor: true })
+    ]);
+
+    return {
+        total: customerCount + vendorOnlyCount + customerVendorCount,
+        customer: customerCount,
+        vendor: vendorOnlyCount,
+        customerVendor: customerVendorCount
+    };
+};
+
 // @desc    Get all customer-vendors
 // @route   GET /api/customer-vendor
 // @access  Private
 const getCustomerVendors = async (req, res) => {
     try {
-        const records = await Vendor.find({ userId: req.user._id, isCustomerVendor: true });
-        res.status(200).json({ success: true, data: records });
+        const queryParams = { ...req.query, ...req.body };
+        const query = await _buildUnifiedSearchQuery(req.user._id, queryParams);
+        const filteredQuery = { ...query, isCustomerVendor: true };
+
+        const { page = 1, limit = 10, sort = 'createdAt', order = 'desc' } = queryParams;
+        const skip = (page - 1) * limit;
+
+        const [records, totalRecordsInType, summary] = await Promise.all([
+            Vendor.find(filteredQuery)
+                .sort({ [sort]: order === 'desc' ? -1 : 1 })
+                .skip(Number(skip))
+                .limit(Number(limit)),
+            Vendor.countDocuments(filteredQuery),
+            _getSearchSummary(query)
+        ]);
+
+        res.status(200).json({
+            success: true,
+            count: records.length,
+            totalRecords: totalRecordsInType,
+            page: Number(page),
+            pages: Math.ceil(totalRecordsInType / limit),
+            summary,
+            data: records
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -216,5 +358,7 @@ module.exports = {
     createCustomerVendor,
     getCustomerVendors,
     gstAutofill,
-    ewayBillAutofill
+    ewayBillAutofill,
+    _buildUnifiedSearchQuery,
+    _getSearchSummary
 };

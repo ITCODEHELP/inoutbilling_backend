@@ -67,7 +67,9 @@ const createCustomer = async (req, res) => {
     }
 };
 
-// @desc    Get all customers
+const { _buildUnifiedSearchQuery, _getSearchSummary } = require('./customerVendorController');
+
+// @desc    Get all customers with search & pagination & summary
 // @route   GET /api/customers
 // @access  Private
 const getCustomers = async (req, res) => {
@@ -76,7 +78,7 @@ const getCustomers = async (req, res) => {
         const customers = await Customer.find({ userId: req.user._id });
         res.status(200).json(customers);
     } catch (error) {
-        res.status(500).json({ message: 'Server Error', error: error.message });
+        res.status(500).json({ success: false, message: 'Server Error', error: error.message });
     }
 };
 
