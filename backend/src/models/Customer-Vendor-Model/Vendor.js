@@ -41,10 +41,10 @@ const vendorSchema = new mongoose.Schema({
         type: {
             type: String,
             enum: ["CREDIT", "DEBIT"],
-            required: true
+            default: "CREDIT"
         }, amount: {
             type: Number,
-            required: true
+            default: 0
         }
     },
 

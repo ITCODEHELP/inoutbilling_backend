@@ -4,7 +4,8 @@ const { createVendor, getVendors, getVendorById } = require('../../controllers/C
 const { gstAutofill, ewayBillAutofill } = require('../../controllers/Customer-Vendor-Controller/customerVendorController');
 const { protect } = require('../../middlewares/authMiddleware');
 
-router.use(protect);
+// router.use(protect);
+// Note: router.use(protect) was removed to unprotect these routes.
 
 // Auto-fill Routes
 router.get('/gst-autofill/:gstin', gstAutofill);

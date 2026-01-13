@@ -6,6 +6,11 @@ const ExcelJS = require('exceljs');
 // @access  Private
 const createCustomer = async (req, res) => {
     try {
+        // DEMO USER MOCK
+        if (!req.user) {
+            req.user = { _id: '000000000000000000000000' };
+        }
+
         const {
             companyName,
             companyType,
@@ -67,6 +72,7 @@ const createCustomer = async (req, res) => {
 // @access  Private
 const getCustomers = async (req, res) => {
     try {
+        if (!req.user) req.user = { _id: '000000000000000000000000' };
         const customers = await Customer.find({ userId: req.user._id });
         res.status(200).json(customers);
     } catch (error) {
@@ -79,6 +85,7 @@ const getCustomers = async (req, res) => {
 // @access  Private
 const getCustomerById = async (req, res) => {
     try {
+        if (!req.user) req.user = { _id: '000000000000000000000000' };
         const customer = await Customer.findOne({
             _id: req.params.id,
             userId: req.user._id
@@ -99,6 +106,7 @@ const getCustomerById = async (req, res) => {
 // @access  Private
 const updateCustomer = async (req, res) => {
     try {
+        if (!req.user) req.user = { _id: '000000000000000000000000' };
         const customer = await Customer.findOne({
             _id: req.params.id,
             userId: req.user._id
@@ -145,6 +153,7 @@ const updateCustomer = async (req, res) => {
 // @access  Private
 const deleteCustomer = async (req, res) => {
     try {
+        if (!req.user) req.user = { _id: '000000000000000000000000' };
         const customer = await Customer.findOneAndDelete({
             _id: req.params.id,
             userId: req.user._id
