@@ -56,6 +56,90 @@ Authorization: Bearer <token>
 
 ---
 
+## Ledger Report
+
+### Get Ledger Statement
+```http
+GET /customer-vendor/ledger?name=Acme%20Corp&fromDate=2024-01-01&toDate=2024-12-31
+Authorization: Bearer <token>
+```
+**Response**
+```json
+{
+  "success": true,
+  "user": { "companyName": "...", "address": "...", "city": "...", "state": "...", "gstNumber": "..." },
+  "target": { "companyName": "Acme Corp", "gstin": "...", "address": "..." },
+  "rows": [
+    { "date": "2024-01-10", "particulars": "INV-001", "voucherType": "Sale Invoice", "invoiceNo": "INV-001", "debit": 1500, "credit": 0, "balance": 1500 }
+  ],
+  "totals": { "openingBalance": 0, "totalDebit": 1500, "totalCredit": 0, "closingBalance": 1500 }
+}
+```
+
+### Print/Download Ledger (PDF)
+```http
+GET /customer-vendor/ledger/print?name=Acme%20Corp&fromDate=...&toDate=...
+Authorization: Bearer <token>
+```
+- Returns `application/pdf` binary stream.
+
+### Email Ledger
+```http
+POST /customer-vendor/ledger/email
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+    "name": "Acme Corp",
+    "fromDate": "2024-01-01",
+    "toDate": "2024-12-31"
+}
+```
+
+---
+
+## Document Management
+
+### Upload Document
+```http
+POST /customer-vendor/documents/upload
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+
+Body:
+- entityRef (string): ID or Name of Customer/Vendor
+- file (file): File to upload (Max 10MB)
+```
+**Response**
+```json
+{
+  "success": true,
+  "message": "Document uploaded successfully",
+  "data": {
+    "entityId": "...",
+    "entityType": "Customer",
+    "originalName": "contract.pdf",
+    "storedName": "173678..." ,
+    "previewUrl": "http://.../uploads/customer-vendor/..."
+  }
+}
+```
+
+### List Documents
+```http
+GET /customer-vendor/documents/:entityRef
+Authorization: Bearer <token>
+```
+- `:entityRef` can be the ID or Name of the Customer/Vendor.
+
+### Delete Document
+```http
+DELETE /customer-vendor/documents/delete/:documentId
+Authorization: Bearer <token>
+```
+
+---
+
 ## Customer
 
 ### Download Customers
