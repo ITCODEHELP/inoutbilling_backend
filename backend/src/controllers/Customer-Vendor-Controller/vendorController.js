@@ -66,13 +66,38 @@ const createVendor = async (req, res) => {
     }
 };
 
-// @desc    Get all vendors
+const { _buildUnifiedSearchQuery, _getSearchSummary } = require('./customerVendorController');
+
+// @desc    Get all vendors with search & pagination & summary
 // @route   GET /api/vendor
 // @access  Private
 const getVendors = async (req, res) => {
     try {
-        const vendors = await Vendor.find({ userId: req.user._id, isCustomerVendor: false });
-        res.status(200).json({ success: true, data: vendors });
+        const queryParams = { ...req.query, ...req.body };
+        const query = await _buildUnifiedSearchQuery(req.user._id, queryParams);
+        const filteredQuery = { ...query, isCustomerVendor: false };
+
+        const { page = 1, limit = 10, sort = 'createdAt', order = 'desc' } = queryParams;
+        const skip = (page - 1) * limit;
+
+        const [vendors, totalRecordsInType, summary] = await Promise.all([
+            Vendor.find(filteredQuery)
+                .sort({ [sort]: order === 'desc' ? -1 : 1 })
+                .skip(Number(skip))
+                .limit(Number(limit)),
+            Vendor.countDocuments(filteredQuery),
+            _getSearchSummary(query)
+        ]);
+
+        res.status(200).json({
+            success: true,
+            count: vendors.length,
+            totalRecords: totalRecordsInType,
+            page: Number(page),
+            pages: Math.ceil(totalRecordsInType / (Number(limit) || 10)),
+            summary,
+            data: vendors
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
