@@ -142,6 +142,50 @@ const sendDeliveryChallanEmail = async (challan, email) => {
     }
 };
 
-module.exports = { sendInvoiceEmail, sendProformaEmail, sendDeliveryChallanEmail };
+const sendLedgerEmail = async (ledgerData, email) => {
+    try {
+        if (!email) return;
+
+        const { generateLedgerPDF } = require('./pdfHelper');
+        const pdfBuffer = await generateLedgerPDF(ledgerData);
+
+        const transporter = nodemailer.createTransport({
+            host: process.env.EMAIL_HOST,
+            port: process.env.EMAIL_PORT,
+            secure: process.env.EMAIL_PORT == 465,
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASS,
+            },
+        });
+
+        const mailOptions = {
+            from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+            to: email,
+            subject: `Ledger Statement: ${ledgerData.target.companyName} from Inout Billing`,
+            text: `Dear User,\n\nPlease find attached the Ledger Statement for ${ledgerData.target.companyName} for the period ${new Date(ledgerData.fromDate).toLocaleDateString()} to ${new Date(ledgerData.toDate).toLocaleDateString()}.\n\nThank you!`,
+            html: `
+                <p>Dear User,</p>
+                <p>Please find attached the <strong>Ledger Statement</strong> for <strong>${ledgerData.target.companyName}</strong>.</p>
+                <p><strong>Period:</strong> ${new Date(ledgerData.fromDate).toLocaleDateString()} to ${new Date(ledgerData.toDate).toLocaleDateString()}</p>
+                <p>Thank you!</p>
+            `,
+            attachments: [
+                {
+                    filename: `Ledger_${ledgerData.target.companyName.replace(/\s+/g, '_')}.pdf`,
+                    content: pdfBuffer,
+                    contentType: 'application/pdf'
+                }
+            ]
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Ledger Email sent: %s', info.messageId);
+    } catch (error) {
+        console.error('Error sending ledger email:', error);
+    }
+};
+
+module.exports = { sendInvoiceEmail, sendProformaEmail, sendDeliveryChallanEmail, sendLedgerEmail };
 
 

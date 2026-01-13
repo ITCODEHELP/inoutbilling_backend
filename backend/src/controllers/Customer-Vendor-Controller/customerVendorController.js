@@ -1,6 +1,11 @@
 const Vendor = require('../../models/Customer-Vendor-Model/Vendor');
 const Customer = require('../../models/Customer-Vendor-Model/Customer');
 const Staff = require('../../models/Setting-Model/Staff');
+const SaleInvoice = require('../../models/Sales-Invoice-Model/SaleInvoice');
+const PurchaseInvoice = require('../../models/Purchase-Invoice-Model/PurchaseInvoice');
+const InwardPayment = require('../../models/Payment-Model/InwardPayment');
+const OutwardPayment = require('../../models/Payment-Model/OutwardPayment');
+const User = require('../../models/User-Model/User');
 const mongoose = require('mongoose');
 
 // @desc    Create or update customer-vendor
@@ -320,7 +325,211 @@ const gstAutofill = async (req, res) => {
     }
 };
 
-// @desc    Auto-fill details from E-Way Bill (Live Integration)
+/**
+ * Internal helper to calculate ledger data
+ * Resolves target entity by NAME instead of ID
+ */
+const _calculateLedgerData = async (userId, name, fromDate, toDate) => {
+    // 1. Fetch User (Company) details
+    const user = await User.findById(userId).lean();
+    if (!user) throw new Error("User not found");
+
+    if (!name) throw new Error("Entity Name (Customer/Vendor) is required");
+
+    // 2. Resolve Target (Customer/Vendor) details by Name
+    let target = await Customer.findOne({
+        userId,
+        companyName: { $regex: new RegExp(`^${name.trim()}$`, 'i') }
+    }).lean();
+
+    if (!target) {
+        target = await Vendor.findOne({
+            userId,
+            companyName: { $regex: new RegExp(`^${name.trim()}$`, 'i') }
+        }).lean();
+    }
+
+    if (!target) throw new Error(`Customer or Vendor named '${name}' not found`);
+
+    const from = fromDate ? new Date(fromDate) : new Date(0);
+    const to = toDate ? new Date(toDate) : new Date();
+
+    // 3. Collect all related transactions
+    // Sale Invoices (Debit for Customers)
+    const saleInvoices = await SaleInvoice.find({
+        userId,
+        'customerInformation.ms': target.companyName
+    }).lean();
+
+    // Purchase Invoices (Credit for Vendors)
+    const purchaseInvoices = await PurchaseInvoice.find({
+        userId,
+        'vendorInformation.ms': target.companyName
+    }).lean();
+
+    // Inward Payments (Credit for Customers)
+    const inwardPayments = await InwardPayment.find({
+        userId,
+        companyName: target.companyName
+    }).lean();
+
+    // Outward Payments (Debit for Vendors)
+    const outwardPayments = await OutwardPayment.find({
+        userId,
+        companyName: target.companyName
+    }).lean();
+
+    // Normalize rows
+    let allRows = [
+        ...saleInvoices.map(si => ({
+            date: si.invoiceDetails.date,
+            particulars: si.invoiceDetails.invoiceNumber,
+            voucherType: 'Sale Invoice',
+            invoiceNo: si.invoiceDetails.invoiceNumber,
+            debit: si.totals.grandTotal,
+            credit: 0
+        })),
+        ...purchaseInvoices.map(pi => ({
+            date: pi.invoiceDetails.date,
+            particulars: pi.invoiceDetails.invoiceNumber,
+            voucherType: 'Purchase Invoice',
+            invoiceNo: pi.invoiceDetails.invoiceNumber,
+            debit: 0,
+            credit: pi.totals.grandTotal
+        })),
+        ...inwardPayments.map(ip => ({
+            date: ip.paymentDate,
+            particulars: ip.receiptNo,
+            voucherType: 'Inward Payment',
+            invoiceNo: ip.receiptNo,
+            debit: 0,
+            credit: ip.amount
+        })),
+        ...outwardPayments.map(op => ({
+            date: op.paymentDate,
+            particulars: op.paymentNo,
+            voucherType: 'Outward Payment',
+            invoiceNo: op.paymentNo,
+            debit: op.amount,
+            credit: 0
+        }))
+    ];
+
+    // Add Profile Opening Balance
+    // Customer model has openingBalance.amount and type ( Credit/Debit)
+    // Vendor has openningBalance as a number? 
+    let initialOpening = 0;
+    if (target.openingBalance) {
+        if (typeof target.openingBalance === 'number') {
+            initialOpening = target.openingBalance; // Assuming Vendor debit by default or check schema
+        } else if (target.openingBalance.amount) {
+            initialOpening = target.openingBalance.type === 'Credit' ? -target.openingBalance.amount : target.openingBalance.amount;
+        }
+    }
+
+    // Sort by date to calculate opening and period balance
+    allRows.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    // Calculate Opening Balance for the period
+    let runningBalance = initialOpening;
+    let periodOpeningBalance = initialOpening;
+    const periodRows = [];
+
+    allRows.forEach(row => {
+        const rowDate = new Date(row.date);
+        if (rowDate < from) {
+            runningBalance += (row.debit - row.credit);
+            periodOpeningBalance = runningBalance;
+        } else if (rowDate <= to) {
+            runningBalance += (row.debit - row.credit);
+            row.balance = runningBalance;
+            periodRows.push(row);
+        }
+    });
+
+    // Totals for the period
+    const totalDebit = periodRows.reduce((sum, r) => sum + r.debit, 0);
+    const totalCredit = periodRows.reduce((sum, r) => sum + r.credit, 0);
+
+    return {
+        user,
+        target,
+        rows: periodRows,
+        totals: {
+            openingBalance: periodOpeningBalance,
+            totalDebit,
+            totalCredit,
+            closingBalance: runningBalance
+        },
+        fromDate: from,
+        toDate: to
+    };
+};
+
+/**
+ * @desc    Get Ledger Report (JSON)
+ * @route   GET /api/customer-vendor/ledger
+ */
+const getLedgerReport = async (req, res) => {
+    try {
+        const { name, fromDate, toDate } = req.query;
+        if (!name) return res.status(400).json({ success: false, message: "Name is required" });
+
+        const data = await _calculateLedgerData(req.user._id, name, fromDate, toDate);
+        res.status(200).json({ success: true, ...data });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Print/Download Ledger PDF
+ * @route   GET /api/customer-vendor/ledger/print
+ */
+const printLedgerPDF = async (req, res) => {
+    try {
+        const { name, fromDate, toDate, shareOnly } = req.query;
+        if (!name) return res.status(400).json({ success: false, message: "Name is required" });
+
+        const data = await _calculateLedgerData(req.user._id, name, fromDate, toDate);
+
+        const { generateLedgerPDF } = require('../../utils/pdfHelper');
+        const pdfBuffer = await generateLedgerPDF(data);
+
+        if (shareOnly === 'true') {
+            return res.status(200).json({ success: true, message: "PDF Generated Successfully" });
+        }
+
+        res.set({
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': `attachment; filename=Ledger_${data.target.companyName.replace(/\s+/g, '_')}.pdf`,
+            'Content-Length': pdfBuffer.length
+        });
+        res.send(pdfBuffer);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Email Ledger PDF
+ * @route   POST /api/customer-vendor/ledger/email
+ */
+const emailLedgerPDF = async (req, res) => {
+    try {
+        const { name, fromDate, toDate } = req.body;
+        if (!name) return res.status(400).json({ success: false, message: "Name is required" });
+
+        const data = await _calculateLedgerData(req.user._id, name, fromDate, toDate);
+
+        const { sendLedgerEmail } = require('../../utils/emailHelper');
+        await sendLedgerEmail(data, req.user.email);
+
+        res.status(200).json({ success: true, message: "Ledger sent to your email successfully" });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
 // @route   POST /api/customer-vendor/ewaybill-autofill
 // @access  Private
 const ewayBillAutofill = async (req, res) => {
@@ -360,5 +569,8 @@ module.exports = {
     gstAutofill,
     ewayBillAutofill,
     _buildUnifiedSearchQuery,
-    _getSearchSummary
+    _getSearchSummary,
+    getLedgerReport,
+    printLedgerPDF,
+    emailLedgerPDF
 };
