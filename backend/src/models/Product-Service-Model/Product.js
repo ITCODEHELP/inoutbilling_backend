@@ -13,49 +13,93 @@ const productSchema = new mongoose.Schema({
     },
     name: {
         type: String,
-        required: [true, 'Product Name is required']
+        required: [true, 'Item Name is required']
     },
     productNote: { type: String },
-    barcode: { type: String },
+    barcodeNumber: { type: String },
     hsnSac: { type: String }, // HSN for Product, SAC for Service
-    unit: { type: String },
-    tax: {
+    unitOfMeasurement: { type: String },
+
+    // Tax & Pricing
+    taxSelection: {
         type: Number,
         required: [true, 'Tax Rate is required']
     },
     cessPercent: { type: Number, default: 0 },
     cessAmount: { type: Number, default: 0 },
-    itcType: { type: String }, // e.g., Eligible, Ineligible
+    fixedNoItcFlag: { type: Boolean, default: false },
 
-    // Inventory
-    manageStock: { type: Boolean, default: false },
-    stockType: { type: String }, // e.g., Opening, Current
-    qty: { type: Number, default: 0 }, // Current Quantity
-    lowStockAlert: { type: Number, default: 0 },
-
-    // Pricing
+    // Stock Management
+    inventoryType: {
+        type: String,
+        enum: ['Normal', 'Batch', 'Serial'],
+        default: 'Normal'
+    },
+    availableQuantity: { type: Number, default: 0 },
     sellPrice: { type: Number, default: 0 },
-    sellPriceInclTax: { type: Number, default: false },
+    sellPriceInclTax: { type: Boolean, default: false },
     saleDiscount: {
         value: { type: Number, default: 0 },
         type: { type: String, enum: ['Percentage', 'Flat'], default: 'Percentage' }
     },
-
     purchasePrice: { type: Number, default: 0 },
-    purchasePriceInclTax: { type: Number, default: false },
+    purchasePriceInclTax: { type: Boolean, default: false },
     purchaseDiscount: {
         value: { type: Number, default: 0 },
         type: { type: String, enum: ['Percentage', 'Flat'], default: 'Percentage' }
     },
+    lowStockAlert: { type: Number, default: 0 },
 
-    // Additional
+    // Batch Stock Data (Only for Products with inventoryType: 'Batch')
+    batchData: [{
+        batchNo: { type: String },
+        quantity: { type: Number, default: 0 },
+        salePrice: { type: Number, default: 0 },
+        salePriceInclTax: { type: Boolean, default: false },
+        purchasePrice: { type: Number, default: 0 },
+        purchasePriceInclTax: { type: Boolean, default: false },
+        barcodeNo: { type: String },
+        lowStockAlert: { type: Number, default: 0 },
+        saleDiscount: {
+            value: { type: Number, default: 0 },
+            type: { type: String, enum: ['Percentage', 'Flat'], default: 'Percentage' }
+        },
+        purchaseDiscount: {
+            value: { type: Number, default: 0 },
+            type: { type: String, enum: ['Percentage', 'Flat'], default: 'Percentage' }
+        }
+    }],
+
+    // Serial No Data (Only for Products with inventoryType: 'Serial')
+    serialData: {
+        serialNumbers: [{ type: String }],
+        sellPrice: { type: Number, default: 0 },
+        sellPriceInclTax: { type: Boolean, default: false },
+        saleDiscount: {
+            value: { type: Number, default: 0 },
+            type: { type: String, enum: ['Percentage', 'Flat'], default: 'Percentage' }
+        },
+        purchasePrice: { type: Number, default: 0 },
+        purchasePriceInclTax: { type: Boolean, default: false },
+        purchaseDiscount: {
+            value: { type: Number, default: 0 },
+            type: { type: String, enum: ['Percentage', 'Flat'], default: 'Percentage' }
+        },
+        lowStockAlert: { type: Number, default: 0 }
+    },
+
+    // Mapping & Flags
     productGroup: { type: String },
-    additionalDetails: { type: mongoose.Schema.Types.Mixed },
-    images: [{ type: String }], // URL or Base64
-
-    // Flags
     manufactureFlag: { type: Boolean, default: false },
-    nonSellableFlag: { type: Boolean, default: false }
+    nonSellableFlag: { type: Boolean, default: false },
+
+    // Images
+    images: [{
+        fileName: { type: String },
+        filePath: { type: String },
+        fileSize: { type: Number },
+        mimeType: { type: String }
+    }]
 
 }, {
     timestamps: true
