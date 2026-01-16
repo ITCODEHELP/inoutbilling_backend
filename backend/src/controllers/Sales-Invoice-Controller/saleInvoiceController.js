@@ -1,12 +1,22 @@
 const SaleInvoice = require('../../models/Sales-Invoice-Model/SaleInvoice');
 const DeliveryChallan = require('../../models/Other-Document-Model/DeliveryChallan');
+const Proforma = require('../../models/Other-Document-Model/Proforma');
+const PackingList = require('../../models/Other-Document-Model/PackingList');
+const Quotation = require('../../models/Other-Document-Model/Quotation');
+const CreditNote = require('../../models/Other-Document-Model/CreditNote');
+const DebitNote = require('../../models/Other-Document-Model/DebitNote');
+const PurchaseInvoice = require('../../models/Purchase-Invoice-Model/PurchaseInvoice');
+const PurchaseOrder = require('../../models/Other-Document-Model/PurchaseOrder');
+const BarcodeCart = require('../../models/Product-Service-Model/BarcodeCart');
 const Customer = require('../../models/Customer-Vendor-Model/Customer');
 const User = require('../../models/User-Model/User');
 const Staff = require('../../models/Setting-Model/Staff');
 const { sendInvoiceEmail } = require('../../utils/emailHelper');
 const { generateSaleInvoicePDF } = require('../../utils/saleInvoicePdfHelper');
+const { recordActivity } = require('../../utils/activityLogHelper');
 const fs = require('fs');
 const path = require('path');
+const mongoose = require('mongoose');
 
 // Helper for validation
 const validateSaleInvoice = (data) => {
@@ -262,10 +272,42 @@ const handleCreateInvoiceLogic = async (req) => {
     if (validationError) throw new Error(validationError);
 
     // 4️⃣ Save invoice
-    const invoice = await SaleInvoice.create({
-        ...req.body,
-        userId: req.user._id
+    // 4️⃣ Save invoice (Upsert Logic)
+    const existingInvoice = await SaleInvoice.findOne({
+        userId: req.user._id,
+        'invoiceDetails.invoiceNumber': req.body.invoiceDetails.invoiceNumber
     });
+
+    let invoice;
+    if (existingInvoice) {
+        // Update existing invoice
+        Object.assign(existingInvoice, req.body);
+        invoice = await existingInvoice.save();
+
+        // 4.5️⃣ Record Activity (Update)
+        await recordActivity(
+            req,
+            'Update',
+            'Sale Invoice',
+            `Sale Invoice updated for: ${req.body.customerInformation.ms}`,
+            req.body.invoiceDetails.invoiceNumber
+        );
+    } else {
+        // Create new invoice
+        invoice = await SaleInvoice.create({
+            ...req.body,
+            userId: req.user._id
+        });
+
+        // 4.5️⃣ Record Activity (Insert)
+        await recordActivity(
+            req,
+            'Insert',
+            'Sale Invoice',
+            `New Sale Invoice created for: ${req.body.customerInformation.ms}`,
+            req.body.invoiceDetails.invoiceNumber
+        );
+    }
 
     // 5️⃣ Auto-create Delivery Challan if requested
     if (req.body.createDeliveryChallan) {
@@ -575,6 +617,343 @@ const searchInvoices = async (req, res) => {
     }
 };
 
+const duplicateInvoice = async (req, res) => {
+    try {
+        const original = await SaleInvoice.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!original) return res.status(404).json({ success: false, message: "Invoice not found" });
+
+        const duplicateData = original.toObject();
+        delete duplicateData._id;
+        delete duplicateData.createdAt;
+        delete duplicateData.updatedAt;
+        duplicateData.invoiceDetails.invoiceNumber = duplicateData.invoiceDetails.invoiceNumber + "-COPY";
+        duplicateData.status = 'Active';
+
+        const duplicate = await SaleInvoice.create(duplicateData);
+
+        await recordActivity(
+            req,
+            'Duplicate',
+            'Sale Invoice',
+            `Invoice duplicated from: ${original.invoiceDetails.invoiceNumber} to ${duplicate.invoiceDetails.invoiceNumber}`,
+            duplicate.invoiceDetails.invoiceNumber
+        );
+
+        res.status(201).json({ success: true, message: "Invoice duplicated successfully", data: duplicate });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const cancelInvoice = async (req, res) => {
+    try {
+        const invoice = await SaleInvoice.findOneAndUpdate(
+            { _id: req.params.id, userId: req.user._id },
+            { status: 'Cancelled' },
+            { new: true }
+        );
+        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+
+        await recordActivity(
+            req,
+            'Cancel',
+            'Sale Invoice',
+            `Invoice cancelled: ${invoice.invoiceDetails.invoiceNumber}`,
+            invoice.invoiceDetails.invoiceNumber
+        );
+
+        res.status(200).json({ success: true, message: "Invoice cancelled successfully", data: invoice });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const attachFileToInvoice = async (req, res) => {
+    try {
+        if (!req.files || req.files.length === 0) return res.status(400).json({ success: false, message: "No files uploaded" });
+
+        const newAttachments = req.files.map(file => ({
+            fileName: file.filename,
+            filePath: file.path,
+            fileSize: file.size,
+            mimeType: file.mimetype
+        }));
+
+        const invoice = await SaleInvoice.findOneAndUpdate(
+            { _id: req.params.id, userId: req.user._id },
+            { $push: { attachments: { $each: newAttachments } } },
+            { new: true }
+        );
+
+        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+
+        await recordActivity(
+            req,
+            'Attachment',
+            'Sale Invoice',
+            `Files attached to Invoice: ${invoice.invoiceDetails.invoiceNumber}`,
+            invoice.invoiceDetails.invoiceNumber
+        );
+
+        res.status(200).json({ success: true, message: "Files attached successfully", data: invoice.attachments });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const generateBarcodeForInvoice = async (req, res) => {
+    try {
+        const invoice = await SaleInvoice.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+
+        const cartItems = [];
+        for (const item of invoice.items) {
+            const product = await mongoose.model('Product').findOne({ name: item.productName, userId: req.user._id });
+            if (product) {
+                cartItems.push({
+                    userId: req.user._id,
+                    productId: product._id,
+                    productName: product.name,
+                    noOfLabels: item.qty
+                });
+            }
+        }
+
+        if (cartItems.length > 0) {
+            await BarcodeCart.insertMany(cartItems);
+        }
+
+        await recordActivity(
+            req,
+            'Generate Barcode',
+            'Sale Invoice',
+            `Barcode generation requested for Invoice: ${invoice.invoiceDetails.invoiceNumber}`,
+            invoice.invoiceDetails.invoiceNumber
+        );
+
+        res.status(200).json({ success: true, message: `${cartItems.length} items added to barcode cart` });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const generateEWayBill = async (req, res) => {
+    try {
+        const invoice = await SaleInvoice.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+
+        invoice.eWayBill = {
+            generated: true,
+            eWayBillNumber: `EW-${Math.floor(100000000000 + Math.random() * 900000000000)}`,
+            eWayBillDate: new Date(),
+            eWayBillJson: { ...req.body }
+        };
+        await invoice.save();
+
+        await recordActivity(
+            req,
+            'Generate E-Way Bill',
+            'Sale Invoice',
+            `E-Way Bill ${invoice.eWayBill.eWayBillNumber} generated`,
+            invoice.invoiceDetails.invoiceNumber
+        );
+
+        res.status(200).json({ success: true, message: "E-Way Bill generated", data: invoice.eWayBill });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const downloadEWayBillJson = async (req, res) => {
+    try {
+        const invoice = await SaleInvoice.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!invoice || !invoice.eWayBill.generated) return res.status(404).json({ success: false, message: "E-Way Bill not found" });
+
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename="EWayBill_${invoice.eWayBill.eWayBillNumber}.json"`);
+        res.status(200).send(JSON.stringify(invoice.eWayBill.eWayBillJson, null, 2));
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Conversions
+const convertToDeliveryChallan = async (req, res) => {
+    try {
+        const invoice = await SaleInvoice.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+
+        const challan = await DeliveryChallan.create({
+            userId: req.user._id,
+            saleInvoiceId: invoice._id,
+            customerInformation: invoice.customerInformation,
+            deliveryChallanDetails: {
+                challanNumber: `DC-FROM-SL-${invoice.invoiceDetails.invoiceNumber}`,
+                date: new Date()
+            },
+            items: invoice.items,
+            totals: invoice.totals,
+            conversions: { convertedFrom: { docType: 'SaleInvoice', docId: invoice._id } }
+        });
+        invoice.conversions.convertedTo.push({ docType: 'DeliveryChallan', docId: challan._id });
+        await invoice.save();
+
+        res.status(201).json({ success: true, message: "Converted to Delivery Challan", data: challan });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const convertToProformaInvoice = async (req, res) => {
+    try {
+        const invoice = await SaleInvoice.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+
+        const proforma = await Proforma.create({
+            userId: req.user._id,
+            customerInformation: invoice.customerInformation,
+            proformaDetails: {
+                proformaNumber: `PI-FROM-SL-${invoice.invoiceDetails.invoiceNumber}`,
+                date: new Date()
+            },
+            items: invoice.items,
+            totals: invoice.totals,
+            conversions: { convertedFrom: { docType: 'SaleInvoice', docId: invoice._id } }
+        });
+        invoice.conversions.convertedTo.push({ docType: 'Proforma', docId: proforma._id });
+        await invoice.save();
+
+        res.status(201).json({ success: true, message: "Converted to Proforma Invoice", data: proforma });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const convertToQuotation = async (req, res) => {
+    try {
+        const invoice = await SaleInvoice.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+
+        const quotation = await Quotation.create({
+            userId: req.user._id,
+            customerInformation: invoice.customerInformation,
+            quotationDetails: {
+                quotationNumber: `QT-FROM-SL-${invoice.invoiceDetails.invoiceNumber}`,
+                date: new Date()
+            },
+            items: invoice.items,
+            totals: invoice.totals,
+            conversions: { convertedFrom: { docType: 'SaleInvoice', docId: invoice._id } }
+        });
+        invoice.conversions.convertedTo.push({ docType: 'Quotation', docId: quotation._id });
+        await invoice.save();
+
+        res.status(201).json({ success: true, message: "Converted to Quotation", data: quotation });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const convertToCreditNote = async (req, res) => {
+    try {
+        const invoice = await SaleInvoice.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+
+        const creditNote = await CreditNote.create({
+            userId: req.user._id,
+            customerInformation: invoice.customerInformation,
+            creditNoteDetails: {
+                cnNumber: `CN-FROM-SL-${invoice.invoiceDetails.invoiceNumber}`,
+                cnDate: new Date()
+            },
+            items: invoice.items,
+            totals: invoice.totals,
+            conversions: { convertedFrom: { docType: 'SaleInvoice', docId: invoice._id } }
+        });
+        invoice.conversions.convertedTo.push({ docType: 'CreditNote', docId: creditNote._id });
+        await invoice.save();
+
+        res.status(201).json({ success: true, message: "Converted to Credit Note", data: creditNote });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const convertToDebitNote = async (req, res) => {
+    try {
+        const invoice = await SaleInvoice.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+
+        const debitNote = await DebitNote.create({
+            userId: req.user._id,
+            customerInformation: invoice.customerInformation,
+            debitNoteDetails: {
+                dnNumber: `DN-FROM-SL-${invoice.invoiceDetails.invoiceNumber}`,
+                dnDate: new Date()
+            },
+            items: invoice.items,
+            totals: invoice.totals,
+            conversions: { convertedFrom: { docType: 'SaleInvoice', docId: invoice._id } }
+        });
+        invoice.conversions.convertedTo.push({ docType: 'DebitNote', docId: debitNote._id });
+        await invoice.save();
+
+        res.status(201).json({ success: true, message: "Converted to Debit Note", data: debitNote });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const convertToPurchaseInvoice = async (req, res) => {
+    try {
+        const invoice = await SaleInvoice.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+
+        const purchaseInvoice = await PurchaseInvoice.create({
+            userId: req.user._id,
+            vendorInformation: { ...invoice.customerInformation, ms: invoice.customerInformation.ms },
+            invoiceDetails: {
+                invoiceNumber: `PUR-FROM-SL-${invoice.invoiceDetails.invoiceNumber}`,
+                date: new Date()
+            },
+            items: invoice.items,
+            totals: invoice.totals,
+            conversions: { convertedFrom: { docType: 'SaleInvoice', docId: invoice._id } }
+        });
+        invoice.conversions.convertedTo.push({ docType: 'PurchaseInvoice', docId: purchaseInvoice._id });
+        await invoice.save();
+
+        res.status(201).json({ success: true, message: "Converted to Purchase Invoice", data: purchaseInvoice });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const convertToPackingList = async (req, res) => {
+    try {
+        const invoice = await SaleInvoice.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+
+        const packingList = await PackingList.create({
+            userId: req.user._id,
+            customerInformation: invoice.customerInformation,
+            packingListDetails: {
+                plNumber: `PL-FROM-SL-${invoice.invoiceDetails.invoiceNumber}`,
+                plDate: new Date()
+            },
+            items: invoice.items.map(item => ({ productName: item.productName, qty: item.qty })),
+            totals: invoice.totals,
+            conversions: { convertedFrom: { docType: 'SaleInvoice', docId: invoice._id } }
+        });
+        invoice.conversions.convertedTo.push({ docType: 'PackingList', docId: packingList._id });
+        await invoice.save();
+
+        res.status(201).json({ success: true, message: "Converted to Packing List", data: packingList });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 module.exports = {
     handleCreateInvoiceLogic,
     createInvoice,
@@ -587,5 +966,18 @@ module.exports = {
     shareWhatsApp,
     shareSMS,
     downloadInvoicePDF,
-    searchInvoices
+    searchInvoices,
+    duplicateInvoice,
+    cancelInvoice,
+    attachFileToInvoice,
+    generateBarcodeForInvoice,
+    generateEWayBill,
+    downloadEWayBillJson,
+    convertToDeliveryChallan,
+    convertToProformaInvoice,
+    convertToQuotation,
+    convertToCreditNote,
+    convertToDebitNote,
+    convertToPurchaseInvoice,
+    convertToPackingList
 };
