@@ -1,6 +1,6 @@
 const nodemailer = require('nodemailer');
-const { generateInvoicePDF } = require('./pdfHelper');
 const { generateSaleInvoicePDF } = require('./saleInvoicePdfHelper');
+const { generatePurchaseInvoicePDF } = require('./purchaseInvoicePdfHelper');
 const User = require('../models/User-Model/User');
 
 const sendInvoiceEmail = async (invoice, email, isPurchase = false) => {
@@ -10,13 +10,13 @@ const sendInvoiceEmail = async (invoice, email, isPurchase = false) => {
             return;
         }
 
+        const userData = await User.findById(invoice.userId);
         let pdfBuffer;
         if (isPurchase) {
-            // Use generic PDF helper for purchase invoices
-            pdfBuffer = await generateInvoicePDF(invoice, true);
+            // Use professional PDF helper for purchase invoices
+            pdfBuffer = await generatePurchaseInvoicePDF(invoice, userData || {});
         } else {
             // Use specialized Sale Invoice PDF helper with professional template
-            const userData = await User.findById(invoice.userId);
             pdfBuffer = await generateSaleInvoicePDF(invoice, userData || {});
         }
 
@@ -198,5 +198,3 @@ const sendLedgerEmail = async (ledgerData, email) => {
 };
 
 module.exports = { sendInvoiceEmail, sendProformaEmail, sendDeliveryChallanEmail, sendLedgerEmail };
-
-
