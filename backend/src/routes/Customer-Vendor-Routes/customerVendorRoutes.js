@@ -1,11 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const { createCustomerVendor, getCustomerVendors, gstAutofill, ewayBillAutofill, searchParties } = require('../../controllers/Customer-Vendor-Controller/customerVendorController');
 const {
     createCustomerVendor,
     getCustomerVendors,
     gstAutofill,
     ewayBillAutofill,
+    searchParties,
     getLedgerReport,
     printLedgerPDF,
     emailLedgerPDF

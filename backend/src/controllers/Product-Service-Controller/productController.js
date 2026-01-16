@@ -17,7 +17,7 @@ const getManageStock = async (req, res) => {
         } = req.query;
 
         const skip = (parseInt(page) - 1) * parseInt(limit);
-        let query = { userId: req.user._id, itemType: 'Product', manageStock: true };
+        let query = { userId: req.user._id, itemType: 'Product' };
 
         // 1. Partial Search on Name (Case-insensitive)
         if (search) {
@@ -31,43 +31,32 @@ const getManageStock = async (req, res) => {
 
         // 3. Stock Range (Min/Max)
         if (stockMin !== undefined || stockMax !== undefined) {
-            query.qty = {};
-            if (stockMin !== undefined && stockMin !== '') query.qty.$gte = parseInt(stockMin);
-            if (stockMax !== undefined && stockMax !== '') query.qty.$lte = parseInt(stockMax);
+            query.availableQuantity = {};
+            if (stockMin !== undefined && stockMin !== '') query.availableQuantity.$gte = parseInt(stockMin);
+            if (stockMax !== undefined && stockMax !== '') query.availableQuantity.$lte = parseInt(stockMax);
 
             // Clean up empty object if no valid min/max
-            if (Object.keys(query.qty).length === 0) delete query.qty;
+            if (Object.keys(query.availableQuantity).length === 0) delete query.availableQuantity;
         }
 
         // 4. Stock Status Logic
         if (stockStatus) {
             if (stockStatus === 'Negative Stock') {
-                query.qty = { ...query.qty, $lt: 0 };
+                query.availableQuantity = { ...query.availableQuantity, $lt: 0 };
             } else if (stockStatus === 'Out of Stock') {
-                query.qty = { ...query.qty, $eq: 0 };
+                query.availableQuantity = { ...query.availableQuantity, $eq: 0 };
             } else if (stockStatus === 'In Stock') {
-                // User Request: In Stock -> qty > 0
-                // Note: This matches simple positive stock. If "Low Stock" is also managed in frontend filter,
-                // they might overlap, but per instruction "In Stock -> qty > 0".
-
-                // If there's existing query.qty constraint (e.g. from Range), we merge carefully.
-                // However, since we used simple object for range, we can use $and if needed, 
-                // but let's try to fit into query.qty if possible or use $and for safety.
-
-                if (query.qty) {
-                    query.qty.$gt = 0; // Overwrites $gte if present? No, keys match.
-                    // If user set stockMin=5, qty must be >=5 AND >0. Fine.
-                    // If user set stockMax=-5 (impossible with In Stock), logic might return empty.
+                if (query.availableQuantity) {
+                    query.availableQuantity.$gt = 0;
                 } else {
-                    query.qty = { $gt: 0 };
+                    query.availableQuantity = { $gt: 0 };
                 }
             } else if (stockStatus === 'Low Stock') {
-                // Low Stock: 0 < Qty <= LowStockAlert
-                // This requires field comparison.
+                // Low Stock: 0 < AvailableQuantity <= LowStockAlert
                 query.$and = query.$and || [];
                 query.$and.push(
-                    { qty: { $gt: 0 } },
-                    { $expr: { $lte: ["$qty", "$lowStockAlert"] } }
+                    { availableQuantity: { $gt: 0 } },
+                    { $expr: { $lte: ["$availableQuantity", "$lowStockAlert"] } }
                 );
             }
         }
@@ -87,10 +76,11 @@ const getManageStock = async (req, res) => {
             purchasePrice: p.purchasePrice,
             sellPrice: p.sellPrice,
             hsnCode: p.hsnSac || '-',
-            currentStock: p.qty,
-            changeInStock: 0, // Default 0 for editable field
-            finalStock: p.qty, // currentStock + changeInStock
-            remarks: ''
+            currentStock: p.availableQuantity,
+            changeInStock: 0,
+            finalStock: p.availableQuantity,
+            remarks: '',
+            inventoryType: p.inventoryType
         }));
 
         res.status(200).json({
@@ -106,7 +96,6 @@ const getManageStock = async (req, res) => {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
-
 
 // @desc    Get Product/Service Stats (Total, Product count, Service count)
 // @route   GET /api/products/stats
@@ -134,7 +123,6 @@ const getProductStats = async (req, res) => {
         ]);
 
         const result = stats[0] || { total: 0, products: 0, services: 0 };
-        // Remove _id from result
         delete result._id;
 
         res.status(200).json(result);
@@ -148,61 +136,44 @@ const getProductStats = async (req, res) => {
 // @access  Private
 const createProduct = async (req, res) => {
     try {
-        const {
-            itemType,
-            name,
-            productNote,
-            barcode,
-            hsnSac,
-            unit,
-            tax,
-            cessPercent,
-            cessAmount,
-            itcType,
-            manageStock,
-            stockType,
-            qty,
-            lowStockAlert,
-            sellPrice,
-            sellPriceInclTax,
-            saleDiscount,
-            purchasePrice,
-            purchasePriceInclTax,
-            purchaseDiscount,
-            productGroup,
-            additionalDetails,
-            images,
-            manufactureFlag,
-            nonSellableFlag
-        } = req.body;
+        const body = { ...req.body };
+
+        // Handle images
+        if (req.files && req.files.length > 0) {
+            body.images = req.files.map(file => ({
+                fileName: file.filename,
+                filePath: file.path,
+                fileSize: file.size,
+                mimeType: file.mimetype
+            }));
+        }
+
+        // Exclude Batch/Serial data for Services
+        if (body.itemType === 'Service') {
+            delete body.batchData;
+            delete body.serialData;
+            delete body.inventoryType; // Services are usually not inventory tracked in this specific way
+        }
+
+        // Parse numeric fields if they come as strings
+        const numericFields = [
+            'taxSelection', 'cessPercent', 'cessAmount', 'availableQuantity',
+            'sellPrice', 'purchasePrice', 'lowStockAlert'
+        ];
+        numericFields.forEach(field => {
+            if (body[field]) body[field] = parseFloat(body[field]);
+        });
+
+        // Parse objects/arrays if they come as strings (for multipart form-data)
+        ['saleDiscount', 'purchaseDiscount', 'batchData', 'serialData'].forEach(field => {
+            if (typeof body[field] === 'string') {
+                try { body[field] = JSON.parse(body[field]); } catch (e) { }
+            }
+        });
 
         const product = await Product.create({
-            userId: req.user._id,
-            itemType,
-            name,
-            productNote,
-            barcode,
-            hsnSac,
-            unit,
-            tax,
-            cessPercent,
-            cessAmount,
-            itcType,
-            manageStock,
-            stockType,
-            qty,
-            lowStockAlert,
-            sellPrice,
-            sellPriceInclTax,
-            saleDiscount,
-            purchasePrice,
-            purchasePriceInclTax,
-            purchaseDiscount,
-            productGroup,
-            additionalDetails,
-            images,
-            manufactureFlag,
-            nonSellableFlag
+            ...body,
+            userId: req.user._id
         });
 
         // Activity Logging
@@ -210,8 +181,8 @@ const createProduct = async (req, res) => {
             req,
             'Insert',
             'Product',
-            `New ${itemType} created: ${name}`,
-            barcode || ''
+            `New ${body.itemType} created: ${body.name}`,
+            body.barcodeNumber || ''
         );
 
         res.status(201).json(product);
@@ -233,11 +204,16 @@ const getProducts = async (req, res) => {
         const limit = parseInt(req.query.limit) || 10;
         const skip = (page - 1) * limit;
         const search = req.query.search;
+        const itemType = req.query.itemType;
 
         let query = { userId: req.user._id };
 
         if (search) {
-            query.$text = { $search: search };
+            query.name = { $regex: search, $options: 'i' };
+        }
+
+        if (itemType) {
+            query.itemType = itemType;
         }
 
         const products = await Product.find(query)
@@ -294,9 +270,48 @@ const updateProduct = async (req, res) => {
             return res.status(404).json({ message: 'Product not found' });
         }
 
+        const body = { ...req.body };
+
+        // Handle images
+        if (req.files && req.files.length > 0) {
+            const newImages = req.files.map(file => ({
+                fileName: file.filename,
+                filePath: file.path,
+                fileSize: file.size,
+                mimeType: file.mimetype
+            }));
+            // Decision: Append or Replace? Usually for product edit, user might want to keep existing.
+            // But if they send new ones, maybe they are managing the whole list.
+            // Let's assume replacement if 'images' is not in body, or update based on logic.
+            // Simplest: replace if images are uploaded.
+            body.images = newImages;
+        }
+
+        if (body.itemType === 'Service') {
+            body.batchData = [];
+            body.serialData = null;
+            body.inventoryType = 'Normal';
+        }
+
+        // Parse numeric fields if they come as strings
+        const numericFields = [
+            'taxSelection', 'cessPercent', 'cessAmount', 'availableQuantity',
+            'sellPrice', 'purchasePrice', 'lowStockAlert'
+        ];
+        numericFields.forEach(field => {
+            if (body[field]) body[field] = parseFloat(body[field]);
+        });
+
+        // Parse objects/arrays if they come as strings
+        ['saleDiscount', 'purchaseDiscount', 'batchData', 'serialData'].forEach(field => {
+            if (typeof body[field] === 'string') {
+                try { body[field] = JSON.parse(body[field]); } catch (e) { }
+            }
+        });
+
         const updatedProduct = await Product.findByIdAndUpdate(
             req.params.id,
-            req.body,
+            { $set: body },
             { new: true, runValidators: true }
         );
 
@@ -306,7 +321,7 @@ const updateProduct = async (req, res) => {
             'Update',
             'Product',
             `Product updated: ${updatedProduct.name}`,
-            updatedProduct.barcode || ''
+            updatedProduct.barcodeNumber || ''
         );
 
         res.status(200).json(updatedProduct);
@@ -339,7 +354,7 @@ const deleteProduct = async (req, res) => {
             'Delete',
             'Product',
             `Product deleted: ${product.name}`,
-            product.barcode || ''
+            product.barcodeNumber || ''
         );
 
         res.status(200).json({ message: 'Product removed' });

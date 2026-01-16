@@ -1,5 +1,6 @@
 const Customer = require('../../models/Customer-Vendor-Model/Customer');
 const ExcelJS = require('exceljs');
+const mongoose = require('mongoose');
 
 // @desc    Create new customer/vendor
 // @route   POST /api/customers
@@ -134,6 +135,10 @@ const updateCustomer = async (req, res) => {
             }
         }
 
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({ message: 'Invalid Customer ID' });
+        }
+
         const updatedCustomer = await Customer.findByIdAndUpdate(
             req.params.id,
             req.body,
@@ -156,6 +161,11 @@ const updateCustomer = async (req, res) => {
 const deleteCustomer = async (req, res) => {
     try {
         if (!req.user) req.user = { _id: '000000000000000000000000' };
+        
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({ message: 'Invalid Customer ID' });
+        }
+
         const customer = await Customer.findOneAndDelete({
             _id: req.params.id,
             userId: req.user._id

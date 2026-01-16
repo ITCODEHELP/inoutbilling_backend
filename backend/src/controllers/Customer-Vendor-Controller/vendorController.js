@@ -1,5 +1,6 @@
 const Vendor = require('../../models/Customer-Vendor-Model/Vendor');
 const { recordActivity } = require('../../utils/activityLogHelper');
+const mongoose = require('mongoose');
 
 // @desc    Create new vendor
 // @route   POST /api/vendor/create
@@ -108,8 +109,63 @@ const getVendorById = async (req, res) => {
     }
 };
 
+// @desc    Update vendor
+// @route   PUT /api/vendor/:id
+// @access  Private
+const updateVendor = async (req, res) => {
+    try {
+        if (!req.user) req.user = { _id: '000000000000000000000000' };
+
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({ success: false, message: "Invalid Vendor ID" });
+        }
+
+        const vendor = await Vendor.findOneAndUpdate(
+            { _id: req.params.id, userId: req.user._id },
+            { ...req.body },
+            { new: true, runValidators: true }
+        );
+
+        if (!vendor) {
+            return res.status(404).json({ success: false, message: "Vendor not found" });
+        }
+
+        res.status(200).json({ success: true, data: vendor });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Delete vendor
+// @route   DELETE /api/vendor/:id
+// @access  Private
+const deleteVendor = async (req, res) => {
+    try {
+        if (!req.user) req.user = { _id: '000000000000000000000000' };
+
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({ success: false, message: "Invalid Vendor ID" });
+        }
+
+        const vendor = await Vendor.findOneAndDelete({
+            _id: req.params.id,
+            userId: req.user._id
+        });
+
+        if (!vendor) {
+            return res.status(404).json({ success: false, message: "Vendor not found" });
+        }
+
+        res.status(200).json({ success: true, message: "Vendor removed" });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 module.exports = {
     createVendor,
     getVendors,
-    getVendorById
+    getVendorById,
+    updateVendor,
+    deleteVendor
 };

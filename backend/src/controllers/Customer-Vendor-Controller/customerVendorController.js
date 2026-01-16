@@ -638,5 +638,8 @@ module.exports = {
     ewayBillAutofill,
     _buildUnifiedSearchQuery,
     _getSearchSummary,
-    searchParties
+    searchParties,
+    getLedgerReport,
+    printLedgerPDF,
+    emailLedgerPDF,
 };

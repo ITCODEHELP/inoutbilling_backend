@@ -9,8 +9,10 @@ const {
     getProductStats,
     getManageStock
 } = require('../../controllers/Product-Service-Controller/productController');
+const { exportProductLog } = require('../../controllers/Product-Service-Controller/productLogExportController');
 const { protect } = require('../../middlewares/authMiddleware');
-const upload = require('../../middlewares/uploadMiddleware');
+const upload = require('../../middlewares/uploadMiddleware'); // for bulk import
+const productImageUpload = require('../../middlewares/productImageUploadMiddleware');
 const {
     importBulkEdit,
     getBulkEditLogs,
@@ -22,6 +24,7 @@ const { getProductSearchCounts } = require('../../controllers/Product-Service-Co
 // Stats and Manage Stock Routes
 router.get('/stats', protect, getProductStats);
 router.get('/manage-stock', protect, getManageStock);
+router.get('/export-log', protect, exportProductLog);
 router.get('/search-counts', protect, getProductSearchCounts);
 
 // Bulk Edit Routes
@@ -31,10 +34,10 @@ router.get('/bulk-edit/logs', protect, getBulkEditLogs);
 router.get('/bulk-edit/logs/:id/details', protect, getBulkEditLogDetails);
 
 // CRUD Routes
-router.post('/', protect, createProduct);
+router.post('/', protect, productImageUpload.array('images', 5), createProduct);
 router.get('/', protect, getProducts);
 router.get('/:id', protect, getProductById);
-router.put('/:id', protect, updateProduct);
+router.put('/:id', protect, productImageUpload.array('images', 5), updateProduct);
 router.delete('/:id', protect, deleteProduct);
 
 module.exports = router;
