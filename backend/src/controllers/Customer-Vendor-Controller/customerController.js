@@ -75,10 +75,13 @@ const { _buildUnifiedSearchQuery, _getSearchSummary } = require('./customerVendo
 // @access  Private
 const getCustomers = async (req, res) => {
     try {
+        console.log('[API] GET /api/customers - Fetching customers for user:', req.user?._id || 'unauthorized');
         if (!req.user) req.user = { _id: '000000000000000000000000' };
         const customers = await Customer.find({ userId: req.user._id });
+        console.log(`[API] Found ${customers.length} customers`);
         res.status(200).json(customers);
     } catch (error) {
+        console.error('[API] Error in getCustomers:', error);
         res.status(500).json({ success: false, message: 'Server Error', error: error.message });
     }
 };
