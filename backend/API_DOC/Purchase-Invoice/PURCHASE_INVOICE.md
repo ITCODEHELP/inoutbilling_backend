@@ -1,132 +1,125 @@
-**Base URL**: `http://localhost:5000/api`
+**Base URL**: `http://localhost:5000/api/purchase-invoice`
 
-## Purchase Invoice
+## Purchase Invoice APIs
 
 ### Create Purchase Invoice
 ```http
-POST /purchase-invoice/create
-Authorization: Bearer <token>
-Content-Type: application/json
-```
-**Request Body**
-```json
-{
-  "vendorInformation": { "ms": "...", "placeOfSupply": "..." },
-  "invoiceDetails": { "invoiceNumber": "...", "date": "..." },
-  "items": [ { "productName": "...", "qty": 1, "price": 100 } ],
-  "totals": { "grandTotal": 100 },
-  "paymentType": "CASH"
-}
-```
-
-### Get Purchase Invoices
-```http
-GET /purchase-invoice
-Authorization: Bearer <token>
-```
-
-### Create & Print Purchase Invoice
-```http
-POST /purchase-invoice/create-print
-Authorization: Bearer <token>
-Content-Type: application/json
-```
-
-### Get Summary
-```http
-GET /purchase-invoice/summary
-Authorization: Bearer <token>
-```
-
-### Search Purchase Invoices
-```http
-GET /purchase-invoice/search
-Authorization: Bearer <token>
-```
-**Query Params**: `companyName`, `productName`, `fromDate`, `toDate`, `invoiceNumber`
-
-### Upload & Extract (AI)
-```http
-POST /purchase-invoice/upload-ai
+POST /create
 Authorization: Bearer <token>
 Content-Type: multipart/form-data
 ```
-**Request Body**
-- `invoice`: (PDF File)
 
-### Confirm Extraction
+**Request Body (form-data)**
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `vendorInformation` | JSON Object | Vendor details (ms, address, phone, gstinPan, placeOfSupply) |
+| `invoiceDetails` | JSON Object | Invoice headers (invoiceNumber, date, billNo, etc.) |
+| `items` | JSON Array | List of products (productName, hsnSac, qty, price, igst, cgst, sgst, total) |
+| `totals` | JSON Object | Summary values (totalTaxable, totalTax, grandTotal, totalInWords) |
+| `paymentType` | Enum | `CREDIT`, `CASH`, `CHEQUE`, `ONLINE` |
+| `conversions` | JSON Object | linkage info |
+| `eWayBill` | JSON Object | E-Way Bill info |
+| `attachments` | File(s) | Up to 5 document attachments |
+| `shareOnEmail` | Boolean | Flag to trigger email share |
+
+### Create and Print
 ```http
-POST /purchase-invoice/confirm-ai
+POST /create-print
 Authorization: Bearer <token>
-Content-Type: application/json
+Content-Type: multipart/form-data
 ```
-**Request Body**
-```json
-{ "extractionId": "...", "continue": "Yes" }
-```
+Identical to `/create`, returns PDF binary for print.
 
-### Get Purchase Invoice by ID
+### Get All Purchase Invoices
 ```http
-GET /purchase-invoice/:id
+GET /
 Authorization: Bearer <token>
 ```
+**Query Parameters (Optional)**:
+- `companyName`: Filter by vendor name.
+- `productName`: Filter by item name.
+- `fromDate` / `toDate`: Date range.
+- `minAmount` / `maxAmount`: Grand total range.
 
-### Delete Purchase Invoice
+### Search Invoices
 ```http
-DELETE /purchase-invoice/:id
+GET /search
 Authorization: Bearer <token>
 ```
+Supports identical query parameters as `GET /`.
 
----
-
-## Purchase Invoice Custom Fields
-
-### Save Custom Fields
+### Get Summary
 ```http
-POST /purchase-invoice/custom-fields
-Authorization: Bearer <token>
-Content-Type: application/json
-```
-**Request Body**
-```json
-{
-  "fields": [
-    { "name": "Warranty", "type": "TEXT", "status": "Active" },
-    { "name": "Type", "type": "DROPDOWN", "options": ["A", "B"] }
-  ]
-}
-```
-
-### Get Custom Fields
-```http
-GET /purchase-invoice/custom-fields
+GET /summary
 Authorization: Bearer <token>
 ```
 
----
-
-## Additional Charges
-
-### Create Charge
+### Download PDF
 ```http
-POST /additional-charges
-Authorization: Bearer <token>
-Content-Type: application/json
-```
-**Request Body**
-```json
-{
-  "name": "Shipping",
-  "price": 100,
-  "hsnSacCode": "9965",
-  "tax": 18,
-  "isServiceItem": true
-}
-```
-
-### Get Charges
-```http
-GET /additional-charges
+GET /:id/download
 Authorization: Bearer <token>
 ```
 
+### Action: Share Email
+```http
+POST /:id/share-email
+Authorization: Bearer <token>
+```
+**Body**: `{ "email": "vendor@example.com" }`
+  
+### Action: Share WhatsApp
+```http
+POST /:id/share-whatsapp
+Authorization: Bearer <token>
+```
+**Body**: `{ "phone": "9876543210" }`
+
+### Action: Duplicate
+```http
+POST /:id/duplicate
+Authorization: Bearer <token>
+```
+
+### Action: Cancel
+```http
+POST /:id/cancel
+Authorization: Bearer <token>
+```
+
+### Action: Attach File
+```http
+POST /:id/attach
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+```
+**Files**: `attachments` key.
+
+### Action: Generate Barcode
+```http
+POST /:id/generate-barcode
+Authorization: Bearer <token>
+```
+Adds all items from the invoice to the barcode generation cart.
+
+### E-Way Bill: Generate
+```http
+POST /:id/eway-bill
+Authorization: Bearer <token>
+```
+
+### E-Way Bill: Download JSON
+```http
+GET /:id/eway-bill/json
+Authorization: Bearer <token>
+```
+
+### Conversions
+```http
+POST /:id/convert/quotation
+POST /:id/convert/sale-invoice
+POST /:id/convert/credit-note
+POST /:id/convert/debit-note
+POST /:id/convert/purchase-order
+```
+All conversion endpoints return the newly created document.

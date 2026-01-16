@@ -206,3 +206,53 @@ Content-Type: application/json
 }
 ```
 Uses MSG91 to send invoice details and amount to the specified mobile number.
+
+### Action: Duplicate
+```http
+POST /:id/duplicate
+Authorization: Bearer <token>
+```
+
+### Action: Cancel
+```http
+POST /:id/cancel
+Authorization: Bearer <token>
+```
+
+### Action: Attach File
+```http
+POST /:id/attach
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+```
+**Files**: `attachments` key.
+
+### Action: Generate Barcode
+```http
+POST /:id/generate-barcode
+Authorization: Bearer <token>
+```
+
+### E-Way Bill: Generate
+```http
+POST /:id/eway-bill
+Authorization: Bearer <token>
+```
+
+### E-Way Bill: Download JSON
+```http
+GET /:id/eway-bill/json
+Authorization: Bearer <token>
+```
+
+### Conversions
+```http
+POST /:id/convert/delivery-challan
+POST /:id/convert/proforma
+POST /:id/convert/quotation
+POST /:id/convert/credit-note
+POST /:id/convert/debit-note
+POST /:id/convert/purchase-invoice
+POST /:id/convert/packing-list
+```
+All conversion endpoints return the newly created document.
