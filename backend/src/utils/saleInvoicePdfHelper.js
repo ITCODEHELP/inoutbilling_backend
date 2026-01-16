@@ -4,9 +4,11 @@ const PDFDocument = require('pdfkit');
  * Generates a professional Sale Invoice PDF matching the provided blue grid template.
  * @param {Object} invoice - Sale Invoice document.
  * @param {Object} user - Logged-in User (Company) details.
+ * @param {String} title - Header title (e.g. TAX INVOICE, RECEIPT VOUCHER).
+ * @param {Object} labels - Custom labels for the document details grid.
  * @returns {Promise<Buffer>}
  */
-const generateSaleInvoicePDF = (invoice, user) => {
+const generateSaleInvoicePDF = (invoice, user, title = "TAX INVOICE", labels = { no: "Invoice No.", date: "Invoice Date" }) => {
     return new Promise((resolve, reject) => {
         const doc = new PDFDocument({ margin: 30, size: 'A4' });
         const buffers = [];
@@ -39,7 +41,7 @@ const generateSaleInvoicePDF = (invoice, user) => {
 
         // --- 2. TAX INVOICE BAR ---
         doc.rect(startX, headerBottom, width, 18).fill(lightGray).stroke(blueColor);
-        doc.fillColor(blueColor).fontSize(10).text("TAX INVOICE", startX, headerBottom + 5, { align: "center", width: width, bold: true });
+        doc.fillColor(blueColor).fontSize(10).text(title, startX, headerBottom + 5, { align: "center", width: width, bold: true });
         doc.fillColor(blackColor).fontSize(7).text("ORIGINAL FOR RECIPIENT", startX, headerBottom + 5, { align: "right", width: width - 10 });
 
         // --- 3. CUSTOMER & INVOICE DETAILS GRID ---
@@ -73,8 +75,8 @@ const generateSaleInvoicePDF = (invoice, user) => {
             doc.fillColor(blackColor).text(value || "-", x + 60, invDetailsY);
         };
 
-        drawInvRow("Invoice No.", invoice.invoiceDetails.invoiceNumber, startX + 260);
-        drawInvRow("Invoice Date", new Date(invoice.invoiceDetails.date).toLocaleDateString(), startX + 410);
+        drawInvRow(labels.no || "Invoice No.", invoice.invoiceDetails.invoiceNumber, startX + 260);
+        drawInvRow(labels.date || "Invoice Date", new Date(invoice.invoiceDetails.date).toLocaleDateString(), startX + 410);
         invDetailsY += 15;
         doc.moveTo(startX + 250, invDetailsY).lineTo(startX + width, invDetailsY).stroke(blueColor);
         invDetailsY += 5;

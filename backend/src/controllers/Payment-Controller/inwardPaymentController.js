@@ -2,6 +2,12 @@ const InwardPayment = require('../../models/Payment-Model/InwardPayment');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
+const User = require('../../models/User-Model/User');
+const { generateSaleInvoicePDF } = require('../../utils/saleInvoicePdfHelper');
+const { sendReceiptEmail } = require('../../utils/emailHelper');
+const { recordActivity } = require('../../utils/activityLogHelper');
+const numberToWords = require('../../utils/numberToWords');
 
 // Ensure upload directory exists
 const uploadDir = path.join(__dirname, '../uploads/inward-payments');
@@ -327,9 +333,199 @@ const searchInwardPayments = async (req, res) => {
     }
 };
 
+// Helper to map Inward Payment to Sale Invoice structure for rendering
+const mapPaymentToInvoice = (payment) => {
+    const pType = payment.paymentType.toUpperCase();
+    let mappedPType = 'ONLINE';
+    if (pType === 'CASH') mappedPType = 'CASH';
+    if (pType === 'CHEQUE') mappedPType = 'CHEQUE';
+
+    return {
+        userId: payment.userId,
+        customerInformation: {
+            ms: payment.companyName,
+            address: payment.address,
+            phone: "-",
+            gstinPan: payment.gstinPan,
+            placeOfSupply: "-"
+        },
+        invoiceDetails: {
+            invoiceNumber: `${payment.receiptPrefix}${payment.receiptNo}${payment.receiptPostfix}`,
+            date: payment.paymentDate
+        },
+        items: [
+            {
+                productName: `Account :\n  ${payment.companyName}\n\nThrough :\n  ${payment.paymentType.toUpperCase()}`,
+                qty: 1,
+                price: payment.amount,
+                total: payment.amount,
+                hsnSac: "-"
+            }
+        ],
+        totals: {
+            grandTotal: payment.amount,
+            totalInWords: numberToWords(payment.amount)
+        },
+        paymentType: mappedPType
+    };
+};
+
+/**
+ * @desc    Download Receipt PDF
+ */
+const downloadPaymentPDF = async (req, res) => {
+    try {
+        const payment = await InwardPayment.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!payment) return res.status(404).json({ success: false, message: "Receipt not found" });
+
+        const userData = await User.findById(req.user._id);
+        const mappedData = mapPaymentToInvoice(payment);
+
+        const pdfBuffer = await generateSaleInvoicePDF(
+            mappedData,
+            userData || {},
+            "RECEIPT VOUCHER",
+            { no: "Receipt No.", date: "Receipt Date" }
+        );
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="Receipt_${mappedData.invoiceDetails.invoiceNumber}.pdf"`);
+        res.status(200).send(pdfBuffer);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Share Receipt via Email
+ */
+const shareEmail = async (req, res) => {
+    try {
+        const payment = await InwardPayment.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!payment) return res.status(404).json({ success: false, message: "Receipt not found" });
+
+        const mappedData = mapPaymentToInvoice(payment);
+        const targetEmail = req.body.email; // Client can provide email or we use a default if available
+
+        await sendReceiptEmail(mappedData, targetEmail);
+
+        await recordActivity(
+            req,
+            'Share Email',
+            'Inward Payment',
+            `Receipt ${mappedData.invoiceDetails.invoiceNumber} shared via email`,
+            mappedData.invoiceDetails.invoiceNumber
+        );
+
+        res.status(200).json({ success: true, message: "Receipt shared via email" });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Share Receipt via WhatsApp
+ */
+const shareWhatsApp = async (req, res) => {
+    try {
+        const payment = await InwardPayment.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!payment) return res.status(404).json({ success: false, message: "Receipt not found" });
+
+        const mappedData = mapPaymentToInvoice(payment);
+        const { phone } = req.body;
+
+        if (!phone) return res.status(400).json({ success: false, message: "Phone number is required for WhatsApp share" });
+
+        const message = `Dear Customer, your receipt ${mappedData.invoiceDetails.invoiceNumber} for amount ${mappedData.totals.grandTotal.toFixed(2)} is ready.`;
+        const waLink = `https://wa.me/${phone.replace('+', '')}?text=${encodeURIComponent(message)}`;
+
+        await recordActivity(
+            req,
+            'Share WhatsApp',
+            'Inward Payment',
+            `Receipt ${mappedData.invoiceDetails.invoiceNumber} shared via WhatsApp`,
+            mappedData.invoiceDetails.invoiceNumber
+        );
+
+        res.status(200).json({ success: true, waLink });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Generate a secure public link for the receipt
+ */
+const generatePublicLink = async (req, res) => {
+    try {
+        const payment = await InwardPayment.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!payment) return res.status(404).json({ success: false, message: "Receipt not found" });
+
+        // Generate a secure token based on payment ID and a secret
+        const secret = process.env.JWT_SECRET || 'your-default-secret';
+        const token = crypto
+            .createHmac('sha256', secret)
+            .update(payment._id.toString())
+            .digest('hex')
+            .substring(0, 16); // Shortened for link readability
+
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const publicLink = `${baseUrl}/api/inward-payments/view-public/${payment._id}/${token}`;
+
+        res.status(200).json({ success: true, publicLink });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Public View Receipt PDF (Unprotected)
+ */
+const viewPaymentPublic = async (req, res) => {
+    try {
+        const { id, token } = req.params;
+
+        // Verify token
+        const secret = process.env.JWT_SECRET || 'your-default-secret';
+        const expectedToken = crypto
+            .createHmac('sha256', secret)
+            .update(id)
+            .digest('hex')
+            .substring(0, 16);
+
+        if (token !== expectedToken) {
+            return res.status(401).send("Invalid or expired link");
+        }
+
+        const payment = await InwardPayment.findById(id);
+        if (!payment) return res.status(404).send("Receipt not found");
+
+        const userData = await User.findById(payment.userId);
+        const mappedData = mapPaymentToInvoice(payment);
+
+        const pdfBuffer = await generateSaleInvoicePDF(
+            mappedData,
+            userData || {},
+            "RECEIPT VOUCHER",
+            { no: "Receipt No.", date: "Receipt Date" }
+        );
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'inline; filename="Receipt.pdf"');
+        res.status(200).send(pdfBuffer);
+    } catch (error) {
+        res.status(500).send("Error rendering receipt");
+    }
+};
+
 module.exports = {
     createInwardPayment,
     getInwardPayments,
     getPaymentSummary,
-    searchInwardPayments
+    searchInwardPayments,
+    downloadPaymentPDF,
+    shareEmail,
+    shareWhatsApp,
+    generatePublicLink,
+    viewPaymentPublic
 };
