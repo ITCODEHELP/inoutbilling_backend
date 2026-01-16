@@ -15,6 +15,7 @@ const { recordActivity } = require('../../utils/activityLogHelper');
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 
 
 // Helper for unique number check
@@ -871,6 +872,62 @@ const convertToPurchaseOrder = async (req, res) => {
     }
 };
 
+/**
+ * @desc    Generate a secure public link for the purchase invoice
+ */
+const generatePublicLink = async (req, res) => {
+    try {
+        const invoice = await PurchaseInvoice.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+
+        const secret = process.env.JWT_SECRET || 'your-default-secret';
+        const token = crypto
+            .createHmac('sha256', secret)
+            .update(invoice._id.toString())
+            .digest('hex')
+            .substring(0, 16);
+
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const publicLink = `${baseUrl}/api/purchase-invoice/view-public/${invoice._id}/${token}`;
+
+        res.status(200).json({ success: true, publicLink });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Public View Purchase Invoice PDF (Unprotected)
+ */
+const viewInvoicePublic = async (req, res) => {
+    try {
+        const { id, token } = req.params;
+
+        const secret = process.env.JWT_SECRET || 'your-default-secret';
+        const expectedToken = crypto
+            .createHmac('sha256', secret)
+            .update(id)
+            .digest('hex')
+            .substring(0, 16);
+
+        if (token !== expectedToken) {
+            return res.status(401).send("Invalid or expired link");
+        }
+
+        const invoice = await PurchaseInvoice.findById(id);
+        if (!invoice) return res.status(404).send("Invoice not found");
+
+        const userData = await User.findById(invoice.userId);
+        const pdfBuffer = await generatePurchaseInvoicePDF(invoice, userData || {});
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'inline; filename="Purchase_Invoice.pdf"');
+        res.status(200).send(pdfBuffer);
+    } catch (error) {
+        res.status(500).send("Error rendering invoice");
+    }
+};
+
 module.exports = {
     createPurchaseInvoice,
     createPurchaseInvoiceAndPrint,
@@ -893,5 +950,7 @@ module.exports = {
     convertToSaleInvoice,
     convertToCreditNote,
     convertToDebitNote,
-    convertToPurchaseOrder
+    convertToPurchaseOrder,
+    generatePublicLink,
+    viewInvoicePublic
 };

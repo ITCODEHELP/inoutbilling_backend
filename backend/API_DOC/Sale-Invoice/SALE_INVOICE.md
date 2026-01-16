@@ -256,3 +256,16 @@ POST /:id/convert/purchase-invoice
 POST /:id/convert/packing-list
 ```
 All conversion endpoints return the newly created document.
+
+### Generate Public Link
+```http
+GET /:id/public-link
+Authorization: Bearer <token>
+```
+**Response**: `{ "success": true, "publicLink": "http://.../api/sale-invoice/view-public/:id/:token" }`
+
+### View Public PDF (Unprotected)
+```http
+GET /view-public/:id/:token
+```
+Returns PDF binary for Sale Invoice. This URL is used for the "Copy Link" feature.

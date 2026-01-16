@@ -61,6 +61,56 @@ const sendInvoiceEmail = async (invoice, email, isPurchase = false) => {
     }
 };
 
+const sendReceiptEmail = async (mappedReceipt, email) => {
+    try {
+        if (!email) return;
+
+        const userData = await User.findById(mappedReceipt.userId);
+        const pdfBuffer = await generateSaleInvoicePDF(
+            mappedReceipt,
+            userData || {},
+            "RECEIPT VOUCHER",
+            { no: "Receipt No.", date: "Receipt Date" }
+        );
+
+        const transporter = nodemailer.createTransport({
+            host: process.env.SMTP_HOST,
+            port: process.env.SMTP_PORT,
+            secure: process.env.SMTP_PORT == 465,
+            auth: {
+                user: process.env.SMTP_USER,
+                pass: process.env.SMTP_PASS,
+            },
+        });
+
+        const mailOptions = {
+            from: process.env.FROM_EMAIL || process.env.SMTP_USER,
+            to: email,
+            subject: `Receipt Voucher ${mappedReceipt.invoiceDetails.invoiceNumber} from Inout Billing`,
+            text: `Dear Customer,\n\nPlease find attached the receipt voucher ${mappedReceipt.invoiceDetails.invoiceNumber}.\n\nThank you!`,
+            html: `
+                <p>Dear Customer,</p>
+                <p>Please find attached the <strong>receipt voucher ${mappedReceipt.invoiceDetails.invoiceNumber}</strong>.</p>
+                <p>Thank you!</p>
+            `,
+            attachments: [
+                {
+                    filename: `Receipt_${mappedReceipt.invoiceDetails.invoiceNumber}.pdf`,
+                    content: pdfBuffer,
+                    contentType: 'application/pdf'
+                }
+            ]
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Receipt Email sent: %s', info.messageId);
+        return { success: true, messageId: info.messageId };
+    } catch (error) {
+        console.error('Error sending receipt email:', error);
+        throw error;
+    }
+};
+
 const sendProformaEmail = async (proforma, email) => {
     try {
         if (!email) {
@@ -197,4 +247,4 @@ const sendLedgerEmail = async (ledgerData, email) => {
     }
 };
 
-module.exports = { sendInvoiceEmail, sendProformaEmail, sendDeliveryChallanEmail, sendLedgerEmail };
+module.exports = { sendInvoiceEmail, sendReceiptEmail, sendProformaEmail, sendDeliveryChallanEmail, sendLedgerEmail };
