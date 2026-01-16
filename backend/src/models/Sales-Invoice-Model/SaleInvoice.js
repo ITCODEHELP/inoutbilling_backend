@@ -6,24 +6,28 @@ const invoiceItemSchema = new mongoose.Schema({
     itemNote: { type: String },
     hsnSac: { type: String, index: true },
     qty: { type: Number, default: 0 },
+    stockReference: { type: String },
     uom: { type: String },
     price: { type: Number, default: 0 },
-    discount: { type: Number, default: 0 },
+    discountType: { type: String, enum: ['Percentage', 'Flat'], default: 'Flat' },
+    discountValue: { type: Number, default: 0 },
     igst: { type: Number, default: 0 },
     cgst: { type: Number, default: 0 },
     sgst: { type: Number, default: 0 },
-    total: { type: Number, default: 0 }
-}, { _id: false }); // Disable _id for subdocuments for performance
+    total: { type: Number, default: 0 },
+    productGroup: { type: String, index: true }
+}, { _id: false });
 
 const saleInvoiceSchema = new mongoose.Schema({
     userId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
         required: true,
-        index: true // Critical for multi-tenant isolation
+        index: true
     },
     // Section 1: Customer Information
     customerInformation: {
+        title: { type: String },
         ms: { type: String, required: [true, 'ms is required'] },
         address: { type: String },
         contactPerson: { type: String },
@@ -40,13 +44,24 @@ const saleInvoiceSchema = new mongoose.Schema({
         invoiceNumber: { type: String, required: [true, 'invoiceNumber is required'], unique: true, index: true },
         invoicePostfix: { type: String },
         date: { type: Date, required: [true, 'date is required'], index: true },
-        deliveryMode: { type: String }
+        deliveryMode: { type: String },
+        bankSelection: { type: String },
+        hideBankDetails: { type: Boolean, default: false }
     },
     // Section 3: Product Items
     items: [invoiceItemSchema],
+
+    // Section 4: Additional Charges
+    additionalCharges: [{
+        chargeName: { type: String },
+        chargeAmount: { type: Number, default: 0 },
+        taxRate: { type: Number, default: 0 }
+    }],
+
     // Add due date for outstanding calculations
     dueDate: { type: Date, index: true },
-    // Totals and Footer
+
+    // Totals and Summary
     totals: {
         totalInvoiceValue: { type: Number, default: 0 },
         totalTaxable: { type: Number, default: 0 },
@@ -58,17 +73,68 @@ const saleInvoiceSchema = new mongoose.Schema({
         grandTotal: { type: Number, default: 0 },
         totalInWords: { type: String }
     },
+
     paymentType: {
         type: String,
         required: [true, 'paymentType is required'],
         enum: ['CREDIT', 'CASH', 'CHEQUE', 'ONLINE'],
         index: true
     },
+
+    // Conversions
+    conversions: {
+        convertedTo: [{
+            docType: { type: String },
+            docId: { type: mongoose.Schema.Types.ObjectId }
+        }],
+        convertedFrom: {
+            docType: { type: String },
+            docId: { type: mongoose.Schema.Types.ObjectId }
+        }
+    },
+
+    // E-Way Bill
+    eWayBill: {
+        generated: { type: Boolean, default: false },
+        eWayBillNumber: { type: String },
+        eWayBillDate: { type: Date },
+        eWayBillJson: { type: mongoose.Schema.Types.Mixed }
+    },
+
+    // Attachments
+    attachments: [{
+        fileName: { type: String },
+        filePath: { type: String },
+        fileSize: { type: Number },
+        mimeType: { type: String }
+    }],
+
     bankDetails: { type: String },
     termsTitle: { type: String },
     termsDetails: { type: String },
+
+    // New Terms & Conditions structure if needed, but keeping old ones for compatibility
+    termsAndConditions: {
+        title: { type: String },
+        text: { type: String }
+    },
+
     additionalNotes: { type: String },
     documentRemarks: { type: String },
+    printRemarksFlag: { type: Boolean, default: true },
+
+    staff: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Staff',
+        index: true
+    },
+
+    transportDetails: {
+        lrNo: { type: String, index: true },
+        vehicleNo: { type: String },
+        transportName: { type: String }
+    },
+
     deliveryChallanId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'DeliveryChallan',
