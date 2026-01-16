@@ -1,5 +1,7 @@
 const nodemailer = require('nodemailer');
 const { generateInvoicePDF } = require('./pdfHelper');
+const { generateSaleInvoicePDF } = require('./saleInvoicePdfHelper');
+const User = require('../models/User-Model/User');
 
 const sendInvoiceEmail = async (invoice, email, isPurchase = false) => {
     try {
@@ -8,24 +10,31 @@ const sendInvoiceEmail = async (invoice, email, isPurchase = false) => {
             return;
         }
 
-        // Generate PDF Buffer
-        const pdfBuffer = await generateInvoicePDF(invoice, isPurchase);
+        let pdfBuffer;
+        if (isPurchase) {
+            // Use generic PDF helper for purchase invoices
+            pdfBuffer = await generateInvoicePDF(invoice, true);
+        } else {
+            // Use specialized Sale Invoice PDF helper with professional template
+            const userData = await User.findById(invoice.userId);
+            pdfBuffer = await generateSaleInvoicePDF(invoice, userData || {});
+        }
 
         const transporter = nodemailer.createTransport({
-            host: process.env.EMAIL_HOST,
-            port: process.env.EMAIL_PORT,
-            secure: process.env.EMAIL_PORT == 465,
+            host: process.env.SMTP_HOST,
+            port: process.env.SMTP_PORT,
+            secure: process.env.SMTP_PORT == 465,
             auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASS,
+                user: process.env.SMTP_USER,
+                pass: process.env.SMTP_PASS,
             },
         });
 
-        const invoiceType = isPurchase ? 'Purchase Invoice' : 'Invoice';
+        const invoiceType = isPurchase ? 'Purchase Invoice' : 'Tax Invoice';
         const senderLabel = isPurchase ? 'Vendor' : 'Customer';
 
         const mailOptions = {
-            from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+            from: process.env.FROM_EMAIL || process.env.SMTP_USER,
             to: email,
             subject: `${invoiceType} ${invoice.invoiceDetails.invoiceNumber} from Inout Billing`,
             text: `Dear ${senderLabel},\n\nPlease find attached the ${invoiceType.toLowerCase()} ${invoice.invoiceDetails.invoiceNumber}.\n\nThank you!`,
@@ -45,8 +54,10 @@ const sendInvoiceEmail = async (invoice, email, isPurchase = false) => {
 
         const info = await transporter.sendMail(mailOptions);
         console.log('Email sent with PDF attachment: %s', info.messageId);
+        return { success: true, messageId: info.messageId };
     } catch (error) {
         console.error('Error sending email with PDF:', error);
+        throw error;
     }
 };
 

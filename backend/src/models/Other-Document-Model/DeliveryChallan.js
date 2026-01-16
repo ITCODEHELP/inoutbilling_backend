@@ -60,7 +60,7 @@ const deliveryChallanSchema = new mongoose.Schema({
         date: { type: Date, required: [true, 'date is required'] },
         deliveryMode: {
             type: String,
-            enum: ['HAND DELIVERY', 'TRANSPORT/ROAD REGULAR', 'ROAD-OVER DIMENSIONAL', 'RAIL', 'AIR', 'SHIP', 'SHIP-CUM ROAD/RAIL'],
+            enum: ['HAND DELIVERY', 'TRANSPORT/ROAD REGULAR', 'ROAD-OVER DIMENSIONAL', 'RAIL', 'AIR', 'SHIP', 'SHIP-CUM ROAD/RAIL', 'COURIER'],
             required: true
         },
         eWayBill: {
