@@ -3,6 +3,7 @@ const PerformanceOptimization = require('../../utils/performanceOptimization');
 
 const invoiceItemSchema = new mongoose.Schema({
     productName: { type: String, required: true, index: true },
+    productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
     itemNote: { type: String },
     hsnSac: { type: String, index: true },
     qty: { type: Number, default: 0 },
@@ -14,8 +15,11 @@ const invoiceItemSchema = new mongoose.Schema({
     igst: { type: Number, default: 0 },
     cgst: { type: Number, default: 0 },
     sgst: { type: Number, default: 0 },
+    taxableValue: { type: Number, default: 0 },
     total: { type: Number, default: 0 },
-    productGroup: { type: String, index: true }
+    productGroup: { type: String, index: true },
+    productSnapshot: { type: Object },
+    serialNumbers: [{ type: String }]
 }, { _id: false });
 
 const saleInvoiceSchema = new mongoose.Schema({

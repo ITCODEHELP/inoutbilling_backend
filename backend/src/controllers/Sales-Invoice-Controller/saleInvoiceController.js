@@ -18,6 +18,8 @@ const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
 const crypto = require('crypto');
+const Product = require('../../models/Product-Service-Model/Product');
+const numberToWords = require('../../utils/numberToWords');
 
 // Helper for validation
 const validateSaleInvoice = (data) => {
@@ -444,6 +446,317 @@ const createInvoiceAndPrint = async (req, res) => {
             return res.status(400).setHeader('Content-Type', 'application/json').json({ success: false, message: "Invoice number must be unique" });
         }
         res.status(400).setHeader('Content-Type', 'application/json').json({ success: false, message: error.message });
+    }
+};
+
+// Internal helper for item resolution
+const resolveItemLogic = async (userId, itemInput) => {
+    let product = null;
+
+    // Lookup priority: productId > productName > hsnSac
+    if (itemInput.productId) {
+        product = await Product.findOne({ _id: itemInput.productId, userId });
+    } else if (itemInput.productName) {
+        product = await Product.findOne({ name: itemInput.productName, userId });
+    } else if (itemInput.hsnSac) {
+        product = await Product.findOne({ hsnSac: itemInput.hsnSac, userId });
+    }
+
+    if (!product) {
+        // If no product found, return the item as is (manual entry)
+        return {
+            ...itemInput,
+            qty: Number(itemInput.qty || 1),
+            price: Number(itemInput.price || 0),
+            discountValue: Number(itemInput.discountValue || 0),
+            igst: Number(itemInput.igst || 0),
+            cgst: Number(itemInput.cgst || 0),
+            sgst: Number(itemInput.sgst || 0),
+            taxableValue: 0,
+            total: 0
+        };
+    }
+
+    // Resolve Defaults
+    const resolvedItem = {
+        ...itemInput,
+        productId: product._id,
+        productName: itemInput.productName || product.name,
+        hsnSac: itemInput.hsnSac || product.hsnSac,
+        uom: itemInput.uom || product.unitOfMeasurement,
+        productGroup: itemInput.productGroup || product.productGroup,
+        qty: Number(itemInput.qty || 1),
+        discountType: itemInput.discountType || (product.inventoryType === 'Serial' ? (product.serialData?.saleDiscount?.type || (product.saleDiscount?.type || 'Flat')) : (product.saleDiscount?.type || 'Flat'))
+    };
+
+    // Price and Discount Priority
+    if (product.inventoryType === 'Serial') {
+        resolvedItem.price = itemInput.price !== undefined && itemInput.price !== 0 ? Number(itemInput.price) : (product.serialData?.sellPrice || product.sellPrice);
+        if (itemInput.discountValue === undefined) {
+            const serialDiscount = product.serialData?.saleDiscount;
+            resolvedItem.discountValue = serialDiscount ? serialDiscount.value : (product.saleDiscount?.value || 0);
+        } else {
+            resolvedItem.discountValue = Number(itemInput.discountValue);
+        }
+    } else {
+        resolvedItem.price = itemInput.price !== undefined && itemInput.price !== 0 ? Number(itemInput.price) : product.sellPrice;
+        resolvedItem.discountValue = itemInput.discountValue !== undefined ? Number(itemInput.discountValue) : (product.saleDiscount?.value || 0);
+    }
+
+    // Tax Defaults
+    resolvedItem.igst = itemInput.igst !== undefined ? Number(itemInput.igst) : product.taxSelection;
+    resolvedItem.cgst = itemInput.cgst !== undefined ? Number(itemInput.cgst) : (resolvedItem.igst / 2);
+    resolvedItem.sgst = itemInput.sgst !== undefined ? Number(itemInput.sgst) : (resolvedItem.igst / 2);
+
+    // Stock
+    resolvedItem.availableStock = product.inventoryType === 'Serial'
+        ? (product.serialData?.serialNumbers?.length || 0)
+        : (product.availableQuantity || 0);
+
+    // Calculations
+    const qty = resolvedItem.qty;
+    const price = resolvedItem.price;
+    const discountValue = resolvedItem.discountValue;
+
+    let discountAmount = 0;
+    if (resolvedItem.discountType === 'Percentage') {
+        discountAmount = (qty * price) * (discountValue / 100);
+    } else {
+        discountAmount = discountValue;
+    }
+
+    const taxableValue = (qty * price) - discountAmount;
+    const igstAmount = taxableValue * (resolvedItem.igst / 100);
+    const cgstAmount = taxableValue * (resolvedItem.cgst / 100);
+    const sgstAmount = taxableValue * (resolvedItem.sgst / 100);
+    const total = taxableValue + igstAmount + cgstAmount + sgstAmount;
+
+    resolvedItem.taxableValue = Number(taxableValue.toFixed(2));
+    resolvedItem.total = Number(total.toFixed(2));
+
+    // Internal use: attach snapshot
+    resolvedItem.productSnapshot = product.toObject();
+
+    return resolvedItem;
+};
+
+// @desc    Resolve single invoice item with auto-population and calculations
+// @route   POST /api/sale-invoice/resolve-item
+// @access  Private
+const resolveInvoiceItem = async (req, res) => {
+    try {
+        const itemData = req.body;
+        if (!itemData.productName && !itemData.hsnSac && !itemData.productId) {
+            return res.status(400).json({ success: false, message: "productName, productId, or hsnSac is required" });
+        }
+
+        const resolved = await resolveItemLogic(req.user._id, itemData);
+
+        // Return only UI-required fields as requested
+        const uiResponse = {
+            productName: resolved.productName,
+            productId: resolved.productId,
+            hsnSac: resolved.hsnSac,
+            qty: resolved.qty,
+            uom: resolved.uom,
+            price: resolved.price,
+            discountType: resolved.discountType,
+            discountValue: resolved.discountValue,
+            igst: resolved.igst,
+            cgst: resolved.cgst,
+            sgst: resolved.sgst,
+            taxableValue: resolved.taxableValue,
+            total: resolved.total,
+            availableStock: resolved.availableStock
+        };
+
+        res.status(200).json({ success: true, data: uiResponse });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Create sale invoice with dynamic product lookup and auto-calculations
+// @route   POST /api/sale-invoice/create-dynamic
+// @access  Private
+const handleCreateDynamicInvoiceLogic = async (req) => {
+    if (!req.body) req.body = {};
+    let bodyData = {};
+
+    // 1. Extract data
+    if (req.body.data) {
+        try {
+            bodyData = typeof req.body.data === 'string' ? JSON.parse(req.body.data) : req.body.data;
+        } catch (error) {
+            throw new Error("Invalid JSON format in 'data' field");
+        }
+    } else {
+        bodyData = { ...req.body };
+        const nestedFields = [
+            'customerInformation', 'invoiceDetails', 'items', 'additionalCharges',
+            'totals', 'conversions', 'eWayBill', 'termsAndConditions'
+        ];
+        nestedFields.forEach(field => {
+            if (bodyData[field] && typeof bodyData[field] === 'string') {
+                try {
+                    bodyData[field] = JSON.parse(bodyData[field]);
+                } catch (error) {
+                    throw new Error(`Invalid JSON format in field: ${field}`);
+                }
+            }
+        });
+    }
+
+    if (!bodyData.items || !Array.isArray(bodyData.items)) throw new Error("Items array is required");
+
+    // 2. Resolve Products and Calculate Item Totals
+    let totalTaxable = 0;
+    let totalCGST = 0;
+    let totalSGST = 0;
+    let totalIGST = 0;
+
+    const resolvedItems = [];
+    for (let item of bodyData.items) {
+        const resolved = await resolveItemLogic(req.user._id, item);
+
+        // Stock Validation & Serial Handling
+        if (resolved.productSnapshot) {
+            const product = resolved.productSnapshot;
+            if (product.itemType === 'Product') {
+                if (product.inventoryType === 'Serial') {
+                    if (resolved.qty > 0) {
+                        if (!resolved.serialNumbers || !Array.isArray(resolved.serialNumbers)) {
+                            throw new Error(`Serial numbers are required for ${product.name}`);
+                        }
+                        if (resolved.serialNumbers.length !== resolved.qty) {
+                            throw new Error(`Number of serials (${resolved.serialNumbers.length}) must match quantity (${resolved.qty}) for ${product.name}`);
+                        }
+                        const availableSerials = product.serialData?.serialNumbers || [];
+                        for (const sn of resolved.serialNumbers) {
+                            if (!availableSerials.includes(sn)) {
+                                throw new Error(`Serial number ${sn} is not available for ${product.name}`);
+                            }
+                        }
+                    }
+                } else {
+                    if (resolved.qty > product.availableQuantity) {
+                        throw new Error(`Insufficient stock for ${product.name}. Available: ${product.availableQuantity}, Requested: ${resolved.qty}`);
+                    }
+                }
+            }
+        }
+
+        // Accumulate totals
+        const igstRate = Number(resolved.igst || 0);
+        const cgstRate = Number(resolved.cgst || 0);
+        const sgstRate = Number(resolved.sgst || 0);
+        const taxableVal = Number(resolved.taxableValue || 0);
+
+        totalTaxable += taxableVal;
+        totalIGST += taxableVal * (igstRate / 100);
+        totalCGST += taxableVal * (cgstRate / 100);
+        totalSGST += taxableVal * (sgstRate / 100);
+
+        resolvedItems.push(resolved);
+    }
+
+    bodyData.items = resolvedItems;
+
+    // 3. Handle Additional Charges
+    let totalAdditionalTax = 0;
+    let chargesTotal = 0;
+    if (bodyData.additionalCharges && Array.isArray(bodyData.additionalCharges)) {
+        bodyData.additionalCharges.forEach(charge => {
+            const amount = Number(charge.chargeAmount || 0);
+            const taxRate = Number(charge.taxRate || 0);
+            const tax = amount * (taxRate / 100);
+            chargesTotal += amount;
+            totalAdditionalTax += tax;
+        });
+    }
+
+    // 4. Calculate Invoice Totals
+    const totalTax = totalIGST + totalCGST + totalSGST + totalAdditionalTax;
+    const rawTotal = totalTaxable + totalTax + chargesTotal;
+    const grandTotal = Math.round(rawTotal);
+    const roundOff = grandTotal - rawTotal;
+
+    bodyData.totals = {
+        totalTaxable: Number(totalTaxable.toFixed(2)),
+        totalTax: Number(totalTax.toFixed(2)),
+        totalIGST: Number(totalIGST.toFixed(2)),
+        totalCGST: Number(totalCGST.toFixed(2)),
+        totalSGST: Number(totalSGST.toFixed(2)),
+        roundOff: Number(roundOff.toFixed(2)),
+        grandTotal: grandTotal,
+        totalInWords: numberToWords(grandTotal)
+    };
+
+    if (bodyData.paymentType) bodyData.paymentType = bodyData.paymentType.toUpperCase();
+
+    if (req.files && req.files.length > 0) {
+        bodyData.attachments = req.files.map(file => ({
+            fileName: file.filename,
+            filePath: file.path,
+            fileSize: file.size,
+            mimeType: file.mimetype
+        }));
+    }
+
+    const invoice = await SaleInvoice.create({ ...bodyData, userId: req.user._id });
+
+    // Atomic Stock Update
+    for (const item of invoice.items) {
+        if (!item.productId) continue;
+        const product = await Product.findById(item.productId);
+        if (!product || product.itemType !== 'Product') continue;
+
+        if (product.inventoryType === 'Serial' && item.serialNumbers && item.serialNumbers.length > 0) {
+            await Product.findByIdAndUpdate(item.productId, {
+                $pull: { 'serialData.serialNumbers': { $in: item.serialNumbers } }
+            });
+        } else {
+            await Product.findByIdAndUpdate(item.productId, {
+                $inc: { availableQuantity: -item.qty }
+            });
+        }
+    }
+
+    await recordActivity(req, 'Insert', 'Sale Invoice', `Dynamic Sale Invoice created for: ${bodyData.customerInformation.ms}`, bodyData.invoiceDetails.invoiceNumber);
+
+    if (bodyData.createDeliveryChallan) {
+        const challan = await DeliveryChallan.create({
+            userId: req.user._id, saleInvoiceId: invoice._id, customerInformation: bodyData.customerInformation,
+            deliveryChallanDetails: { challanNumber: `DC-${bodyData.invoiceDetails.invoiceNumber}`, date: bodyData.invoiceDetails.date, deliveryMode: bodyData.invoiceDetails.deliveryMode ? bodyData.invoiceDetails.deliveryMode.toUpperCase() : 'HAND DELIVERY' },
+            items: invoice.items, totals: invoice.totals, additionalNotes: bodyData.additionalNotes, documentRemarks: bodyData.documentRemarks
+        });
+        invoice.deliveryChallanId = challan._id;
+        await invoice.save();
+    }
+
+    if (bodyData.shareOnEmail) {
+        const customer = await Customer.findOne({ userId: req.user._id, companyName: bodyData.customerInformation.ms });
+        if (customer && customer.email) sendInvoiceEmail(invoice, customer.email);
+    }
+
+    const userData = await User.findById(req.user._id);
+    const pdfBuffer = await generateSaleInvoicePDF(invoice, userData);
+    const pdfDir = 'src/uploads/invoices/pdf';
+    if (!fs.existsSync(pdfDir)) fs.mkdirSync(pdfDir, { recursive: true });
+    const pdfFileName = `invoice-${invoice._id}.pdf`;
+    const pdfPath = path.join(pdfDir, pdfFileName);
+    fs.writeFileSync(pdfPath, pdfBuffer);
+
+    return { invoice, pdfUrl: `/uploads/invoices/pdf/${pdfFileName}` };
+};
+
+const createDynamicInvoice = async (req, res) => {
+    try {
+        const { invoice, pdfUrl } = await handleCreateDynamicInvoiceLogic(req);
+        res.status(201).json({ success: true, message: "Dynamic invoice saved successfully", invoiceId: invoice._id, pdfUrl: pdfUrl, data: invoice });
+    } catch (error) {
+        if (error.code === 11000) return res.status(400).json({ success: false, message: "Invoice number must be unique" });
+        res.status(400).json({ success: false, message: error.message });
     }
 };
 
@@ -1218,5 +1531,7 @@ module.exports = {
     convertToPackingList,
     generatePublicLink,
     viewInvoicePublic,
-    updateInvoice
+    updateInvoice,
+    createDynamicInvoice,
+    resolveInvoiceItem
 };

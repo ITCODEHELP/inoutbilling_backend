@@ -94,6 +94,73 @@ Content-Type: multipart/form-data
 }
 ```
 
+### Resolve Sale Invoice Item
+`POST /resolve-item`
+(Authorization required)
+
+Resolves a single item's details (price, tax, stock, totals) based on product selection or HSN.
+
+**Request Body**
+```json
+{
+  "productName": "Product A",
+  "hsnSac": "1234",
+  "qty": 2,
+  "price": 1000,
+  "discountValue": 10,
+  "discountType": "Percentage"
+}
+```
+
+**Response**
+```json
+{
+  "success": true,
+  "data": {
+    "productName": "Product A",
+    "productId": "...",
+    "hsnSac": "1234",
+    "qty": 2,
+    "uom": "PCS",
+    "price": 1000,
+    "discountType": "Percentage",
+    "discountValue": 10,
+    "igst": 18,
+    "cgst": 9,
+    "sgst": 9,
+    "taxableValue": 1800,
+    "total": 2124,
+    "availableStock": 50
+  }
+}
+```
+
+### Create Dynamic Sale Invoice
+`POST /create-dynamic`
+(Authorization required)
+
+Creates an invoice with automatic product resolution, stock validation, and totals calculation.
+
+**Request Body**
+Identical to `POST /create`, but items only require `productId`, `productName`, or `hsnSac`.
+
+**Dynamic Features:**
+1. **Auto-Populate**: Resolves item details (Price, Tax, UOM) from master.
+2. **Calculations**: Server-side calculation of taxable value, tax split, and invoice totals.
+3. **Stock Validation**: Enforces stock limits (including serial-based validation).
+4. **Audit**: Stores product snapshots internally.
+
+**Response**
+```json
+{
+  "success": true,
+  "message": "Dynamic invoice saved successfully",
+  "invoiceId": "...",
+  "pdfUrl": "/uploads/invoices/pdf/...",
+  "data": { ... full invoice object with derived totals ... }
+}
+```
+
 ### Create and Print
 ```http
 POST /create-print
