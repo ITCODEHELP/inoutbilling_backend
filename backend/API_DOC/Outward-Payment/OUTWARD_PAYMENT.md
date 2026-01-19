@@ -124,3 +124,32 @@ Authorization: Bearer <token>
 GET /api/outward-payments/view-public/:id/:token
 ```
 Returns PDF binary for Payment Voucher. This URL is used for the "Copy Link" feature.
+
+### Cancel Payment
+```http
+PUT /api/outward-payments/:id/cancel
+Authorization: Bearer <token>
+```
+Updates status to `CANCELLED` and adds watermark to PDF.
+
+### Delete Payment
+```http
+DELETE /api/outward-payments/:id
+Authorization: Bearer <token>
+```
+Permanently removes payment record and attachments.
+
+### Attach Files
+```http
+POST /api/outward-payments/:id/attach
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+```
+**Body**: `attachments` (Multiple Files)
+
+### Duplicate Payment
+```http
+POST /api/outward-payments/:id/duplicate
+Authorization: Bearer <token>
+```
+Duplicates payment with new number and IDs.

@@ -23,6 +23,27 @@ GET /api/inward-payments
 Authorization: Bearer <token>
 ```
 
+### Get Single Payment
+```http
+GET /api/inward-payments/:id
+Authorization: Bearer <token>
+```
+
+### Update Payment
+```http
+PUT /api/inward-payments/:id
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+```
+**Body**
+- `receiptNo` (Optional)
+- `companyName` (Optional)
+- `amount` (Optional)
+- `paymentDate` (Optional)
+- `paymentType` (Optional)
+- `customFields` (Optional JSON String)
+- `attachment` (Optional File)
+
 ### Get Summary
 ```http
 GET /api/inward-payments/summary
@@ -88,3 +109,31 @@ GET /api/inward-payments/view-public/:id/:token
 ```
 Returns PDF binary for Receipt Voucher. This URL is used for the "Copy Link" feature.
 
+### Cancel Receipt
+```http
+PUT /api/inward-payments/:id/cancel
+Authorization: Bearer <token>
+```
+Updates status to `CANCELLED` and adds watermark to PDF.
+
+### Delete Receipt
+```http
+DELETE /api/inward-payments/:id
+Authorization: Bearer <token>
+```
+Permanently removes receipt and attachments.
+
+### Attach Files
+```http
+POST /api/inward-payments/:id/attach
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+```
+**Body**: `attachments` (Multiple Files)
+
+### Duplicate Receipt
+```http
+POST /api/inward-payments/:id/duplicate
+Authorization: Bearer <token>
+```
+Duplicates receipt with new number and IDs.
