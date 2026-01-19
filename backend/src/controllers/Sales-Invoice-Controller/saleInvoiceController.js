@@ -504,7 +504,7 @@ const resolveItemLogic = async (userId, itemInput) => {
     }
 
     // Tax Defaults
-    resolvedItem.igst = itemInput.igst !== undefined ? Number(itemInput.igst) : product.taxSelection;
+    resolvedItem.igst = itemInput.igst !== undefined ? Number(itemInput.igst) : (product ? product.taxSelection : 0);
     resolvedItem.cgst = itemInput.cgst !== undefined ? Number(itemInput.cgst) : (resolvedItem.igst / 2);
     resolvedItem.sgst = itemInput.sgst !== undefined ? Number(itemInput.sgst) : (resolvedItem.igst / 2);
 
@@ -569,6 +569,56 @@ const resolveInvoiceItem = async (req, res) => {
             total: resolved.total,
             availableStock: resolved.availableStock
         };
+
+        // --- HSN Auto-Resolution Fallback ---
+        if (uiResponse.hsnSac && !uiResponse.cgst && !uiResponse.sgst && !uiResponse.igst) {
+            try {
+                const hsnCode = String(uiResponse.hsnSac).trim();
+                console.log(`[HSN Debug] DB: ${mongoose.connection.name}, Searching HSN: ${hsnCode}`);
+
+                const hsnData = await mongoose.connection.db.collection('hsn_codes').findOne({
+                    "Chapter / Heading /": {
+                        $regex: `(^|[^0-9])${hsnCode}([^0-9]|$)`
+                    }
+                });
+
+                if (hsnData) {
+                    console.log(`[HSN Debug] Found match for ${hsnCode}`);
+                    // Access tax fields using exact bracket notation and convert to percentages
+                    uiResponse.cgst = Number(hsnData["CGST Rate (%)"] || 0) * 100;
+                    uiResponse.sgst = Number(hsnData["SGST / UTGST Rate (%)"] || 0) * 100;
+                    uiResponse.igst = Number(hsnData["IGST Rate (%)"] || 0) * 100;
+
+                    // Final calculation for taxableValue and total
+                    const qty = Number(uiResponse.qty || 1);
+                    const price = Number(uiResponse.price || 0);
+                    const discountValue = Number(uiResponse.discountValue || 0);
+
+                    let discountAmount = 0;
+                    if (uiResponse.discountType === 'Percentage') {
+                        discountAmount = (qty * price) * (discountValue / 100);
+                    } else {
+                        discountAmount = discountValue;
+                    }
+
+                    const taxableValue = (qty * price) - discountAmount;
+                    uiResponse.taxableValue = Number(taxableValue.toFixed(2));
+
+                    let gstAmount = 0;
+                    if (uiResponse.igst > 0) {
+                        gstAmount = taxableValue * (uiResponse.igst / 100);
+                    } else {
+                        gstAmount = taxableValue * ((uiResponse.cgst + uiResponse.sgst) / 100);
+                    }
+                    uiResponse.total = Number((taxableValue + gstAmount).toFixed(2));
+                } else {
+                    console.log(`[HSN Debug] No record found in hsn_codes for ${hsnCode}`);
+                }
+            } catch (err) {
+                console.error("HSN Fallback Error:", err.message);
+            }
+        }
+        // ------------------------------------
 
         res.status(200).json({ success: true, data: uiResponse });
     } catch (error) {
