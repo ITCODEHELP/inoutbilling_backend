@@ -85,6 +85,17 @@ const saleInvoiceSchema = new mongoose.Schema({
         index: true
     },
 
+    paidAmount: {
+        type: Number,
+        default: 0
+    },
+
+    status: {
+        type: String,
+        enum: ['Paid', 'Unpaid', 'Partial'],
+        default: 'Unpaid'
+    },
+
     // Conversions
     conversions: {
         convertedTo: [{
