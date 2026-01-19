@@ -6,6 +6,8 @@ const invoiceAttachment = require('../../middlewares/invoiceAttachmentMiddleware
 
 // Create
 router.post('/create', protect, invoiceAttachment.array('attachments', 5), SaleInvoiceController.createInvoice);
+router.post('/resolve-item', protect, SaleInvoiceController.resolveInvoiceItem);
+router.post('/create-dynamic', protect, invoiceAttachment.array('attachments', 5), SaleInvoiceController.createDynamicInvoice);
 router.post('/create-print', protect, invoiceAttachment.array('attachments', 5), SaleInvoiceController.createInvoiceAndPrint);
 
 // List & Search
