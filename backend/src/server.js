@@ -88,6 +88,7 @@ const supportEmailRoutes = require('./routes/Setting-Page-Routes/supportEmailRou
 const supportPinRoutes = require('./routes/Setting-Page-Routes/supportPinRoutes');
 const shortcutKeyRoutes = require('./routes/Setting-Page-Routes/shortcutKeyRoutes');
 const financialYearRoutes = require('./routes/Setting-Page-Routes/financialYearRoutes');
+const hsnCodeRoutes = require('./routes/Product-Service-Routes/hsnCodeRoutes');
 
 /* -------------------- ROUTES -------------------- */
 // ... (existing routes)
@@ -180,6 +181,7 @@ app.use('/api/support-email', supportEmailRoutes);
 app.use('/api/support-pin', supportPinRoutes);
 app.use('/api/shortcuts', shortcutKeyRoutes);
 app.use('/api/financial-year', financialYearRoutes);
+app.use('/api/hsn-codes', hsnCodeRoutes);
 
 /* -------------------- PERFORMANCE -------------------- */
 const monitor = getPerformanceMonitor();
