@@ -3,6 +3,12 @@ const OutwardPaymentCustomField = require('../../models/Payment-Model/OutwardPay
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
+const User = require('../../models/User-Model/User');
+const { generateSaleInvoicePDF } = require('../../utils/saleInvoicePdfHelper');
+const { sendOutwardPaymentEmail } = require('../../utils/emailHelper');
+const { recordActivity } = require('../../utils/activityLogHelper');
+const numberToWords = require('../../utils/numberToWords');
 
 // Ensure upload directory exists
 const uploadDir = path.join(__dirname, '../uploads/outward-payments');
@@ -151,6 +157,168 @@ const getOutwardPayments = async (req, res) => {
 };
 
 /**
+ * @desc    Get single Outward Payment by ID
+ * @route   GET /api/outward-payments/:id
+ * @access  Private
+ */
+const getOutwardPaymentById = async (req, res) => {
+    try {
+        const payment = await OutwardPayment.findOne({
+            _id: req.params.id,
+            userId: req.user._id
+        });
+
+        if (!payment) {
+            return res.status(404).json({ success: false, message: "Payment not found" });
+        }
+
+        res.status(200).json({ success: true, data: payment });
+    } catch (error) {
+        console.error("Error fetching outward payment:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server Error",
+            error: error.message
+        });
+    }
+};
+
+/**
+ * @desc    Update Outward Payment
+ * @route   PUT /api/outward-payments/:id
+ * @access  Private
+ */
+const updateOutwardPayment = (req, res) => {
+    upload(req, res, async function (err) {
+        if (err) {
+            return res.status(400).json({ success: false, message: err.message });
+        }
+
+        try {
+            let bodyData = {};
+
+            // 1️⃣ Extract data from req.body.data if it exists, otherwise use req.body
+            if (req.body.data) {
+                try {
+                    bodyData = typeof req.body.data === 'string' ? JSON.parse(req.body.data) : req.body.data;
+                } catch (error) {
+                    return res.status(400).json({ success: false, message: "Invalid JSON format in 'data' field" });
+                }
+            } else {
+                bodyData = { ...req.body };
+            }
+
+            // 1.5️⃣ Normalize numeric fields
+            if (bodyData.amount) {
+                bodyData.amount = Number(bodyData.amount);
+            }
+            if (bodyData.totalOutstanding) {
+                bodyData.totalOutstanding = Number(bodyData.totalOutstanding);
+            }
+
+            // 1.6️⃣ Normalize paymentType to lowercase (schema uses lowercase enum)
+            if (bodyData.paymentType && typeof bodyData.paymentType === 'string') {
+                bodyData.paymentType = bodyData.paymentType.toLowerCase();
+            }
+
+            const userId = req.user._id;
+
+            // 2️⃣ Basic Validation
+            if (bodyData.amount !== undefined && bodyData.amount <= 0) {
+                return res.status(400).json({ success: false, message: "Amount must be greater than 0" });
+            }
+
+            // Check duplicate payment number if it's being changed
+            if (bodyData.paymentNo) {
+                const existing = await OutwardPayment.findOne({
+                    userId,
+                    paymentNo: bodyData.paymentNo,
+                    _id: { $ne: req.params.id }
+                });
+                if (existing) {
+                    return res.status(400).json({ success: false, message: "Payment No must be unique" });
+                }
+            }
+
+            // 3️⃣ Handle custom fields
+            let customFieldsData = {};
+            if (bodyData.customFields) {
+                try {
+                    customFieldsData = typeof bodyData.customFields === 'string'
+                        ? JSON.parse(bodyData.customFields)
+                        : bodyData.customFields;
+                } catch (e) {
+                    customFieldsData = {};
+                }
+            }
+
+            // Fetch definitions to validate
+            const definitions = await OutwardPaymentCustomField.find({ userId, status: 'Active' });
+
+            const processedCustomFields = {};
+
+            for (const def of definitions) {
+                const val = customFieldsData[def._id.toString()];
+
+                if (def.required && (val === undefined || val === null || val === '')) {
+                    return res.status(400).json({ success: false, message: `${def.name} is required` });
+                }
+
+                if (val !== undefined && val !== null && val !== '') {
+                    if (def.type === 'DROPDOWN' && def.options.length > 0) {
+                        if (!def.options.includes(val)) {
+                            return res.status(400).json({ success: false, message: `Invalid option for ${def.name}` });
+                        }
+                    }
+                    processedCustomFields[def._id.toString()] = val;
+                }
+            }
+
+            bodyData.customFields = processedCustomFields;
+
+            // 4️⃣ Handle attachment
+            if (req.file) {
+                bodyData.attachment = `/uploads/outward-payments/${req.file.filename}`;
+            }
+
+            // 5️⃣ Update payment
+            const payment = await OutwardPayment.findOneAndUpdate(
+                { _id: req.params.id, userId },
+                { ...bodyData },
+                { new: true, runValidators: true }
+            );
+
+            if (!payment) {
+                return res.status(404).json({ success: false, message: "Payment not found" });
+            }
+
+            // 6️⃣ Record Activity
+            await recordActivity(
+                req,
+                'Update',
+                'Outward Payment',
+                `Outward Payment updated: ${payment.paymentNo}`,
+                payment.paymentNo
+            );
+
+            res.status(200).json({
+                success: true,
+                message: "Outward payment updated successfully",
+                data: payment
+            });
+
+        } catch (error) {
+            console.error("Error updating outward payment:", error);
+            res.status(500).json({
+                success: false,
+                message: "Server Error",
+                error: error.message
+            });
+        }
+    });
+};
+
+/**
  * @desc    Get Outward Payment Summary
  * @route   GET /api/outward-payments/summary
  * @access  Private
@@ -293,9 +461,199 @@ const searchOutwardPayments = async (req, res) => {
     }
 };
 
+// Helper to map Outward Payment to Sale Invoice structure for rendering
+const mapPaymentToInvoice = (payment) => {
+    const pType = payment.paymentType.toUpperCase();
+    let mappedPType = 'ONLINE';
+    if (pType === 'CASH') mappedPType = 'CASH';
+    if (pType === 'CHEQUE') mappedPType = 'CHEQUE';
+
+    return {
+        userId: payment.userId,
+        customerInformation: {
+            ms: payment.companyName,
+            address: payment.address,
+            phone: "-",
+            gstinPan: payment.gstinPan,
+            placeOfSupply: "-"
+        },
+        invoiceDetails: {
+            invoiceNumber: `${payment.paymentPrefix}${payment.paymentNo}${payment.paymentPostfix}`,
+            date: payment.paymentDate
+        },
+        items: [
+            {
+                productName: `Account :\n  ${payment.companyName}\n\nThrough :\n  ${payment.paymentType.toUpperCase()}`,
+                qty: 1,
+                price: payment.amount,
+                total: payment.amount,
+                hsnSac: "-"
+            }
+        ],
+        totals: {
+            grandTotal: payment.amount,
+            totalInWords: numberToWords(payment.amount)
+        },
+        paymentType: mappedPType
+    };
+};
+
+/**
+ * @desc    Download Payment PDF
+ */
+const downloadPaymentPDF = async (req, res) => {
+    try {
+        const payment = await OutwardPayment.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!payment) return res.status(404).json({ success: false, message: "Payment not found" });
+
+        const userData = await User.findById(req.user._id);
+        const mappedData = mapPaymentToInvoice(payment);
+
+        const pdfBuffer = await generateSaleInvoicePDF(
+            mappedData,
+            userData || {},
+            "PAYMENT VOUCHER",
+            { no: "Payment No.", date: "Payment Date", sectionTitle: "Vendor Details" }
+        );
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="Payment_${mappedData.invoiceDetails.invoiceNumber}.pdf"`);
+        res.status(200).send(pdfBuffer);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Share Payment via Email
+ */
+const shareEmail = async (req, res) => {
+    try {
+        const payment = await OutwardPayment.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!payment) return res.status(404).json({ success: false, message: "Payment not found" });
+
+        const mappedData = mapPaymentToInvoice(payment);
+        const targetEmail = req.body.email;
+
+        await sendOutwardPaymentEmail(mappedData, targetEmail);
+
+        await recordActivity(
+            req,
+            'Share Email',
+            'Outward Payment',
+            `Payment ${mappedData.invoiceDetails.invoiceNumber} shared via email`,
+            mappedData.invoiceDetails.invoiceNumber
+        );
+
+        res.status(200).json({ success: true, message: "Payment shared via email" });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Share Payment via WhatsApp
+ */
+const shareWhatsApp = async (req, res) => {
+    try {
+        const payment = await OutwardPayment.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!payment) return res.status(404).json({ success: false, message: "Payment not found" });
+
+        const mappedData = mapPaymentToInvoice(payment);
+        const { phone } = req.body;
+
+        if (!phone) return res.status(400).json({ success: false, message: "Phone number is required for WhatsApp share" });
+
+        const message = `Dear Vendor, our payment ${mappedData.invoiceDetails.invoiceNumber} for amount ${mappedData.totals.grandTotal.toFixed(2)} is ready.`;
+        const waLink = `https://wa.me/${phone.replace('+', '')}?text=${encodeURIComponent(message)}`;
+
+        await recordActivity(
+            req,
+            'Share WhatsApp',
+            'Outward Payment',
+            `Payment ${mappedData.invoiceDetails.invoiceNumber} shared via WhatsApp`,
+            mappedData.invoiceDetails.invoiceNumber
+        );
+
+        res.status(200).json({ success: true, waLink });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Generate a secure public link for the payment
+ */
+const generatePublicLink = async (req, res) => {
+    try {
+        const payment = await OutwardPayment.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!payment) return res.status(404).json({ success: false, message: "Payment not found" });
+
+        const secret = process.env.JWT_SECRET || 'your-default-secret';
+        const token = crypto
+            .createHmac('sha256', secret)
+            .update(payment._id.toString())
+            .digest('hex')
+            .substring(0, 16);
+
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const publicLink = `${baseUrl}/api/outward-payments/view-public/${payment._id}/${token}`;
+
+        res.status(200).json({ success: true, publicLink });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Public View Payment PDF (Unprotected)
+ */
+const viewPaymentPublic = async (req, res) => {
+    try {
+        const { id, token } = req.params;
+
+        const secret = process.env.JWT_SECRET || 'your-default-secret';
+        const expectedToken = crypto
+            .createHmac('sha256', secret)
+            .update(id)
+            .digest('hex')
+            .substring(0, 16);
+
+        if (token !== expectedToken) {
+            return res.status(401).send("Invalid or expired link");
+        }
+
+        const payment = await OutwardPayment.findById(id);
+        if (!payment) return res.status(404).send("Payment not found");
+
+        const userData = await User.findById(payment.userId);
+        const mappedData = mapPaymentToInvoice(payment);
+
+        const pdfBuffer = await generateSaleInvoicePDF(
+            mappedData,
+            userData || {},
+            "PAYMENT VOUCHER",
+            { no: "Payment No.", date: "Payment Date", sectionTitle: "Vendor Details" }
+        );
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'inline; filename="Payment.pdf"');
+        res.status(200).send(pdfBuffer);
+    } catch (error) {
+        res.status(500).send("Error rendering payment voucher");
+    }
+};
+
 module.exports = {
     createOutwardPayment,
     getOutwardPayments,
+    getOutwardPaymentById,
+    updateOutwardPayment,
     getPaymentSummary,
-    searchOutwardPayments
+    searchOutwardPayments,
+    downloadPaymentPDF,
+    shareEmail,
+    shareWhatsApp,
+    generatePublicLink,
+    viewPaymentPublic
 };

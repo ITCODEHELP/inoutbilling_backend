@@ -16,14 +16,6 @@ const protect = async (req, res, next) => {
         // 1. Get raw header (handles 'authorization', 'Authorization', etc.)
         const authHeader = req.header('Authorization');
 
-        // Debug: Log all headers to see what's actually arriving
-        if (!authHeader) {
-            console.log('[Auth Middleware] ⚠️ NO Authorization header found.');
-            console.log('[Auth Middleware] Available Headers:', JSON.stringify(req.headers, null, 2));
-        } else {
-            console.log('[Auth Middleware] Authorization Header found:', authHeader.substring(0, 20) + '...');
-        }
-
         if (authHeader) {
             if (authHeader.toLowerCase().startsWith('bearer ')) {
                 // Standard Bearer token
@@ -32,14 +24,12 @@ const protect = async (req, res, next) => {
                 // Fallback: Client sent raw token without 'Bearer ' prefix
                 // Check if it looks like a JWT (3 parts separated by dots)
                 if (authHeader.split('.').length === 3) {
-                    console.log('[Auth Middleware] ⚠️ Warning: Raw token received without Bearer prefix. Accepting it.');
                     token = authHeader;
                 }
             }
         }
 
         if (!token) {
-            console.error('[Auth Middleware] ❌ Failed to extract token.');
             return res.status(401).json({ message: 'Not authorized, no token' });
         }
 

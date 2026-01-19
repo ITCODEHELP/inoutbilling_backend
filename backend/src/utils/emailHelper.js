@@ -70,7 +70,7 @@ const sendReceiptEmail = async (mappedReceipt, email) => {
             mappedReceipt,
             userData || {},
             "RECEIPT VOUCHER",
-            { no: "Receipt No.", date: "Receipt Date" }
+            { no: "Receipt No.", date: "Receipt Date", sectionTitle: "Customer Detail" }
         );
 
         const transporter = nodemailer.createTransport({
@@ -107,6 +107,56 @@ const sendReceiptEmail = async (mappedReceipt, email) => {
         return { success: true, messageId: info.messageId };
     } catch (error) {
         console.error('Error sending receipt email:', error);
+        throw error;
+    }
+};
+
+const sendOutwardPaymentEmail = async (mappedPayment, email) => {
+    try {
+        if (!email) return;
+
+        const userData = await User.findById(mappedPayment.userId);
+        const pdfBuffer = await generateSaleInvoicePDF(
+            mappedPayment,
+            userData || {},
+            "PAYMENT VOUCHER",
+            { no: "Payment No.", date: "Payment Date", sectionTitle: "Vendor Details" }
+        );
+
+        const transporter = nodemailer.createTransport({
+            host: process.env.SMTP_HOST,
+            port: process.env.SMTP_PORT,
+            secure: process.env.SMTP_PORT == 465,
+            auth: {
+                user: process.env.SMTP_USER,
+                pass: process.env.SMTP_PASS,
+            },
+        });
+
+        const mailOptions = {
+            from: process.env.FROM_EMAIL || process.env.SMTP_USER,
+            to: email,
+            subject: `Payment Voucher ${mappedPayment.invoiceDetails.invoiceNumber} from Inout Billing`,
+            text: `Dear Vendor,\n\nPlease find attached the payment voucher ${mappedPayment.invoiceDetails.invoiceNumber}.\n\nThank you!`,
+            html: `
+                <p>Dear Vendor,</p>
+                <p>Please find attached the <strong>payment voucher ${mappedPayment.invoiceDetails.invoiceNumber}</strong>.</p>
+                <p>Thank you!</p>
+            `,
+            attachments: [
+                {
+                    filename: `Payment_${mappedPayment.invoiceDetails.invoiceNumber}.pdf`,
+                    content: pdfBuffer,
+                    contentType: 'application/pdf'
+                }
+            ]
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Outward Payment Email sent: %s', info.messageId);
+        return { success: true, messageId: info.messageId };
+    } catch (error) {
+        console.error('Error sending outward payment email:', error);
         throw error;
     }
 };
@@ -247,4 +297,4 @@ const sendLedgerEmail = async (ledgerData, email) => {
     }
 };
 
-module.exports = { sendInvoiceEmail, sendReceiptEmail, sendProformaEmail, sendDeliveryChallanEmail, sendLedgerEmail };
+module.exports = { sendInvoiceEmail, sendReceiptEmail, sendOutwardPaymentEmail, sendProformaEmail, sendDeliveryChallanEmail, sendLedgerEmail };

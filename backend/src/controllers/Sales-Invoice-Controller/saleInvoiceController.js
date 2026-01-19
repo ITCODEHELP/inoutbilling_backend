@@ -37,16 +37,28 @@ const validateSaleInvoice = (data) => {
 
     for (let i = 0; i < items.length; i++) {
         const item = items[i];
-        if (!item.productName) return `Product Name is required for item ${i + 1}`;
-        if (!item.qty || item.qty <= 0) return `Quantity must be greater than 0 for item ${i + 1}`;
-        if (!item.price || item.price <= 0) return `Price must be greater than 0 for item ${i + 1}`;
+
+        // Accept both 'productName' and 'name' for flexibility
+        if (!item.productName && !item.name) return `Product Name is required for item ${i + 1}`;
+
+        // Accept both 'qty' and 'quantity', convert to number
+        const qty = Number(item.qty || item.quantity || 0);
+        if (!qty || qty <= 0) return `Quantity must be greater than 0 for item ${i + 1}`;
+
+        // Accept both 'price' and 'rate', convert to number
+        const price = Number(item.price || item.rate || 0);
+        if (!price || price <= 0) return `Price must be greater than 0 for item ${i + 1}`;
     }
 
-    // Totals validation
+    // Totals validation - convert to numbers and validate
     if (totals) {
-        if (isNaN(totals.grandTotal)) return "Grand Total must be a number";
-        if (isNaN(totals.totalTaxable)) return "Total Taxable must be a number";
-        if (isNaN(totals.totalTax)) return "Total Tax must be a number";
+        const grandTotal = Number(totals.grandTotal || 0);
+        const totalTaxable = Number(totals.totalTaxable || totals.taxableAmount || 0);
+        const totalTax = Number(totals.totalTax || 0);
+
+        if (isNaN(grandTotal)) return "Grand Total must be a number";
+        if (isNaN(totalTaxable)) return "Total Taxable must be a number";
+        if (isNaN(totalTax)) return "Total Tax must be a number";
     }
 
     return null;
@@ -235,32 +247,84 @@ const handleCreateInvoiceLogic = async (req) => {
     // Ensure req.body is initialized (safety for missing body)
     if (!req.body) req.body = {};
 
-    // 1️⃣ Parse nested JSON fields safely (handles both multipart/form-data strings and raw JSON objects)
-    const nestedFields = [
-        'customerInformation',
-        'invoiceDetails',
-        'items',
-        'additionalCharges',
-        'totals',
-        'conversions',
-        'eWayBill',
-        'termsAndConditions'
-    ];
+    let bodyData = {};
 
-    nestedFields.forEach(field => {
-        // If field exists and is a string, try to parse it
-        if (req.body[field] && typeof req.body[field] === 'string') {
-            try {
-                req.body[field] = JSON.parse(req.body[field]);
-            } catch (error) {
-                throw new Error(`Invalid JSON format in field: ${field}`);
-            }
+    // 1️⃣ Extract data from req.body.data if it exists, otherwise use req.body
+    if (req.body.data) {
+        try {
+            bodyData = typeof req.body.data === 'string' ? JSON.parse(req.body.data) : req.body.data;
+        } catch (error) {
+            throw new Error("Invalid JSON format in 'data' field");
         }
-    });
+    } else {
+        bodyData = { ...req.body };
+        // Parse individual nested fields if they are strings (for backward compatibility or direct form-data fields)
+        const nestedFields = [
+            'customerInformation', 'invoiceDetails', 'items', 'additionalCharges',
+            'totals', 'conversions', 'eWayBill', 'termsAndConditions'
+        ];
+        nestedFields.forEach(field => {
+            if (bodyData[field] && typeof bodyData[field] === 'string') {
+                try {
+                    bodyData[field] = JSON.parse(bodyData[field]);
+                } catch (error) {
+                    throw new Error(`Invalid JSON format in field: ${field}`);
+                }
+            }
+        });
+    }
+
+    // 1.5️⃣ Normalize item field names (convert 'name' to 'productName' if needed)
+    if (bodyData.items && Array.isArray(bodyData.items)) {
+        bodyData.items = bodyData.items.map(item => {
+            const normalizedItem = { ...item };
+
+            // Normalize product name
+            if (item.name && !item.productName) {
+                normalizedItem.productName = item.name;
+            }
+
+            // Normalize quantity (accept 'quantity' or 'qty', convert to 'qty')
+            if (item.quantity && !item.qty) {
+                normalizedItem.qty = Number(item.quantity);
+            } else if (item.qty) {
+                normalizedItem.qty = Number(item.qty);
+            }
+
+            // Normalize price (accept 'rate' or 'price', convert to 'price')
+            if (item.rate && !item.price) {
+                normalizedItem.price = Number(item.rate);
+            } else if (item.price) {
+                normalizedItem.price = Number(item.price);
+            }
+
+            return normalizedItem;
+        });
+    }
+
+    // 1.6️⃣ Normalize totals fields (convert to numbers and handle field variations)
+    if (bodyData.totals && typeof bodyData.totals === 'object') {
+        const totals = bodyData.totals;
+        bodyData.totals = {
+            ...totals,
+            grandTotal: Number(totals.grandTotal || 0),
+            totalTaxable: Number(totals.totalTaxable || totals.taxableAmount || 0),
+            totalTax: Number(totals.totalTax || 0),
+            totalCGST: Number(totals.totalCGST || totals.cgst || 0),
+            totalSGST: Number(totals.totalSGST || totals.sgst || 0),
+            totalIGST: Number(totals.totalIGST || totals.igst || 0),
+            roundOff: Number(totals.roundOff || 0)
+        };
+    }
+
+    // 1.7️⃣ Normalize paymentType to uppercase (schema requires uppercase enum)
+    if (bodyData.paymentType && typeof bodyData.paymentType === 'string') {
+        bodyData.paymentType = bodyData.paymentType.toUpperCase();
+    }
 
     // 2️⃣ Handle attachments
     if (req.files && req.files.length > 0) {
-        req.body.attachments = req.files.map(file => ({
+        bodyData.attachments = req.files.map(file => ({
             fileName: file.filename,
             filePath: file.path,
             fileSize: file.size,
@@ -269,12 +333,12 @@ const handleCreateInvoiceLogic = async (req) => {
     }
 
     // 3️⃣ Validate
-    const validationError = validateSaleInvoice(req.body);
+    const validationError = validateSaleInvoice(bodyData);
     if (validationError) throw new Error(validationError);
 
     // 4️⃣ Save invoice
     const invoice = await SaleInvoice.create({
-        ...req.body,
+        ...bodyData,
         userId: req.user._id
     });
 
@@ -283,35 +347,35 @@ const handleCreateInvoiceLogic = async (req) => {
         req,
         'Insert',
         'Sale Invoice',
-        `New Sale Invoice created for: ${req.body.customerInformation.ms}`,
-        req.body.invoiceDetails.invoiceNumber
+        `New Sale Invoice created for: ${bodyData.customerInformation.ms}`,
+        bodyData.invoiceDetails.invoiceNumber
     );
 
     // 5️⃣ Auto-create Delivery Challan if requested
-    if (req.body.createDeliveryChallan) {
+    if (bodyData.createDeliveryChallan) {
         const challan = await DeliveryChallan.create({
             userId: req.user._id,
             saleInvoiceId: invoice._id,
-            customerInformation: req.body.customerInformation,
+            customerInformation: bodyData.customerInformation,
             deliveryChallanDetails: {
-                challanNumber: `DC-${req.body.invoiceDetails.invoiceNumber}`,
-                date: req.body.invoiceDetails.date,
-                deliveryMode: req.body.invoiceDetails.deliveryMode ? req.body.invoiceDetails.deliveryMode.toUpperCase() : 'HAND DELIVERY'
+                challanNumber: `DC-${bodyData.invoiceDetails.invoiceNumber}`,
+                date: bodyData.invoiceDetails.date,
+                deliveryMode: bodyData.invoiceDetails.deliveryMode ? bodyData.invoiceDetails.deliveryMode.toUpperCase() : 'HAND DELIVERY'
             },
-            items: req.body.items,
-            totals: req.body.totals,
-            additionalNotes: req.body.additionalNotes,
-            documentRemarks: req.body.documentRemarks
+            items: bodyData.items,
+            totals: bodyData.totals,
+            additionalNotes: bodyData.additionalNotes,
+            documentRemarks: bodyData.documentRemarks
         });
         invoice.deliveryChallanId = challan._id;
         await invoice.save();
     }
 
     // 6️⃣ Send email if requested
-    if (req.body.shareOnEmail) {
+    if (bodyData.shareOnEmail) {
         const customer = await Customer.findOne({
             userId: req.user._id,
-            companyName: req.body.customerInformation.ms
+            companyName: bodyData.customerInformation.ms
         });
         if (customer && customer.email) {
             sendInvoiceEmail(invoice, customer.email);
@@ -929,6 +993,147 @@ const convertToPackingList = async (req, res) => {
     }
 };
 
+// @desc    Update sale invoice
+// @route   PUT /api/sale-invoice/:id
+// @access  Private
+const updateInvoice = async (req, res) => {
+    try {
+        if (!req.body) req.body = {};
+
+        let bodyData = {};
+
+        // 1️⃣ Extract data from req.body.data if it exists, otherwise use req.body
+        if (req.body.data) {
+            try {
+                bodyData = typeof req.body.data === 'string' ? JSON.parse(req.body.data) : req.body.data;
+            } catch (error) {
+                return res.status(400).json({ success: false, message: "Invalid JSON format in 'data' field" });
+            }
+        } else {
+            bodyData = { ...req.body };
+            // Parse individual nested fields if they are strings
+            const nestedFields = [
+                'customerInformation', 'invoiceDetails', 'items', 'additionalCharges',
+                'totals', 'conversions', 'eWayBill', 'termsAndConditions'
+            ];
+            nestedFields.forEach(field => {
+                if (bodyData[field] && typeof bodyData[field] === 'string') {
+                    try {
+                        bodyData[field] = JSON.parse(bodyData[field]);
+                    } catch (error) {
+                        throw new Error(`Invalid JSON format in field: ${field}`);
+                    }
+                }
+            });
+        }
+
+        // 1.5️⃣ Normalize item field names (convert 'name' to 'productName' if needed)
+        if (bodyData.items && Array.isArray(bodyData.items)) {
+            bodyData.items = bodyData.items.map(item => {
+                const normalizedItem = { ...item };
+
+                // Normalize product name
+                if (item.name && !item.productName) {
+                    normalizedItem.productName = item.name;
+                }
+
+                // Normalize quantity (accept 'quantity' or 'qty', convert to 'qty')
+                if (item.quantity && !item.qty) {
+                    normalizedItem.qty = Number(item.quantity);
+                } else if (item.qty) {
+                    normalizedItem.qty = Number(item.qty);
+                }
+
+                // Normalize price (accept 'rate' or 'price', convert to 'price')
+                if (item.rate && !item.price) {
+                    normalizedItem.price = Number(item.rate);
+                } else if (item.price) {
+                    normalizedItem.price = Number(item.price);
+                }
+
+                return normalizedItem;
+            });
+        }
+
+        // 1.6️⃣ Normalize totals fields (convert to numbers and handle field variations)
+        if (bodyData.totals && typeof bodyData.totals === 'object') {
+            const totals = bodyData.totals;
+            bodyData.totals = {
+                ...totals,
+                grandTotal: Number(totals.grandTotal || 0),
+                totalTaxable: Number(totals.totalTaxable || totals.taxableAmount || 0),
+                totalTax: Number(totals.totalTax || 0),
+                totalCGST: Number(totals.totalCGST || totals.cgst || 0),
+                totalSGST: Number(totals.totalSGST || totals.sgst || 0),
+                totalIGST: Number(totals.totalIGST || totals.igst || 0),
+                roundOff: Number(totals.roundOff || 0)
+            };
+        }
+
+        // 1.7️⃣ Normalize paymentType to uppercase (schema requires uppercase enum)
+        if (bodyData.paymentType && typeof bodyData.paymentType === 'string') {
+            bodyData.paymentType = bodyData.paymentType.toUpperCase();
+        }
+
+        // 2️⃣ Handle attachments (if any new ones are uploaded)
+        if (req.files && req.files.length > 0) {
+            const newAttachments = req.files.map(file => ({
+                fileName: file.filename,
+                filePath: file.path,
+                fileSize: file.size,
+                mimeType: file.mimetype
+            }));
+            bodyData.attachments = newAttachments;
+        }
+
+        // 3️⃣ Validate
+        const validationError = validateSaleInvoice(bodyData);
+        if (validationError) return res.status(400).json({ success: false, message: validationError });
+
+        // 4️⃣ Update invoice
+        const invoice = await SaleInvoice.findOneAndUpdate(
+            { _id: req.params.id, userId: req.user._id },
+            { ...bodyData },
+            { new: true, runValidators: true }
+        );
+
+        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+
+        // 5️⃣ Record Activity
+        await recordActivity(
+            req,
+            'Update',
+            'Sale Invoice',
+            `Sale Invoice updated for: ${invoice.customerInformation.ms}`,
+            invoice.invoiceDetails.invoiceNumber
+        );
+
+        // 6️⃣ Re-generate PDF
+        const userData = await User.findById(req.user._id);
+        const pdfBuffer = await generateSaleInvoicePDF(invoice, userData);
+        const pdfDir = 'src/uploads/invoices/pdf';
+        if (!fs.existsSync(pdfDir)) {
+            fs.mkdirSync(pdfDir, { recursive: true });
+        }
+        const pdfFileName = `invoice-${invoice._id}.pdf`;
+        const pdfPath = path.join(pdfDir, pdfFileName);
+        fs.writeFileSync(pdfPath, pdfBuffer);
+
+        res.status(200).json({
+            success: true,
+            message: "Invoice updated successfully",
+            data: invoice,
+            pdfUrl: `/uploads/invoices/pdf/${pdfFileName}`
+        });
+
+    } catch (error) {
+        if (error.code === 11000) {
+            return res.status(400).json({ success: false, message: "Invoice number must be unique" });
+        }
+        res.status(400).json({ success: false, message: error.message });
+    }
+};
+
 /**
  * @desc    Generate a secure public link for the invoice
  */
@@ -1012,5 +1217,6 @@ module.exports = {
     convertToPurchaseInvoice,
     convertToPackingList,
     generatePublicLink,
-    viewInvoicePublic
+    viewInvoicePublic,
+    updateInvoice
 };

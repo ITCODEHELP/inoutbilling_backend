@@ -17,6 +17,7 @@ router.get('/summary', protect, SaleInvoiceController.getInvoiceSummary);
 
 // Single Doc Operations
 router.get('/:id', protect, SaleInvoiceController.getInvoiceById);
+router.put('/:id', protect, invoiceAttachment.array('attachments', 5), SaleInvoiceController.updateInvoice);
 router.delete('/:id', protect, SaleInvoiceController.deleteInvoice);
 
 // Actions

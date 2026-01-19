@@ -41,13 +41,28 @@ const validatePurchaseInvoice = (data) => {
 
     for (let i = 0; i < items.length; i++) {
         const item = items[i];
-        if (!item.productName) return `Product Name is required for item ${i + 1}`;
-        if (!item.qty || item.qty <= 0) return `Quantity must be greater than 0 for item ${i + 1}`;
-        if (!item.price || item.price <= 0) return `Price must be greater than 0 for item ${i + 1}`;
+
+        // Accept both 'productName' and 'name' for flexibility
+        if (!item.productName && !item.name) return `Product Name is required for item ${i + 1}`;
+
+        // Accept both 'qty' and 'quantity', convert to number
+        const qty = Number(item.qty || item.quantity || 0);
+        if (!qty || qty <= 0) return `Quantity must be greater than 0 for item ${i + 1}`;
+
+        // Accept both 'price' and 'rate', convert to number
+        const price = Number(item.price || item.rate || 0);
+        if (!price || price <= 0) return `Price must be greater than 0 for item ${i + 1}`;
     }
 
+    // Totals validation - convert to numbers and validate
     if (totals) {
-        if (isNaN(totals.grandTotal)) return "Grand Total must be a number";
+        const grandTotal = Number(totals.grandTotal || 0);
+        const totalTaxable = Number(totals.totalTaxable || totals.taxableAmount || 0);
+        const totalTax = Number(totals.totalTax || 0);
+
+        if (isNaN(grandTotal)) return "Grand Total must be a number";
+        if (isNaN(totalTaxable)) return "Total Taxable must be a number";
+        if (isNaN(totalTax)) return "Total Tax must be a number";
     }
 
     return null;
@@ -268,19 +283,82 @@ const updatePurchaseInvoice = async (req, res) => {
     try {
         if (!req.body) req.body = {};
 
-        // Parse nested JSON fields safely
-        const nestedFields = [
-            'vendorInformation', 'invoiceDetails', 'items', 'additionalCharges',
-            'totals', 'conversions', 'eWayBill', 'termsAndConditions', 'transportDetails'
-        ];
+        let bodyData = {};
 
-        nestedFields.forEach(field => {
-            if (req.body[field] && typeof req.body[field] === 'string') {
-                try { req.body[field] = JSON.parse(req.body[field]); } catch (e) { throw new Error(`Invalid JSON in ${field}`); }
+        // 1\ufe0f\u20e3 Extract data from req.body.data if it exists, otherwise use req.body
+        if (req.body.data) {
+            try {
+                bodyData = typeof req.body.data === 'string' ? JSON.parse(req.body.data) : req.body.data;
+            } catch (error) {
+                return res.status(400).json({ success: false, message: "Invalid JSON format in 'data' field" });
             }
-        });
+        } else {
+            bodyData = { ...req.body };
+            // Parse individual nested fields if they are strings
+            const nestedFields = [
+                'vendorInformation', 'invoiceDetails', 'items', 'additionalCharges',
+                'totals', 'conversions', 'eWayBill', 'termsAndConditions', 'transportDetails'
+            ];
+            nestedFields.forEach(field => {
+                if (bodyData[field] && typeof bodyData[field] === 'string') {
+                    try {
+                        bodyData[field] = JSON.parse(bodyData[field]);
+                    } catch (error) {
+                        throw new Error(`Invalid JSON format in field: ${field}`);
+                    }
+                }
+            });
+        }
 
-        // Handle attachments
+        // 1.5\ufe0f\u20e3 Normalize item field names
+        if (bodyData.items && Array.isArray(bodyData.items)) {
+            bodyData.items = bodyData.items.map(item => {
+                const normalizedItem = { ...item };
+
+                // Normalize product name
+                if (item.name && !item.productName) {
+                    normalizedItem.productName = item.name;
+                }
+
+                // Normalize quantity
+                if (item.quantity && !item.qty) {
+                    normalizedItem.qty = Number(item.quantity);
+                } else if (item.qty) {
+                    normalizedItem.qty = Number(item.qty);
+                }
+
+                // Normalize price
+                if (item.rate && !item.price) {
+                    normalizedItem.price = Number(item.rate);
+                } else if (item.price) {
+                    normalizedItem.price = Number(item.price);
+                }
+
+                return normalizedItem;
+            });
+        }
+
+        // 1.6\ufe0f\u20e3 Normalize totals fields
+        if (bodyData.totals && typeof bodyData.totals === 'object') {
+            const totals = bodyData.totals;
+            bodyData.totals = {
+                ...totals,
+                grandTotal: Number(totals.grandTotal || 0),
+                totalTaxable: Number(totals.totalTaxable || totals.taxableAmount || 0),
+                totalTax: Number(totals.totalTax || 0),
+                totalCGST: Number(totals.totalCGST || totals.cgst || 0),
+                totalSGST: Number(totals.totalSGST || totals.sgst || 0),
+                totalIGST: Number(totals.totalIGST || totals.igst || 0),
+                roundOff: Number(totals.roundOff || 0)
+            };
+        }
+
+        // 1.7\ufe0f\u20e3 Normalize paymentType to uppercase
+        if (bodyData.paymentType && typeof bodyData.paymentType === 'string') {
+            bodyData.paymentType = bodyData.paymentType.toUpperCase();
+        }
+
+        // 2\ufe0f\u20e3 Handle attachments
         if (req.files && req.files.length > 0) {
             const newAttachments = req.files.map(file => ({
                 fileName: file.filename,
@@ -288,28 +366,29 @@ const updatePurchaseInvoice = async (req, res) => {
                 fileSize: file.size,
                 mimeType: file.mimetype
             }));
-            req.body.$push = { attachments: { $each: newAttachments } };
+            bodyData.attachments = newAttachments;
         }
 
-        // Validate
-        const validationError = validatePurchaseInvoice(req.body);
+        // 3\ufe0f\u20e3 Validate
+        const validationError = validatePurchaseInvoice(bodyData);
         if (validationError) return res.status(400).json({ success: false, message: validationError });
 
         // Check for duplicate invoice number if it's being changed
-        if (req.body.invoiceDetails && req.body.invoiceDetails.invoiceNumber) {
+        if (bodyData.invoiceDetails && bodyData.invoiceDetails.invoiceNumber) {
             const existing = await PurchaseInvoice.findOne({
                 userId: req.user._id,
-                'invoiceDetails.invoiceNumber': req.body.invoiceDetails.invoiceNumber,
-                _id: { $ne: req.params.id } // Exclude current invoice
+                'invoiceDetails.invoiceNumber': bodyData.invoiceDetails.invoiceNumber,
+                _id: { $ne: req.params.id }
             });
             if (existing) {
                 return res.status(400).json({ success: false, message: "Invoice number must be unique" });
             }
         }
 
+        // 4\ufe0f\u20e3 Update invoice
         const invoice = await PurchaseInvoice.findOneAndUpdate(
             { _id: req.params.id, userId: req.user._id },
-            { ...req.body },
+            { ...bodyData },
             { new: true, runValidators: true }
         );
 
@@ -317,7 +396,7 @@ const updatePurchaseInvoice = async (req, res) => {
             return res.status(404).json({ success: false, message: "Invoice not found" });
         }
 
-        // Activity Logging
+        // 5\ufe0f\u20e3 Record Activity
         await recordActivity(
             req,
             'Update',
@@ -326,8 +405,28 @@ const updatePurchaseInvoice = async (req, res) => {
             invoice.invoiceDetails.invoiceNumber
         );
 
-        res.status(200).json({ success: true, message: "Invoice updated successfully", data: invoice });
+        // 6\ufe0f\u20e3 Re-generate PDF
+        const userData = await User.findById(req.user._id);
+        const pdfBuffer = await generatePurchaseInvoicePDF(invoice, userData || {});
+        const pdfDir = 'src/uploads/invoices/pdf';
+        if (!fs.existsSync(pdfDir)) {
+            fs.mkdirSync(pdfDir, { recursive: true });
+        }
+        const pdfFileName = `purchase-invoice-${invoice._id}.pdf`;
+        const pdfPath = path.join(pdfDir, pdfFileName);
+        fs.writeFileSync(pdfPath, pdfBuffer);
+
+        res.status(200).json({
+            success: true,
+            message: "Invoice updated successfully",
+            data: invoice,
+            pdfUrl: `/uploads/invoices/pdf/${pdfFileName}`
+        });
+
     } catch (error) {
+        if (error.code === 11000) {
+            return res.status(400).json({ success: false, message: "Invoice number must be unique" });
+        }
         res.status(500).json({ success: false, message: error.message });
     }
 };
