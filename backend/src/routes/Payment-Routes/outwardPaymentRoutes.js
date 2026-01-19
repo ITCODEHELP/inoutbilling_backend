@@ -5,6 +5,10 @@ const {
     getOutwardPayments,
     getOutwardPaymentById,
     updateOutwardPayment,
+    cancelOutwardPayment,
+    deleteOutwardPayment,
+    attachFilesOutwardPayment,
+    duplicateOutwardPayment,
     getPaymentSummary,
     searchOutwardPayments,
     downloadPaymentPDF,
@@ -36,5 +40,9 @@ router.post('/', protect, createOutwardPayment);
 router.get('/', protect, getOutwardPayments);
 router.get('/:id', protect, getOutwardPaymentById);
 router.put('/:id', protect, updateOutwardPayment);
+router.put('/:id/cancel', protect, cancelOutwardPayment);
+router.delete('/:id', protect, deleteOutwardPayment);
+router.post('/:id/attach', protect, attachFilesOutwardPayment);
+router.post('/:id/duplicate', protect, duplicateOutwardPayment);
 
 module.exports = router;

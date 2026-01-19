@@ -463,39 +463,220 @@ const searchOutwardPayments = async (req, res) => {
 
 // Helper to map Outward Payment to Sale Invoice structure for rendering
 const mapPaymentToInvoice = (payment) => {
-    const pType = payment.paymentType.toUpperCase();
-    let mappedPType = 'ONLINE';
-    if (pType === 'CASH') mappedPType = 'CASH';
-    if (pType === 'CHEQUE') mappedPType = 'CHEQUE';
-
     return {
-        userId: payment.userId,
         customerInformation: {
             ms: payment.companyName,
             address: payment.address,
-            phone: "-",
+            phone: payment.phone || "-",
             gstinPan: payment.gstinPan,
-            placeOfSupply: "-"
+            placeOfSupply: payment.placeOfSupply || "Gujarat ( 24 )"
         },
         invoiceDetails: {
-            invoiceNumber: `${payment.paymentPrefix}${payment.paymentNo}${payment.paymentPostfix}`,
+            invoiceNumber: payment.paymentNo,
             date: payment.paymentDate
         },
         items: [
             {
-                productName: `Account :\n  ${payment.companyName}\n\nThrough :\n  ${payment.paymentType.toUpperCase()}`,
-                qty: 1,
-                price: payment.amount,
-                total: payment.amount,
-                hsnSac: "-"
+                productName: `Account : \n    ${payment.companyName}\n\nThrough : \n    ${payment.paymentType.toUpperCase()}`,
+                total: payment.amount
             }
         ],
         totals: {
             grandTotal: payment.amount,
-            totalInWords: numberToWords(payment.amount)
+            totalInWords: payment.totalInWords || ""
         },
-        paymentType: mappedPType
+        termsDetails: payment.originalCancellationInfo?.cancelledByName
+            ? `(Originally Cancelled by ${payment.originalCancellationInfo.cancelledByName} on ${new Date(payment.originalCancellationInfo.cancelledAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })})\n${payment.remarks}`
+            : payment.remarks,
+        status: payment.status // Pass status for watermark
     };
+};
+
+/**
+ * @desc    Cancel Outward Payment
+ * @route   PUT /api/outward-payments/:id/cancel
+ * @access  Private
+ */
+const cancelOutwardPayment = async (req, res) => {
+    try {
+        const paymentId = req.params.id;
+        const userId = req.user._id;
+
+        // 1. Fetch by ID and Owner
+        const payment = await OutwardPayment.findOne({ _id: paymentId, userId });
+
+        if (!payment) {
+            return res.status(404).json({ success: false, message: "Payment voucher not found" });
+        }
+
+        // 2. Check current status
+        if (payment.status === 'CANCELLED') {
+            return res.status(400).json({ success: false, message: "Voucher is already cancelled" });
+        }
+
+        // 3. Perform Update
+        payment.status = 'CANCELLED';
+        payment.cancellationDetails = {
+            cancelledAt: new Date(),
+            cancelledBy: userId
+        };
+
+        await payment.save();
+
+        const { recordActivity } = require('../../utils/activityLogHelper');
+        await recordActivity(
+            req,
+            'Cancel',
+            'Outward Payment',
+            `Outward Payment cancelled: ${payment.paymentNo}`,
+            payment.paymentNo
+        );
+
+        res.status(200).json({ success: true, message: "Payment cancelled successfully", data: payment });
+    } catch (error) {
+        console.error("Error cancelling outward payment:", error);
+        res.status(500).json({ success: false, message: "Server Error", error: error.message });
+    }
+};
+
+/**
+ * @desc    Delete Outward Payment
+ * @route   DELETE /api/outward-payments/:id
+ * @access  Private
+ */
+const deleteOutwardPayment = async (req, res) => {
+    try {
+        const payment = await OutwardPayment.findOneAndDelete({
+            _id: req.params.id,
+            userId: req.user._id
+        });
+
+        if (!payment) {
+            return res.status(404).json({ success: false, message: "Payment not found" });
+        }
+
+        // Remove attachments from storage
+        const allAttachments = [...(payment.attachments || [])];
+        if (payment.attachment) allAttachments.push(payment.attachment);
+
+        allAttachments.forEach(filePath => {
+            const absolutePath = path.join(__dirname, '../../', filePath);
+            if (fs.existsSync(absolutePath)) {
+                fs.unlinkSync(absolutePath);
+            }
+        });
+
+        const { recordActivity } = require('../../utils/activityLogHelper');
+        await recordActivity(
+            req,
+            'Delete',
+            'Outward Payment',
+            `Outward Payment deleted: ${payment.paymentNo}`,
+            payment.paymentNo
+        );
+
+        res.status(200).json({ success: true, message: "Payment permanently deleted" });
+    } catch (error) {
+        console.error("Error deleting outward payment:", error);
+        res.status(500).json({ success: false, message: "Server Error", error: error.message });
+    }
+};
+
+/**
+ * @desc    Attach files to Outward Payment
+ * @route   POST /api/outward-payments/:id/attach
+ * @access  Private
+ */
+const attachFilesOutwardPayment = (req, res) => {
+    const multiUpload = multer({
+        storage: storage,
+        limits: { fileSize: 5 * 1024 * 1024 }
+    }).array('attachments', 5);
+
+    multiUpload(req, res, async function (err) {
+        if (err) {
+            return res.status(400).json({ success: false, message: err.message });
+        }
+
+        try {
+            if (!req.files || req.files.length === 0) {
+                return res.status(400).json({ success: false, message: "No files uploaded" });
+            }
+
+            const filePaths = req.files.map(file => `/uploads/outward-payments/${file.filename}`);
+
+            const payment = await OutwardPayment.findOneAndUpdate(
+                { _id: req.params.id, userId: req.user._id },
+                { $push: { attachments: { $each: filePaths } } },
+                { new: true }
+            );
+
+            if (!payment) {
+                return res.status(404).json({ success: false, message: "Payment not found" });
+            }
+
+            res.status(200).json({ success: true, message: "Files attached successfully", data: payment });
+        } catch (error) {
+            console.error("Error attaching files:", error);
+            res.status(500).json({ success: false, message: "Server Error", error: error.message });
+        }
+    });
+};
+
+/**
+ * @desc    Duplicate Outward Payment
+ * @route   POST /api/outward-payments/:id/duplicate
+ * @access  Private
+ */
+const duplicateOutwardPayment = async (req, res) => {
+    try {
+        const original = await OutwardPayment.findOne({ _id: req.params.id, userId: req.user._id });
+
+        if (!original) {
+            return res.status(404).json({ success: false, message: "Original payment not found" });
+        }
+
+        const data = original.toObject();
+        delete data._id;
+        delete data.createdAt;
+        delete data.updatedAt;
+        delete data.attachment;
+        delete data.attachments;
+        delete data.status;
+        delete data.cancellationDetails;
+
+        data.paymentNo = `${data.paymentNo}-DUP-${Date.now().toString().slice(-4)}`;
+        data.duplicatedFrom = original._id;
+        data.status = 'ACTIVE';
+
+        // Copy cancellation info for reference if original was cancelled
+        if (original.status === 'CANCELLED') {
+            const cancellingUser = original.cancellationDetails?.cancelledBy
+                ? await User.findById(original.cancellationDetails.cancelledBy)
+                : null;
+
+            data.originalCancellationInfo = {
+                cancelledAt: original.cancellationDetails?.cancelledAt,
+                cancelledByName: cancellingUser ? cancellingUser.name : 'System/Deleted User'
+            };
+        }
+
+        const duplicated = await OutwardPayment.create(data);
+
+        const { recordActivity } = require('../../utils/activityLogHelper');
+        await recordActivity(
+            req,
+            'Duplicate',
+            'Outward Payment',
+            `Outward Payment duplicated from ${original.paymentNo} to ${duplicated.paymentNo}`,
+            duplicated.paymentNo
+        );
+
+        res.status(201).json({ success: true, message: "Payment duplicated successfully", data: duplicated });
+    } catch (error) {
+        console.error("Error duplicating outward payment:", error);
+        res.status(500).json({ success: false, message: "Server Error", error: error.message });
+    }
 };
 
 /**
@@ -649,6 +830,10 @@ module.exports = {
     getOutwardPayments,
     getOutwardPaymentById,
     updateOutwardPayment,
+    cancelOutwardPayment,
+    deleteOutwardPayment,
+    attachFilesOutwardPayment,
+    duplicateOutwardPayment,
     getPaymentSummary,
     searchOutwardPayments,
     downloadPaymentPDF,

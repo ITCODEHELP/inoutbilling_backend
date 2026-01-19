@@ -1,0 +1,18 @@
+{
+    "watch": [
+        "src"
+    ],
+    "ext": "js,json",
+    "ignore": [
+        "uploads/*",
+        "src/uploads/*",
+        "temp/*",
+        "logs/*",
+        "**/*.pdf",
+        "**/*.log",
+        "API_DOC/*"
+    ],
+    "env": {
+        "NODE_ENV": "development"
+    }
+}

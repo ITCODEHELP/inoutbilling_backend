@@ -58,8 +58,31 @@ const outwardPaymentSchema = new mongoose.Schema({
         default: ''
     },
     attachment: {
-        type: String, // Path to uploaded file
+        type: String, // Legacy single attachment support
         default: ''
+    },
+    attachments: [{
+        type: String // Supports multiple file uploads
+    }],
+    status: {
+        type: String,
+        enum: ['ACTIVE', 'CANCELLED'],
+        default: 'ACTIVE'
+    },
+    cancellationDetails: {
+        cancelledAt: Date,
+        cancelledBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User'
+        }
+    },
+    duplicatedFrom: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'OutwardPayment'
+    },
+    originalCancellationInfo: {
+        cancelledAt: Date,
+        cancelledByName: String
     },
     customFields: {
         type: mongoose.Schema.Types.Mixed,

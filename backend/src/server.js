@@ -207,6 +207,22 @@ async function startServer() {
         // ✅ DB CONNECTION FIRST
         await connectDB();
 
+        // 🔄 One-time migration for receipt status (ACTIVE)
+        try {
+            const db = mongoose.connection.db;
+            await db.collection('inwardpayments').updateMany(
+                { $or: [{ status: { $exists: false } }, { status: 'Active' }] },
+                { $set: { status: 'ACTIVE' } }
+            );
+            await db.collection('outwardpayments').updateMany(
+                { $or: [{ status: { $exists: false } }, { status: 'Active' }] },
+                { $set: { status: 'ACTIVE' } }
+            );
+            console.log('✅ Receipt status migration completed successfully.');
+        } catch (migrationError) {
+            console.error('⚠️ Receipt status migration failed:', migrationError.message);
+        }
+
         // ✅ OPTIMIZED ENV INITIALIZATION (SILENT)
         const initializer = getInitializer();
         const initResult = await initializer.initialize();
