@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const User = require('../../models/User-Model/User');
-const { generateSaleInvoicePDF } = require('../../utils/saleInvoicePdfHelper');
+const { generateReceiptVoucherPDF } = require('../../utils/receiptPdfHelper');
 const { sendReceiptEmail } = require('../../utils/emailHelper');
 const { recordActivity } = require('../../utils/activityLogHelper');
 const numberToWords = require('../../utils/numberToWords');
@@ -381,11 +381,11 @@ const downloadPaymentPDF = async (req, res) => {
         const userData = await User.findById(req.user._id);
         const mappedData = mapPaymentToInvoice(payment);
 
-        const pdfBuffer = await generateSaleInvoicePDF(
+        const pdfBuffer = await generateReceiptVoucherPDF(
             mappedData,
             userData || {},
             "RECEIPT VOUCHER",
-            { no: "Receipt No.", date: "Receipt Date" }
+            { no: "Receipt No.", date: "Receipt Date", details: "Customer Detail" }
         );
 
         res.setHeader('Content-Type', 'application/pdf');
@@ -503,11 +503,11 @@ const viewPaymentPublic = async (req, res) => {
         const userData = await User.findById(payment.userId);
         const mappedData = mapPaymentToInvoice(payment);
 
-        const pdfBuffer = await generateSaleInvoicePDF(
+        const pdfBuffer = await generateReceiptVoucherPDF(
             mappedData,
             userData || {},
             "RECEIPT VOUCHER",
-            { no: "Receipt No.", date: "Receipt Date" }
+            { no: "Receipt No.", date: "Receipt Date", details: "Customer Detail" }
         );
 
         res.setHeader('Content-Type', 'application/pdf');
