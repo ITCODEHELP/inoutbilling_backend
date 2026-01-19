@@ -2,12 +2,6 @@ const InwardPayment = require('../../models/Payment-Model/InwardPayment');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const crypto = require('crypto');
-const User = require('../../models/User-Model/User');
-const { generateSaleInvoicePDF } = require('../../utils/saleInvoicePdfHelper');
-const { sendReceiptEmail } = require('../../utils/emailHelper');
-const { recordActivity } = require('../../utils/activityLogHelper');
-const numberToWords = require('../../utils/numberToWords');
 
 // Ensure upload directory exists
 const uploadDir = path.join(__dirname, '../uploads/inward-payments');
@@ -691,10 +685,5 @@ module.exports = {
     getInwardPaymentById,
     updateInwardPayment,
     getPaymentSummary,
-    searchInwardPayments,
-    downloadPaymentPDF,
-    shareEmail,
-    shareWhatsApp,
-    generatePublicLink,
-    viewPaymentPublic
+    searchInwardPayments
 };

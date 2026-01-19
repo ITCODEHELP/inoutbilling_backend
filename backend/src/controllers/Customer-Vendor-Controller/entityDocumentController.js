@@ -3,6 +3,7 @@ const Customer = require('../../models/Customer-Vendor-Model/Customer');
 const Vendor = require('../../models/Customer-Vendor-Model/Vendor');
 const fs = require('fs');
 const path = require('path');
+const mongoose = require('mongoose');
 
 /**
  * Helper to resolve entity by ID or name
@@ -118,6 +119,10 @@ const listDocuments = async (req, res) => {
 const deleteDocument = async (req, res) => {
     try {
         const { documentId } = req.params;
+
+        if (!mongoose.Types.ObjectId.isValid(documentId)) {
+            return res.status(400).json({ success: false, message: "Invalid Document ID" });
+        }
 
         const document = await EntityDocument.findOne({
             _id: documentId,

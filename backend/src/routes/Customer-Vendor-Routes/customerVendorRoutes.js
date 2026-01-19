@@ -5,6 +5,7 @@ const {
     getCustomerVendors,
     gstAutofill,
     ewayBillAutofill,
+    searchParties,
     getLedgerReport,
     printLedgerPDF,
     emailLedgerPDF
@@ -15,6 +16,7 @@ router.use(protect);
 
 router.post('/create', createCustomerVendor);
 router.get('/', getCustomerVendors);
+router.get('/search-all', searchParties);
 
 // Ledger Routes
 router.get('/ledger', getLedgerReport);

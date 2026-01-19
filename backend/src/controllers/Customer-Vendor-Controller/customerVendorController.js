@@ -100,11 +100,23 @@ const _buildUnifiedSearchQuery = async (userId, queryParams) => {
 
     let query = { userId };
 
-    // Generic search (matches Name or GSTIN)
+    // Generic search (matches Name, GSTIN, Contact Person, Phone, Email, PAN, Address)
     if (search) {
         query.$or = [
             { companyName: { $regex: search, $options: 'i' } },
-            { gstin: { $regex: search, $options: 'i' } }
+            { gstin: { $regex: search, $options: 'i' } },
+            { contactPerson: { $regex: search, $options: 'i' } },
+            { contactNo: { $regex: search, $options: 'i' } },
+            { email: { $regex: search, $options: 'i' } },
+            { pan: { $regex: search, $options: 'i' } },
+            { "billingAddress.city": { $regex: search, $options: 'i' } },
+            { "billingAddress.state": { $regex: search, $options: 'i' } },
+            { "billingAddress.pincode": { $regex: search, $options: 'i' } },
+            { "billingAddress.street": { $regex: search, $options: 'i' } },
+            { "shippingAddress.city": { $regex: search, $options: 'i' } },
+            { "shippingAddress.state": { $regex: search, $options: 'i' } },
+            { "shippingAddress.pincode": { $regex: search, $options: 'i' } },
+            { "shippingAddress.street": { $regex: search, $options: 'i' } }
         ];
     }
 
@@ -563,6 +575,62 @@ const ewayBillAutofill = async (req, res) => {
     }
 };
 
+const searchParties = async (req, res) => {
+    try {
+        const queryParams = { ...req.query, ...req.body };
+        const query = await _buildUnifiedSearchQuery(req.user._id, queryParams);
+        
+        // Remove specific flags if any, to search broadly
+        const baseQuery = { ...query };
+        delete baseQuery.isCustomerVendor; 
+
+        // Pagination
+        const { page = 1, limit = 20, sort = 'createdAt', order = 'desc' } = queryParams;
+        const skip = (page - 1) * limit;
+
+        // Execute parallel queries
+        const [customers, vendors, totalCustomers, totalVendors] = await Promise.all([
+            Customer.find(baseQuery).lean(),
+            Vendor.find(baseQuery).lean(),
+            Customer.countDocuments(baseQuery),
+            Vendor.countDocuments(baseQuery)
+        ]);
+
+        // Post-process: add partyType and Merge
+        const taggedCustomers = customers.map(c => ({ ...c, partyType: 'Customer' }));
+        const taggedVendors = vendors.map(v => ({ 
+            ...v, 
+            partyType: v.isCustomerVendor ? 'CustomerVendor' : 'Vendor' 
+        }));
+
+        let allParties = [...taggedCustomers, ...taggedVendors];
+
+        // Sort in memory (since we merged two collections)
+        allParties.sort((a, b) => {
+            const dateA = new Date(a[sort] || 0);
+            const dateB = new Date(b[sort] || 0);
+            return order === 'desc' ? dateB - dateA : dateA - dateB;
+        });
+
+        // Apply pagination on merged result
+        const totalRecords = totalCustomers + totalVendors;
+        const paginatedData = allParties.slice(skip, skip + Number(limit));
+
+        res.status(200).json({
+            success: true,
+            count: paginatedData.length,
+            totalRecords,
+            page: Number(page),
+            pages: Math.ceil(totalRecords / limit),
+            data: paginatedData
+        });
+
+    } catch (error) {
+        console.error("Search Parties Error:", error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 module.exports = {
     createCustomerVendor,
     getCustomerVendors,
@@ -570,7 +638,8 @@ module.exports = {
     ewayBillAutofill,
     _buildUnifiedSearchQuery,
     _getSearchSummary,
+    searchParties,
     getLedgerReport,
     printLedgerPDF,
-    emailLedgerPDF
+    emailLedgerPDF,
 };

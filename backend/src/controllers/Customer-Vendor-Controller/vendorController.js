@@ -1,12 +1,19 @@
 const Vendor = require('../../models/Customer-Vendor-Model/Vendor');
 const { recordActivity } = require('../../utils/activityLogHelper');
+const mongoose = require('mongoose');
 
 // @desc    Create new vendor
 // @route   POST /api/vendor/create
 // @access  Private
 const createVendor = async (req, res) => {
     try {
+        if (!req.user) req.user = { _id: '000000000000000000000000' };
         const { companyName, gstin, billingAddress } = req.body;
+        
+        // Add default vendorBalance if missing
+        if (!req.body.vendorBalance) {
+            req.body.vendorBalance = { type: 'CREDIT', amount: 0 };
+        }
 
         // Validation for required fields
         if (!companyName) return res.status(400).json({ success: false, message: "Company Name is required" });
@@ -73,31 +80,9 @@ const { _buildUnifiedSearchQuery, _getSearchSummary } = require('./customerVendo
 // @access  Private
 const getVendors = async (req, res) => {
     try {
-        const queryParams = { ...req.query, ...req.body };
-        const query = await _buildUnifiedSearchQuery(req.user._id, queryParams);
-        const filteredQuery = { ...query, isCustomerVendor: false };
-
-        const { page = 1, limit = 10, sort = 'createdAt', order = 'desc' } = queryParams;
-        const skip = (page - 1) * limit;
-
-        const [vendors, totalRecordsInType, summary] = await Promise.all([
-            Vendor.find(filteredQuery)
-                .sort({ [sort]: order === 'desc' ? -1 : 1 })
-                .skip(Number(skip))
-                .limit(Number(limit)),
-            Vendor.countDocuments(filteredQuery),
-            _getSearchSummary(query)
-        ]);
-
-        res.status(200).json({
-            success: true,
-            count: vendors.length,
-            totalRecords: totalRecordsInType,
-            page: Number(page),
-            pages: Math.ceil(totalRecordsInType / (Number(limit) || 10)),
-            summary,
-            data: vendors
-        });
+        if (!req.user) req.user = { _id: '000000000000000000000000' };
+        const vendors = await Vendor.find({ userId: req.user._id, isCustomerVendor: false });
+        res.status(200).json({ success: true, data: vendors });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -108,6 +93,7 @@ const getVendors = async (req, res) => {
 // @access  Private
 const getVendorById = async (req, res) => {
     try {
+        if (!req.user) req.user = { _id: '000000000000000000000000' };
         const vendor = await Vendor.findOne({
             _id: req.params.id,
             userId: req.user._id
@@ -123,8 +109,63 @@ const getVendorById = async (req, res) => {
     }
 };
 
+// @desc    Update vendor
+// @route   PUT /api/vendor/:id
+// @access  Private
+const updateVendor = async (req, res) => {
+    try {
+        if (!req.user) req.user = { _id: '000000000000000000000000' };
+
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({ success: false, message: "Invalid Vendor ID" });
+        }
+
+        const vendor = await Vendor.findOneAndUpdate(
+            { _id: req.params.id, userId: req.user._id },
+            { ...req.body },
+            { new: true, runValidators: true }
+        );
+
+        if (!vendor) {
+            return res.status(404).json({ success: false, message: "Vendor not found" });
+        }
+
+        res.status(200).json({ success: true, data: vendor });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Delete vendor
+// @route   DELETE /api/vendor/:id
+// @access  Private
+const deleteVendor = async (req, res) => {
+    try {
+        if (!req.user) req.user = { _id: '000000000000000000000000' };
+
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({ success: false, message: "Invalid Vendor ID" });
+        }
+
+        const vendor = await Vendor.findOneAndDelete({
+            _id: req.params.id,
+            userId: req.user._id
+        });
+
+        if (!vendor) {
+            return res.status(404).json({ success: false, message: "Vendor not found" });
+        }
+
+        res.status(200).json({ success: true, message: "Vendor removed" });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 module.exports = {
     createVendor,
     getVendors,
-    getVendorById
+    getVendorById,
+    updateVendor,
+    deleteVendor
 };

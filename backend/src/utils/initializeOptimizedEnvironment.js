@@ -87,7 +87,7 @@ class OptimizedEnvironmentInitializer {
         };
 
         // Connect with optimized options
-        await mongoose.connect(process.env.MONGODB_URI, mongoOptions);
+        await mongoose.connect(process.env.MONGO_URI || process.env.MONGODB_URI, mongoOptions);
     }
 
     /**

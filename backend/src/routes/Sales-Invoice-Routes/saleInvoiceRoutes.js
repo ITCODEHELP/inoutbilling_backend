@@ -45,7 +45,4 @@ router.post('/:id/convert/debit-note', protect, SaleInvoiceController.convertToD
 router.post('/:id/convert/purchase-invoice', protect, SaleInvoiceController.convertToPurchaseInvoice);
 router.post('/:id/convert/packing-list', protect, SaleInvoiceController.convertToPackingList);
 
-router.get('/:id/public-link', protect, SaleInvoiceController.generatePublicLink);
-router.get('/view-public/:id/:token', SaleInvoiceController.viewInvoicePublic);
-
 module.exports = router;

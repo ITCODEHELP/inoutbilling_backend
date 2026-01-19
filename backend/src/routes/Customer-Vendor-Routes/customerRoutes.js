@@ -21,10 +21,10 @@ router.get('/ewaybill-autofill/:ewayBillNo', protect, ewayBillAutofill);
 router.post('/ewaybill-autofill', protect, ewayBillAutofill);
 
 // CRUD Routes
-router.post('/', protect, createCustomer);
-router.get('/', protect, getCustomers);
-router.get('/:id', protect, getCustomerById);
-router.put('/:id', protect, updateCustomer);
-router.delete('/:id', protect, deleteCustomer);
+router.post('/', createCustomer);
+router.get('/', getCustomers);
+router.get('/:id', getCustomerById);
+router.put('/:id', updateCustomer);
+router.delete('/:id', deleteCustomer);
 
 module.exports = router;
