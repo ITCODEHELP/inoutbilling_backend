@@ -157,16 +157,3 @@ POST /:id/convert/debit-note
 POST /:id/convert/purchase-order
 ```
 All conversion endpoints return the newly created document.
-
-### Generate Public Link
-```http
-GET /:id/public-link
-Authorization: Bearer <token>
-```
-**Response**: `{ "success": true, "publicLink": "http://.../api/purchase-invoice/view-public/:id/:token" }`
-
-### View Public PDF (Unprotected)
-```http
-GET /view-public/:id/:token
-```
-Returns PDF binary for Purchase Invoice. This URL is used for the "Copy Link" feature.

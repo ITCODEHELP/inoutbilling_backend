@@ -17,7 +17,6 @@ const { recordActivity } = require('../../utils/activityLogHelper');
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
-const crypto = require('crypto');
 
 // Helper for validation
 const validateSaleInvoice = (data) => {
@@ -450,9 +449,12 @@ const createInvoiceAndPrint = async (req, res) => {
 // Other controllers remain unchanged
 const getInvoices = async (req, res) => {
     try {
+        console.log('[API] GET /api/sale-invoice - Fetching invoices for user:', req.user?._id);
         const invoices = await SaleInvoice.find({ userId: req.user._id });
+        console.log(`[API] Found ${invoices.length} invoices`);
         res.status(200).json(invoices);
     } catch (error) {
+        console.error('[API] Error in getInvoices:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 };
