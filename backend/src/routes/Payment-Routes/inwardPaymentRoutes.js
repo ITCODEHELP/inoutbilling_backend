@@ -3,6 +3,12 @@ const router = express.Router();
 const {
     createInwardPayment,
     getInwardPayments,
+    getInwardPaymentById,
+    updateInwardPayment,
+    cancelInwardPayment,
+    deleteInwardPayment,
+    attachFilesInwardPayment,
+    duplicateInwardPayment,
     getPaymentSummary,
     searchInwardPayments,
     downloadPaymentPDF,
@@ -30,5 +36,11 @@ router.get('/view-public/:id/:token', viewPaymentPublic);
 
 router.post('/', protect, createInwardPayment);
 router.get('/', protect, getInwardPayments);
+router.get('/:id', protect, getInwardPaymentById);
+router.put('/:id', protect, updateInwardPayment);
+router.put('/:id/cancel', protect, cancelInwardPayment);
+router.delete('/:id', protect, deleteInwardPayment);
+router.post('/:id/attach', protect, attachFilesInwardPayment);
+router.post('/:id/duplicate', protect, duplicateInwardPayment);
 
 module.exports = router;

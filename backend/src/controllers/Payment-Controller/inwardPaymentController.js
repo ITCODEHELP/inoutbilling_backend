@@ -173,6 +173,164 @@ const getInwardPayments = async (req, res) => {
 };
 
 /**
+ * @desc    Get single Inward Payment by ID
+ * @route   GET /api/inward-payments/:id
+ * @access  Private
+ */
+const getInwardPaymentById = async (req, res) => {
+    try {
+        const payment = await InwardPayment.findOne({
+            _id: req.params.id,
+            userId: req.user._id
+        });
+
+        if (!payment) {
+            return res.status(404).json({ success: false, message: "Payment not found" });
+        }
+
+        res.status(200).json({ success: true, data: payment });
+    } catch (error) {
+        console.error("Error fetching inward payment:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server Error",
+            error: error.message
+        });
+    }
+};
+
+/**
+ * @desc    Update Inward Payment
+ * @route   PUT /api/inward-payments/:id
+ * @access  Private
+ */
+const updateInwardPayment = (req, res) => {
+    upload(req, res, async function (err) {
+        if (err) {
+            return res.status(400).json({ success: false, message: err.message });
+        }
+
+        try {
+            let bodyData = {};
+
+            // Extract data from req.body.data if it exists (for multipart), otherwise use req.body
+            if (req.body.data) {
+                try {
+                    bodyData = typeof req.body.data === 'string' ? JSON.parse(req.body.data) : req.body.data;
+                } catch (error) {
+                    return res.status(400).json({ success: false, message: "Invalid JSON format in 'data' field" });
+                }
+            } else {
+                bodyData = { ...req.body };
+            }
+
+            // Normalize numeric fields
+            if (bodyData.amount) bodyData.amount = Number(bodyData.amount);
+            if (bodyData.totalOutstanding) bodyData.totalOutstanding = Number(bodyData.totalOutstanding);
+
+            const userId = req.user._id;
+
+            // Basic Validation
+            if (bodyData.amount !== undefined && bodyData.amount <= 0) {
+                return res.status(400).json({ success: false, message: "Amount must be greater than 0" });
+            }
+
+            // Check duplicate receipt number if it's being changed
+            if (bodyData.receiptNo) {
+                const existing = await InwardPayment.findOne({
+                    userId,
+                    receiptNo: bodyData.receiptNo,
+                    _id: { $ne: req.params.id }
+                });
+                if (existing) {
+                    return res.status(400).json({ success: false, message: "Receipt No must be unique" });
+                }
+            }
+
+            // Custom Field Validation & Processing
+            let customFieldsData = {};
+            if (bodyData.customFields) {
+                try {
+                    customFieldsData = typeof bodyData.customFields === 'string'
+                        ? JSON.parse(bodyData.customFields)
+                        : bodyData.customFields;
+                } catch (e) {
+                    customFieldsData = {};
+                }
+            }
+
+            const InwardPaymentCustomField = require('../../models/Payment-Model/InwardPaymentCustomField');
+            const definitions = await InwardPaymentCustomField.find({ userId, status: 'Active' });
+
+            const processedCustomFields = {};
+
+            for (const def of definitions) {
+                const val = customFieldsData[def._id.toString()];
+
+                if (def.required && (val === undefined || val === null || val === '')) {
+                    // Only error if customFields were provided or if it's currently missing in record
+                    // To keep it simple and consistent with Outward Payment:
+                    return res.status(400).json({ success: false, message: `${def.name} is required` });
+                }
+
+                if (val !== undefined && val !== null && val !== '') {
+                    if (def.type === 'DROPDOWN' && def.options.length > 0) {
+                        if (!def.options.includes(val)) {
+                            return res.status(400).json({ success: false, message: `Invalid option for ${def.name}` });
+                        }
+                    }
+                    processedCustomFields[def._id.toString()] = val;
+                }
+            }
+
+            if (Object.keys(processedCustomFields).length > 0) {
+                bodyData.customFields = processedCustomFields;
+            }
+
+            // Handle attachment
+            if (req.file) {
+                bodyData.attachment = `/uploads/inward-payments/${req.file.filename}`;
+            }
+
+            // Update payment
+            const payment = await InwardPayment.findOneAndUpdate(
+                { _id: req.params.id, userId },
+                { ...bodyData },
+                { new: true, runValidators: true }
+            );
+
+            if (!payment) {
+                return res.status(404).json({ success: false, message: "Payment not found" });
+            }
+
+            // Record Activity
+            const { recordActivity } = require('../../utils/activityLogHelper');
+            await recordActivity(
+                req,
+                'Update',
+                'Inward Payment',
+                `Inward Payment updated: ${payment.receiptNo}`,
+                payment.receiptNo
+            );
+
+            res.status(200).json({
+                success: true,
+                message: "Inward payment updated successfully",
+                data: payment
+            });
+
+        } catch (error) {
+            console.error("Error updating inward payment:", error);
+            res.status(500).json({
+                success: false,
+                message: "Server Error",
+                error: error.message
+            });
+        }
+    });
+};
+
+/**
  * @desc    Get Inward Payment Summary
  * @route   GET /api/inward-payments/summary
  * @access  Private
@@ -335,38 +493,33 @@ const searchInwardPayments = async (req, res) => {
 
 // Helper to map Inward Payment to Sale Invoice structure for rendering
 const mapPaymentToInvoice = (payment) => {
-    const pType = payment.paymentType.toUpperCase();
-    let mappedPType = 'ONLINE';
-    if (pType === 'CASH') mappedPType = 'CASH';
-    if (pType === 'CHEQUE') mappedPType = 'CHEQUE';
-
+    // Determine title based on module or type if needed
     return {
-        userId: payment.userId,
         customerInformation: {
             ms: payment.companyName,
             address: payment.address,
-            phone: "-",
+            phone: payment.phone || "-",
             gstinPan: payment.gstinPan,
-            placeOfSupply: "-"
+            placeOfSupply: payment.placeOfSupply || "Gujarat ( 24 )"
         },
         invoiceDetails: {
-            invoiceNumber: `${payment.receiptPrefix}${payment.receiptNo}${payment.receiptPostfix}`,
+            invoiceNumber: payment.receiptNo,
             date: payment.paymentDate
         },
         items: [
             {
-                productName: `Account :\n  ${payment.companyName}\n\nThrough :\n  ${payment.paymentType.toUpperCase()}`,
-                qty: 1,
-                price: payment.amount,
-                total: payment.amount,
-                hsnSac: "-"
+                productName: `Account : \n    ${payment.companyName}\n\nThrough : \n    ${payment.paymentType.toUpperCase()}`,
+                total: payment.amount
             }
         ],
         totals: {
             grandTotal: payment.amount,
-            totalInWords: numberToWords(payment.amount)
+            totalInWords: payment.totalInWords || "" // This should be computed if missing
         },
-        paymentType: mappedPType
+        termsDetails: payment.originalCancellationInfo?.cancelledByName
+            ? `(Originally Cancelled by ${payment.originalCancellationInfo.cancelledByName} on ${new Date(payment.originalCancellationInfo.cancelledAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })})\n${payment.remarks}`
+            : payment.remarks,
+        status: payment.status // Pass status for watermark
     };
 };
 
@@ -518,9 +671,192 @@ const viewPaymentPublic = async (req, res) => {
     }
 };
 
+/**
+ * @desc    Cancel Inward Payment
+ */
+const cancelInwardPayment = async (req, res) => {
+    try {
+        const paymentId = req.params.id;
+        const userId = req.user._id;
+
+        // 1. Fetch by ID and Owner
+        const payment = await InwardPayment.findOne({ _id: paymentId, userId });
+
+        if (!payment) {
+            return res.status(404).json({ success: false, message: "Payment receipt not found" });
+        }
+
+        // 2. Check current status
+        if (payment.status === 'CANCELLED') {
+            return res.status(400).json({ success: false, message: "Receipt is already cancelled" });
+        }
+
+        // 3. Perform Update
+        payment.status = 'CANCELLED';
+        payment.cancellationDetails = {
+            cancelledAt: new Date(),
+            cancelledBy: userId
+        };
+
+        await payment.save();
+
+        await recordActivity(
+            req,
+            'Cancel',
+            'Inward Payment',
+            `Inward Payment cancelled: ${payment.receiptNo}`,
+            payment.receiptNo
+        );
+
+        res.status(200).json({ success: true, message: "Payment cancelled successfully", data: payment });
+    } catch (error) {
+        console.error("Error cancelling inward payment:", error);
+        res.status(500).json({ success: false, message: "Server Error", error: error.message });
+    }
+};
+
+/**
+ * @desc    Delete Inward Payment
+ */
+const deleteInwardPayment = async (req, res) => {
+    try {
+        const payment = await InwardPayment.findOneAndDelete({
+            _id: req.params.id,
+            userId: req.user._id
+        });
+
+        if (!payment) {
+            return res.status(404).json({ success: false, message: "Payment not found" });
+        }
+
+        // Remove attachments from storage
+        const allAttachments = [...(payment.attachments || [])];
+        if (payment.attachment) allAttachments.push(payment.attachment);
+
+        allAttachments.forEach(filePath => {
+            const absolutePath = path.join(__dirname, '../../', filePath);
+            if (fs.existsSync(absolutePath)) {
+                fs.unlinkSync(absolutePath);
+            }
+        });
+
+        await recordActivity(
+            req,
+            'Delete',
+            'Inward Payment',
+            `Inward Payment deleted: ${payment.receiptNo}`,
+            payment.receiptNo
+        );
+
+        res.status(200).json({ success: true, message: "Payment permanently deleted" });
+    } catch (error) {
+        console.error("Error deleting inward payment:", error);
+        res.status(500).json({ success: false, message: "Server Error", error: error.message });
+    }
+};
+
+/**
+ * @desc    Attach files to Inward Payment
+ */
+const attachFilesInwardPayment = (req, res) => {
+    // Configure multi-file upload for this specific action
+    const multiUpload = multer({
+        storage: storage,
+        limits: { fileSize: 5 * 1024 * 1024 }
+    }).array('attachments', 5);
+
+    multiUpload(req, res, async function (err) {
+        if (err) {
+            return res.status(400).json({ success: false, message: err.message });
+        }
+
+        try {
+            if (!req.files || req.files.length === 0) {
+                return res.status(400).json({ success: false, message: "No files uploaded" });
+            }
+
+            const filePaths = req.files.map(file => `/uploads/inward-payments/${file.filename}`);
+
+            const payment = await InwardPayment.findOneAndUpdate(
+                { _id: req.params.id, userId: req.user._id },
+                { $push: { attachments: { $each: filePaths } } },
+                { new: true }
+            );
+
+            if (!payment) {
+                return res.status(404).json({ success: false, message: "Payment not found" });
+            }
+
+            res.status(200).json({ success: true, message: "Files attached successfully", data: payment });
+        } catch (error) {
+            console.error("Error attaching files:", error);
+            res.status(500).json({ success: false, message: "Server Error", error: error.message });
+        }
+    });
+};
+
+/**
+ * @desc    Duplicate Inward Payment
+ */
+const duplicateInwardPayment = async (req, res) => {
+    try {
+        const original = await InwardPayment.findOne({ _id: req.params.id, userId: req.user._id });
+
+        if (!original) {
+            return res.status(404).json({ success: false, message: "Original payment not found" });
+        }
+
+        const data = original.toObject();
+        delete data._id;
+        delete data.createdAt;
+        delete data.updatedAt;
+        delete data.attachment;
+        delete data.attachments;
+        delete data.status;
+        delete data.cancellationDetails;
+
+        data.receiptNo = `${data.receiptNo}-DUP-${Date.now().toString().slice(-4)}`;
+        data.duplicatedFrom = original._id;
+        data.status = 'ACTIVE';
+
+        // Copy cancellation info for reference if original was cancelled
+        if (original.status === 'CANCELLED') {
+            const cancellingUser = original.cancellationDetails?.cancelledBy
+                ? await User.findById(original.cancellationDetails.cancelledBy)
+                : null;
+
+            data.originalCancellationInfo = {
+                cancelledAt: original.cancellationDetails?.cancelledAt,
+                cancelledByName: cancellingUser ? cancellingUser.name : 'System/Deleted User'
+            };
+        }
+
+        const duplicated = await InwardPayment.create(data);
+
+        await recordActivity(
+            req,
+            'Duplicate',
+            'Inward Payment',
+            `Inward Payment duplicated from ${original.receiptNo} to ${duplicated.receiptNo}`,
+            duplicated.receiptNo
+        );
+
+        res.status(201).json({ success: true, message: "Payment duplicated successfully", data: duplicated });
+    } catch (error) {
+        console.error("Error duplicating inward payment:", error);
+        res.status(500).json({ success: false, message: "Server Error", error: error.message });
+    }
+};
+
 module.exports = {
     createInwardPayment,
     getInwardPayments,
+    getInwardPaymentById,
+    updateInwardPayment,
+    cancelInwardPayment,
+    deleteInwardPayment,
+    attachFilesInwardPayment,
+    duplicateInwardPayment,
     getPaymentSummary,
     searchInwardPayments,
     downloadPaymentPDF,

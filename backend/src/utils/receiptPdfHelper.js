@@ -111,6 +111,18 @@ const generateReceiptVoucherPDF = (data, user, title = "RECEIPT VOUCHER", labels
         const leftBoxWidth = 350;
         const rightBoxWidth = width - leftBoxWidth;
 
+        // Draw Watermark if Cancelled
+        if (data.status === 'CANCELLED') {
+            doc.save();
+            doc.fillColor('red').opacity(0.15).fontSize(100);
+            doc.rotate(-30, { origin: [startX + width / 2, currentY - bodyHeight / 2] });
+            doc.text('CANCELLED', startX, currentY - bodyHeight / 2 - 50, {
+                align: 'center',
+                width: width
+            });
+            doc.restore();
+        }
+
         // Row 1: Total in words Label | Total Amount box
         doc.rect(startX, currentY, width, 15).stroke(blueColor);
         doc.moveTo(startX + leftBoxWidth, currentY).lineTo(startX + leftBoxWidth, currentY + 15).stroke(blueColor);
