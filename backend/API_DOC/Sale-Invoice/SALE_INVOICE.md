@@ -13,6 +13,7 @@ Content-Type: multipart/form-data
 
 | Field | Type | Description |
 | :--- | :--- | :--- |
+| `data` | JSON String | Optional. Single JSON string containing all fields below. If provided, individual fields are ignored. |
 | `customerInformation` | JSON Object | Customer details (title, ms, address, contactPerson, phone, gstinPan, reverseCharge, shipTo, placeOfSupply) |
 | `invoiceDetails` | JSON Object | Invoice headers (invoiceType, invoicePrefix, invoiceNumber, invoicePostfix, date, deliveryMode, bankSelection, hideBankDetails) |
 | `items` | JSON Array | List of products/services (productName, itemNote, hsnSac, qty, stockReference, uom, price, discountType, discountValue, igst, cgst, sgst, total) |
@@ -114,6 +115,14 @@ GET /:id
 Authorization: Bearer <token>
 ```
 Returns full invoice data with all extended fields.
+
+### Update Sale Invoice
+```http
+PUT /:id
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+```
+Identical request body structure to `/create`. Updates the existing invoice and re-generates its PDF.
 
 ### Get Summary
 ```http
@@ -256,3 +265,16 @@ POST /:id/convert/purchase-invoice
 POST /:id/convert/packing-list
 ```
 All conversion endpoints return the newly created document.
+
+### Generate Public Link
+```http
+GET /:id/public-link 
+Authorization: Bearer <token>
+```
+**Response**: `{ "success": true, "publicLink": "http://.../api/sale-invoice/view-public/:id/:token" }`
+
+### View Public PDF (Unprotected) 
+```http
+GET /view-public/:id/:token
+```
+Returns PDF binary for Sale Invoice. This URL is used for the "Copy Link" feature.

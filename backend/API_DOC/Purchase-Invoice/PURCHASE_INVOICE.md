@@ -42,6 +42,40 @@ Authorization: Bearer <token>
 - `fromDate` / `toDate`: Date range.
 - `minAmount` / `maxAmount`: Grand total range.
 
+### Get Single Purchase Invoice
+```http
+GET /:id
+Authorization: Bearer <token>
+```
+Returns full purchase invoice data with all extended fields.
+
+### Update Purchase Invoice
+```http
+PUT /:id
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+```
+
+**Request Body (form-data)**
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `data` | JSON String | Optional. Single JSON string containing all fields below. If provided, individual fields are ignored. |
+| `vendorInformation` | JSON Object | Vendor details (ms, address, phone, gstinPan, placeOfSupply) |
+| `invoiceDetails` | JSON Object | Invoice headers (invoiceNumber, date, billNo, etc.) |
+| `items` | JSON Array | List of products (productName, hsnSac, qty, price, igst, cgst, sgst, total) |
+| `totals` | JSON Object | Summary values (totalTaxable, totalTax, grandTotal, totalInWords) |
+| `paymentType` | Enum | `CREDIT`, `CASH`, `CHEQUE`, `ONLINE` (case-insensitive, auto-converted to uppercase) |
+| `attachments` | File(s) | Optional new attachments |
+
+**Field Normalization**: The API automatically handles field variations:
+- Items: `name`→`productName`, `quantity`→`qty`, `rate`→`price`
+- Totals: `taxableAmount`→`totalTaxable`, `cgst`→`totalCGST`, `sgst`→`totalSGST`, `igst`→`totalIGST`
+- All numeric fields are automatically converted from strings to numbers
+- Payment type is automatically converted to uppercase
+
+**Response**: Returns updated invoice data with regenerated PDF URL.
+
 ### Search Invoices
 ```http
 GET /search

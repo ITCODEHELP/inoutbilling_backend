@@ -16,8 +16,8 @@ const generateSaleInvoicePDF = (invoice, user) => {
         doc.on('error', reject);
 
         const blueColor = "#0056b3";
-        const blackColor = "#333333";
-        const lightGray = "#f2f2f2";
+        const blackColor = "#000000";
+        const lightBlueColor = "#E8F3FD";
 
         // Layout Constants
         const startX = 40;
@@ -38,26 +38,32 @@ const generateSaleInvoicePDF = (invoice, user) => {
         const headerBottom = 100;
 
         // --- 2. TAX INVOICE BAR ---
-        doc.rect(startX, headerBottom, width, 18).fill(lightGray).stroke(blueColor);
-        doc.fillColor(blueColor).fontSize(10).text("TAX INVOICE", startX, headerBottom + 5, { align: "center", width: width, bold: true });
-        doc.fillColor(blackColor).fontSize(7).text("ORIGINAL FOR RECIPIENT", startX, headerBottom + 5, { align: "right", width: width - 10 });
+        doc.rect(startX, headerBottom, width, 18).stroke(blueColor);
+        doc.fillColor(blueColor).fontSize(11).text("TAX INVOICE", startX, headerBottom + 5, { align: "center", width: width, bold: true });
+        doc.fillColor(blackColor).fontSize(7).text("ORIGINAL FOR RECIPIENT", startX, headerBottom + 5, { align: "right", width: width - 10, bold: true });
 
         // --- 3. CUSTOMER & INVOICE DETAILS GRID ---
         const gridTop = headerBottom + 18;
-        const gridHeight = 70;
+        const gridHeight = 90;
+        const colSplit = 250;
+
+        // Outer Box
         doc.rect(startX, gridTop, width, gridHeight).stroke(blueColor);
 
-        // Vertical split: Customer (250) | Invoice Details (remainder)
-        doc.moveTo(startX + 250, gridTop).lineTo(startX + 250, gridTop + gridHeight).stroke(blueColor);
+        // Vertical split: Customer (Left) | Invoice Details (Right)
+        doc.moveTo(startX + colSplit, gridTop).lineTo(startX + colSplit, gridTop + gridHeight).stroke(blueColor);
 
-        // CUSTOMER SECTION
-        doc.fillColor(blueColor).fontSize(8).text("Customer Detail", startX + 2, gridTop + 5, { align: "center", width: 248, bold: true });
-        doc.moveTo(startX, gridTop + 15).lineTo(startX + 250, gridTop + 15).stroke(blueColor);
+        // --- LEFT SIDE: CUSTOMER DETAIL ---
+        // Header
+        doc.fillColor(blackColor).fontSize(9).text("Customer Detail", startX, gridTop + 6, { align: "center", width: colSplit, bold: true });
+        // Horizontal Separator
+        doc.moveTo(startX, gridTop + 20).lineTo(startX + colSplit, gridTop + 20).stroke(blueColor);
 
-        let custY = gridTop + 20;
+        // Fields
+        let custY = gridTop + 25;
         const drawCustRow = (label, value) => {
             doc.fillColor(blackColor).fontSize(8).text(label, startX + 5, custY, { bold: true });
-            doc.text(`: ${value || "-"}`, startX + 55, custY, { width: 190 });
+            doc.text(`: ${value || "-"}`, startX + 65, custY, { width: colSplit - 70 });
             custY += 10;
         };
         drawCustRow("Name", invoice.customerInformation.ms);
@@ -66,24 +72,41 @@ const generateSaleInvoicePDF = (invoice, user) => {
         drawCustRow("GSTIN", invoice.customerInformation.gstinPan);
         drawCustRow("Place of Supply", invoice.customerInformation.placeOfSupply);
 
-        // INVOICE DETAILS SECTION
-        let invDetailsY = gridTop + 5;
-        const drawInvRow = (label, value, x) => {
-            doc.fillColor(blueColor).fontSize(8).text(label, x, invDetailsY, { bold: true });
-            doc.fillColor(blackColor).text(value || "-", x + 60, invDetailsY);
-        };
+        // --- RIGHT SIDE: INVOICE DETAILS ---
+        const rightStart = startX + colSplit;
+        const rightWidth = width - colSplit;
+        const rightMid = rightStart + (rightWidth / 2);
 
-        drawInvRow("Invoice No.", invoice.invoiceDetails.invoiceNumber, startX + 260);
-        drawInvRow("Invoice Date", new Date(invoice.invoiceDetails.date).toLocaleDateString(), startX + 410);
-        invDetailsY += 15;
-        doc.moveTo(startX + 250, invDetailsY).lineTo(startX + width, invDetailsY).stroke(blueColor);
-        invDetailsY += 5;
-        drawInvRow("Due Date", invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : "-", startX + 260);
+        // 1. Top Row: Invoice No | Border | Invoice Date
+        // Vertical Divider between Invoice No and Date
+        doc.moveTo(rightMid, gridTop).lineTo(rightMid, gridTop + 20).stroke(blueColor);
+        // Horizontal Divider below Top Row
+        doc.moveTo(rightStart, gridTop + 20).lineTo(startX + width, gridTop + 20).stroke(blueColor);
+
+        // Invoice No (Left Half)
+        doc.fillColor(blackColor).fontSize(9).text("Invoice No.", rightStart + 5, gridTop + 6, { bold: true });
+        doc.fillColor(blackColor).text(invoice.invoiceDetails.invoiceNumber, rightStart + 60, gridTop + 6, { bold: true });
+
+        // Invoice Date (Right Half)
+        doc.fillColor(blackColor).text("Invoice Date", rightMid + 5, gridTop + 6, { bold: true });
+        doc.fillColor(blackColor).text(new Date(invoice.invoiceDetails.date).toLocaleDateString(), rightMid + 65, gridTop + 6, { width: (rightWidth / 2) - 70, align: 'right' });
+
+        // 2. Bottom Row: Due Date
+        doc.fillColor(blackColor).text("Due Date", rightStart + 5, gridTop + 26, { bold: true });
+        doc.fillColor(blackColor).text(invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : "-", rightStart + 60, gridTop + 26);
 
         // --- 4. ITEM TABLE ---
-        const tableTop = gridTop + gridHeight;
-        const tableHeaderHeight = 15;
-        doc.rect(startX, tableTop, width, tableHeaderHeight).fill(lightGray).stroke(blueColor);
+        // BLANK SPACE SECTION
+        const blankSpaceHeight = 15;
+        const blankSpaceTop = gridTop + gridHeight;
+        doc.rect(startX, blankSpaceTop, width, blankSpaceHeight).stroke(blueColor);
+
+        // TABLE HEADER
+        const tableTop = blankSpaceTop + blankSpaceHeight;
+        const tableHeaderHeight = 15; // Kept as 15
+
+        // Background Blue
+        doc.rect(startX, tableTop, width, tableHeaderHeight).fillAndStroke(lightBlueColor, blueColor);
 
         // Column widths
         const colSr = 30;
@@ -102,7 +125,13 @@ const generateSaleInvoicePDF = (invoice, user) => {
             startX + colSr + colName + colHsn + colQty + colRate
         ];
 
-        doc.fillColor(blueColor).fontSize(7);
+        // Vertical lines for header (might be invisible on blue bkg but drawing anyway)
+        colStartX.slice(1).forEach(x => {
+            doc.moveTo(x, tableTop).lineTo(x, tableTop + tableHeaderHeight).stroke(blueColor);
+        });
+
+        // Text Color Black
+        doc.fillColor(blackColor).fontSize(7);
         doc.text("Sr. No.", colStartX[0], tableTop + 4, { width: colSr, align: "center", bold: true });
         doc.text("Name of Product / Service", colStartX[1], tableTop + 4, { width: colName, align: "center", bold: true });
         doc.text("HSN / SAC", colStartX[2], tableTop + 4, { width: colHsn, align: "center", bold: true });
@@ -113,6 +142,10 @@ const generateSaleInvoicePDF = (invoice, user) => {
         // Table Body
         let itemY = tableTop + tableHeaderHeight;
         const tableBodyHeight = 350;
+
+        // Background for Total Column
+        doc.rect(colStartX[5], itemY, colTotal, tableBodyHeight).fill(lightBlueColor);
+
         doc.rect(startX, itemY, width, tableBodyHeight).stroke(blueColor);
 
         // Vertical lines for columns
@@ -123,7 +156,7 @@ const generateSaleInvoicePDF = (invoice, user) => {
         invoice.items.forEach((item, index) => {
             doc.fillColor(blackColor).fontSize(8);
             doc.text((index + 1).toString(), colStartX[0], itemY + 5, { width: colSr, align: "center" });
-            doc.text(item.productName, colStartX[1] + 5, itemY + 5, { width: colName - 10 });
+            doc.text(item.productName, colStartX[1] + 5, itemY + 5, { width: colName - 10, bold: true });
             doc.text(item.hsnSac || "-", colStartX[2], itemY + 5, { width: colHsn, align: "center" });
             doc.text(item.qty.toString(), colStartX[3], itemY + 5, { width: colQty, align: "center" });
             doc.text(item.price.toFixed(2), colStartX[4], itemY + 5, { width: colRate, align: "center" });
@@ -133,41 +166,123 @@ const generateSaleInvoicePDF = (invoice, user) => {
 
         // Table Footer (Total row)
         const tableFooterY = tableTop + tableHeaderHeight + tableBodyHeight;
-        doc.rect(startX, tableFooterY, width, 15).fill(lightGray).stroke(blueColor);
-        doc.fillColor(blueColor).fontSize(8).text("Total", startX, tableFooterY + 4, { align: "center", width: colSr + colName + colHsn, bold: true });
+
+        // Background for entire Total Row
+        doc.rect(startX, tableFooterY, width, 15).fill(lightBlueColor);
+
+        colStartX.slice(1).forEach(x => {
+            doc.moveTo(x, tableFooterY).lineTo(x, tableFooterY + 15).stroke(blueColor);
+        });
+        doc.rect(startX, tableFooterY, width, 15).stroke(blueColor);
+        doc.fillColor(blackColor).fontSize(8).text("Total", startX, tableFooterY + 4, { align: "right", width: colSr + colName, bold: true });
 
         const totalQty = invoice.items.reduce((sum, item) => sum + (item.qty || 0), 0);
         doc.fillColor(blackColor).text(totalQty.toString(), colStartX[3], tableFooterY + 4, { width: colQty, align: "center", bold: true });
         doc.text(invoice.totals.grandTotal.toFixed(2), colStartX[5], tableFooterY + 4, { width: colTotal, align: "center", bold: true });
 
         // --- 5. TOTALS SECTION ---
-        const lowerSectionY = tableFooterY + 15;
-        const wordsWidth = 350;
+        // Blank Space above Totals
+        const preTotalSpaceHeight = 15;
+        doc.rect(startX, tableFooterY + 15, width, preTotalSpaceHeight).stroke(blueColor);
+
+        const lowerSectionY = tableFooterY + 15 + preTotalSpaceHeight;
+        const wordsWidth = 250;
         doc.rect(startX, lowerSectionY, width, 30).stroke(blueColor);
         doc.moveTo(startX + wordsWidth, lowerSectionY).lineTo(startX + wordsWidth, lowerSectionY + 30).stroke(blueColor);
 
-        doc.fillColor(blueColor).fontSize(8).text("Total in words", startX + 5, lowerSectionY + 2, { bold: true });
-        doc.fillColor(blackColor).fontSize(7).text(invoice.totals.totalInWords || "ZERO RUPEES ONLY", startX + 5, lowerSectionY + 12, { width: wordsWidth - 10 });
+        // --- Left Side: Total in Words ---
+        // Horizontal line for split
+        doc.moveTo(startX, lowerSectionY + 15).lineTo(startX + wordsWidth, lowerSectionY + 15).stroke(blueColor);
+        // Top: Label
+        doc.fillColor(blackColor).fontSize(9).text("Total in words", startX, lowerSectionY + 4, { width: wordsWidth, align: 'center', bold: true });
+        // Bottom: Value
+        doc.fillColor(blackColor).fontSize(7).text(invoice.totals.totalInWords || "ZERO RUPEES ONLY", startX, lowerSectionY + 19, { width: wordsWidth, align: 'center' });
 
-        doc.fillColor(blueColor).fontSize(8).text("Total Amount", startX + wordsWidth + 5, lowerSectionY + 2, { bold: true });
-        doc.fillColor(blackColor).fontSize(10).text(invoice.totals.grandTotal.toFixed(2), startX + wordsWidth, lowerSectionY + 12, { width: width - wordsWidth, align: "right", bold: true });
-        doc.fontSize(6).text("(E & O.E.)", startX + wordsWidth, lowerSectionY + 22, { width: width - wordsWidth - 5, align: "right" });
+        // --- Right Side: Total Amount & E.O.E ---
+        const rX = startX + wordsWidth;
+        const rW = width - wordsWidth;
 
-        // --- 6. TERMS & SIGNATURE ---
+        // 1. Total Amount Section (Top Half 15px) - Light Blue BG
+        doc.rect(rX, lowerSectionY, rW, 15).fillAndStroke(lightBlueColor, blueColor);
+
+        doc.fillColor(blackColor).fontSize(8).text("Total Amount", rX + 5, lowerSectionY + 4, { bold: true });
+        // Using "Rs." as Helvetica doesn't support ₹ symbol
+        doc.fillColor(blackColor).fontSize(10).text(`Rs. ${invoice.totals.grandTotal.toFixed(2)}`, rX, lowerSectionY + 3, { width: rW - 5, align: "right", bold: true });
+
+        // 2. E & O.E. (Bottom Half 15px)
+        doc.fillColor(blackColor).fontSize(6).text("(E & O.E.)", rX, lowerSectionY + 19, { width: rW - 5, align: "right", bold: true });
+
+
+
         const termsY = lowerSectionY + 30;
-        const termsHeight = 80;
-        doc.rect(startX, termsY, width, termsHeight).stroke(blueColor);
-        doc.moveTo(startX + 250, termsY).lineTo(startX + 250, termsY + termsHeight).stroke(blueColor);
+        const termsHeight = 85; // Height for Terms Section (Left)
 
-        doc.fillColor(blueColor).fontSize(8).text("Terms and Conditions", startX + 5, termsY + 5, { bold: true });
-        doc.fillColor(blackColor).fontSize(6).text(invoice.termsDetails || "Subject to our Home Jurisdiction.\nOur Responsibility Ceases as soon as goods leaves our Premises.\nGoods once sold will not taken back.\nDelivery Ex-Premises.", startX + 5, termsY + 15, { width: 240 });
+        // Blank Space above Signature (Right Side Only)
+        const sigSpacerHeight = 15;
+        const sigHeight = 70;   // Height for Signature Section (Right)
 
-        // Right side: Company Signature
-        const sigX = startX + 255;
-        doc.fillColor(blackColor).fontSize(6).text("Certified that the particulars given above are true and correct.", sigX, termsY + 5);
-        doc.fontSize(9).text(`For ${user.companyName || "ITCode"}`, sigX, termsY + 15, { bold: true, align: "center", width: width - 260 });
+        // Vertical Split usually at 250
+        const sigSplit = startX + 250;
 
-        doc.fontSize(7).text("Authorized signatory", sigX, termsY + 65, { align: "center", width: width - 260 });
+        // --- Left Side: Terms (Height: 80) ---
+        doc.rect(startX, termsY, (sigSplit - startX), termsHeight).stroke(blueColor);
+
+        // Middle vertical line: Covers Terms, Spacer, and Signature
+        const totalRightHeight = sigSpacerHeight + sigHeight;
+        doc.moveTo(sigSplit, termsY).lineTo(sigSplit, termsY + Math.max(termsHeight, totalRightHeight)).stroke(blueColor);
+
+        // 1. Top Half: User Terms
+        doc.fillColor(blackColor).fontSize(9).text("Terms and Conditions", startX, termsY + 3, { width: 250, align: "center", bold: true });
+        doc.fillColor(blackColor).fontSize(8).text(invoice.termsDetails || "", startX + 5, termsY + 12, { width: (sigSplit - startX) - 10 });
+
+        // Horizontal Separator inside Left Box
+        const splitY = termsY + 15;
+        doc.moveTo(startX, splitY).lineTo(sigSplit, splitY).stroke(blueColor);
+
+        // 2. Bottom Half: Jurisdiction
+        const mandatoryTerms = "Subject to our Home Jurisdiction.\nOur Responsibility Ceases as soon as goods leaves our Premises.\nGoods once sold will not taken back.\nDelivery Ex-Premises.";
+        doc.fillColor(blackColor).fontSize(7).text(mandatoryTerms, startX + 5, splitY + 2, { width: (sigSplit - startX) - 10, lineGap: 1 });
+
+
+        // --- Right Side ---
+        // 1. Spacer Box (Top of Right Side)
+        doc.rect(sigSplit, termsY, (startX + width) - sigSplit, sigSpacerHeight).stroke(blueColor);
+
+        // 2. Signature Section (Below Spacer)
+        const sigStartY = termsY + sigSpacerHeight;
+
+        // Right Side Rect
+        doc.rect(sigSplit, sigStartY, (startX + width) - sigSplit, sigHeight).stroke(blueColor);
+
+        const sigX = sigSplit; // Start X for right side
+        const sigW = (startX + width) - sigSplit;
+
+        // Visual Breakdown requested:
+        // 1. Certified + For Company (Top)
+        // 2. Blank Section for Sign (Middle)
+        // 3. Authorized Signatory (Bottom)
+
+        const h1 = 25; // Top section height (Restored)
+        const h2 = 30; // Middle (blank) section height (Restored)
+        const h3 = 10; // Bottom section height (total 80)
+
+        // Draw Lines
+        // Line after Top Section
+        doc.moveTo(sigX, sigStartY + h1).lineTo(startX + width, sigStartY + h1).stroke(blueColor);
+        // Line after Middle Section
+        doc.moveTo(sigX, sigStartY + h1 + h2).lineTo(startX + width, sigStartY + h1 + h2).stroke(blueColor);
+
+        // --- Section 1: Certified & Company ---
+        // Certified Text
+        doc.fillColor(blackColor).fontSize(6).text("Certified that the particulars given above are true and correct.", sigX + 5, sigStartY + 4, { width: sigW - 10, align: 'center', bold: true });
+        // For Company
+        doc.fontSize(9).text(`For ${user.companyName || "ITCode"}`, sigX, sigStartY + 13, { bold: true, align: "center", width: sigW });
+
+        // --- Section 2: Blank (Signature) ---
+        // (Empty)
+
+        // --- Section 3: Authorized Signatory ---
+        doc.fontSize(7).text("Authorized signatory", sigX, sigStartY + h1 + h2 + 4, { align: "center", width: sigW, bold: true });
 
         doc.end();
     });
