@@ -2,6 +2,12 @@ const InwardPayment = require('../../models/Payment-Model/InwardPayment');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
+const User = require('../../models/User-Model/User');
+const { generateSaleInvoicePDF } = require('../../utils/saleInvoicePdfHelper');
+const { sendReceiptEmail } = require('../../utils/emailHelper');
+const { recordActivity } = require('../../utils/activityLogHelper');
+const numberToWords = require('../../utils/numberToWords');
 
 // Ensure upload directory exists
 const uploadDir = path.join(__dirname, '../uploads/inward-payments');
@@ -164,173 +170,6 @@ const getInwardPayments = async (req, res) => {
             error: error.message
         });
     }
-};
-
-/**
- * @desc    Get single Inward Payment by ID
- * @route   GET /api/inward-payments/:id
- * @access  Private
- */
-const getInwardPaymentById = async (req, res) => {
-    try {
-        const payment = await InwardPayment.findOne({
-            _id: req.params.id,
-            userId: req.user._id
-        });
-
-        if (!payment) {
-            return res.status(404).json({ success: false, message: "Payment not found" });
-        }
-
-        res.status(200).json({ success: true, data: payment });
-    } catch (error) {
-        console.error("Error fetching inward payment:", error);
-        res.status(500).json({
-            success: false,
-            message: "Server Error",
-            error: error.message
-        });
-    }
-};
-
-/**
- * @desc    Update Inward Payment
- * @route   PUT /api/inward-payments/:id
- * @access  Private
- */
-const updateInwardPayment = (req, res) => {
-    upload(req, res, async function (err) {
-        if (err) {
-            return res.status(400).json({ success: false, message: err.message });
-        }
-
-        try {
-            let bodyData = {};
-
-            // 1\ufe0f\u20e3 Extract data from req.body.data if it exists, otherwise use req.body
-            if (req.body.data) {
-                try {
-                    bodyData = typeof req.body.data === 'string' ? JSON.parse(req.body.data) : req.body.data;
-                } catch (error) {
-                    return res.status(400).json({ success: false, message: "Invalid JSON format in 'data' field" });
-                }
-            } else {
-                bodyData = { ...req.body };
-            }
-
-            // 1.5\ufe0f\u20e3 Normalize numeric fields
-            if (bodyData.amount) {
-                bodyData.amount = Number(bodyData.amount);
-            }
-            if (bodyData.totalOutstanding) {
-                bodyData.totalOutstanding = Number(bodyData.totalOutstanding);
-            }
-
-            // 1.6\ufe0f\u20e3 Normalize paymentType to lowercase (schema uses lowercase enum)
-            if (bodyData.paymentType && typeof bodyData.paymentType === 'string') {
-                bodyData.paymentType = bodyData.paymentType.toLowerCase();
-            }
-
-            const userId = req.user._id;
-
-            // 2\ufe0f\u20e3 Basic Validation
-            if (bodyData.amount !== undefined && bodyData.amount <= 0) {
-                return res.status(400).json({ success: false, message: "Amount must be greater than 0" });
-            }
-
-            if (bodyData.totalOutstanding && bodyData.amount && Number(bodyData.amount) > Number(bodyData.totalOutstanding)) {
-                return res.status(400).json({ success: false, message: "Amount cannot exceed outstanding amount" });
-            }
-
-            // Check duplicate receipt number if it's being changed
-            if (bodyData.receiptNo) {
-                const existing = await InwardPayment.findOne({
-                    userId,
-                    receiptNo: bodyData.receiptNo,
-                    _id: { $ne: req.params.id }
-                });
-                if (existing) {
-                    return res.status(400).json({ success: false, message: "Receipt No must be unique" });
-                }
-            }
-
-            // 3\ufe0f\u20e3 Handle custom fields
-            let customFieldsData = {};
-            if (bodyData.customFields) {
-                try {
-                    customFieldsData = typeof bodyData.customFields === 'string'
-                        ? JSON.parse(bodyData.customFields)
-                        : bodyData.customFields;
-                } catch (e) {
-                    customFieldsData = {};
-                }
-            }
-
-            // Fetch definitions to validate
-            const InwardPaymentCustomField = require('../../models/Payment-Model/InwardPaymentCustomField');
-            const definitions = await InwardPaymentCustomField.find({ userId, status: 'Active' });
-
-            const processedCustomFields = {};
-
-            for (const def of definitions) {
-                const val = customFieldsData[def._id.toString()];
-
-                if (def.required && (val === undefined || val === null || val === '')) {
-                    return res.status(400).json({ success: false, message: `${def.name} is required` });
-                }
-
-                if (val !== undefined && val !== null && val !== '') {
-                    if (def.type === 'DROPDOWN' && def.options.length > 0) {
-                        if (!def.options.includes(val)) {
-                            return res.status(400).json({ success: false, message: `Invalid option for ${def.name}` });
-                        }
-                    }
-                    processedCustomFields[def._id.toString()] = val;
-                }
-            }
-
-            bodyData.customFields = processedCustomFields;
-
-            // 4\ufe0f\u20e3 Handle attachment
-            if (req.file) {
-                bodyData.attachment = `/uploads/inward-payments/${req.file.filename}`;
-            }
-
-            // 5\ufe0f\u20e3 Update payment
-            const payment = await InwardPayment.findOneAndUpdate(
-                { _id: req.params.id, userId },
-                { ...bodyData },
-                { new: true, runValidators: true }
-            );
-
-            if (!payment) {
-                return res.status(404).json({ success: false, message: "Payment not found" });
-            }
-
-            // 6\ufe0f\u20e3 Record Activity
-            await recordActivity(
-                req,
-                'Update',
-                'Inward Payment',
-                `Inward Payment updated: ${payment.receiptNo}`,
-                payment.receiptNo
-            );
-
-            res.status(200).json({
-                success: true,
-                message: "Inward payment updated successfully",
-                data: payment
-            });
-
-        } catch (error) {
-            console.error("Error updating inward payment:", error);
-            res.status(500).json({
-                success: false,
-                message: "Server Error",
-                error: error.message
-            });
-        }
-    });
 };
 
 /**
@@ -546,7 +385,7 @@ const downloadPaymentPDF = async (req, res) => {
             mappedData,
             userData || {},
             "RECEIPT VOUCHER",
-            { no: "Receipt No.", date: "Receipt Date", sectionTitle: "Customer Detail" }
+            { no: "Receipt No.", date: "Receipt Date" }
         );
 
         res.setHeader('Content-Type', 'application/pdf');
@@ -668,7 +507,7 @@ const viewPaymentPublic = async (req, res) => {
             mappedData,
             userData || {},
             "RECEIPT VOUCHER",
-            { no: "Receipt No.", date: "Receipt Date", sectionTitle: "Customer Detail" }
+            { no: "Receipt No.", date: "Receipt Date" }
         );
 
         res.setHeader('Content-Type', 'application/pdf');
@@ -682,8 +521,11 @@ const viewPaymentPublic = async (req, res) => {
 module.exports = {
     createInwardPayment,
     getInwardPayments,
-    getInwardPaymentById,
-    updateInwardPayment,
     getPaymentSummary,
-    searchInwardPayments
+    searchInwardPayments,
+    downloadPaymentPDF,
+    shareEmail,
+    shareWhatsApp,
+    generatePublicLink,
+    viewPaymentPublic
 };
