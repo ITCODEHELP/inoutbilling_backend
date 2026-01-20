@@ -17,7 +17,7 @@ const getManageStock = async (req, res) => {
         } = req.query;
 
         const skip = (parseInt(page) - 1) * parseInt(limit);
-        let query = { userId: req.user._id, itemType: 'Product' };
+        let query = { userId: req.user._id, itemType: 'Product', status: { $ne: 'Deleted' } };
 
         // 1. Partial Search on Name (Case-insensitive)
         if (search) {
@@ -103,7 +103,7 @@ const getManageStock = async (req, res) => {
 const getProductStats = async (req, res) => {
     try {
         const stats = await Product.aggregate([
-            { $match: { userId: req.user._id } },
+            { $match: { userId: req.user._id, status: { $ne: 'Deleted' } } },
             {
                 $group: {
                     _id: null,
@@ -205,8 +205,16 @@ const getProducts = async (req, res) => {
         const skip = (page - 1) * limit;
         const search = req.query.search;
         const itemType = req.query.itemType;
+        const status = req.query.status;
 
         let query = { userId: req.user._id };
+
+        // Hide Deleted items from default listings
+        if (status) {
+            query.status = status;
+        } else {
+            query.status = { $ne: 'Deleted' };
+        }
 
         if (search) {
             query.name = { $regex: search, $options: 'i' };
@@ -339,7 +347,7 @@ const updateProduct = async (req, res) => {
 // @access  Private
 const deleteProduct = async (req, res) => {
     try {
-        const product = await Product.findOneAndDelete({
+        const product = await Product.findOne({
             _id: req.params.id,
             userId: req.user._id
         });
@@ -347,6 +355,9 @@ const deleteProduct = async (req, res) => {
         if (!product) {
             return res.status(404).json({ message: 'Product not found' });
         }
+
+        product.status = 'Deleted';
+        await product.save();
 
         // Activity Logging
         await recordActivity(
@@ -357,7 +368,79 @@ const deleteProduct = async (req, res) => {
             product.barcodeNumber || ''
         );
 
-        res.status(200).json({ message: 'Product removed' });
+        res.status(200).json(product);
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
+// @desc    Cancel Product/Service
+// @route   POST /api/products/:id/cancel
+// @access  Private
+const cancelProduct = async (req, res) => {
+    try {
+        const product = await Product.findOne({
+            _id: req.params.id,
+            userId: req.user._id
+        });
+
+        if (!product) {
+            return res.status(404).json({ message: 'Product not found' });
+        }
+
+        if (product.status === 'Deleted') {
+            return res.status(400).json({ message: 'Deleted products cannot be cancelled.' });
+        }
+
+        product.status = 'Cancelled';
+        await product.save();
+
+        // Activity Logging
+        await recordActivity(
+            req,
+            'Update',
+            'Product',
+            `Product cancelled: ${product.name}`,
+            product.barcodeNumber || ''
+        );
+
+        res.status(200).json(product);
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
+// @desc    Restore Product/Service
+// @route   POST /api/products/:id/restore
+// @access  Private
+const restoreProduct = async (req, res) => {
+    try {
+        const product = await Product.findOne({
+            _id: req.params.id,
+            userId: req.user._id
+        });
+
+        if (!product) {
+            return res.status(404).json({ message: 'Product not found' });
+        }
+
+        if (product.status === 'Deleted') {
+            return res.status(400).json({ message: 'Deleted products cannot be restored (Reactivation not allowed).' });
+        }
+
+        product.status = 'Active';
+        await product.save();
+
+        // Activity Logging
+        await recordActivity(
+            req,
+            'Update',
+            'Product',
+            `Product restored: ${product.name}`,
+            product.barcodeNumber || ''
+        );
+
+        res.status(200).json(product);
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
@@ -370,5 +453,7 @@ module.exports = {
     updateProduct,
     deleteProduct,
     getProductStats,
-    getManageStock
+    getManageStock,
+    cancelProduct,
+    restoreProduct
 };

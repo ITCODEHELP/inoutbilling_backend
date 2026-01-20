@@ -10,7 +10,7 @@ const getProductSearchCounts = async (req, res) => {
         const { productName, productNote, hsnCode, productGroup, stockType } = req.query;
 
         // Build query object
-        const query = { userId: req.user._id };
+        const query = { userId: req.user._id, status: { $ne: 'Deleted' } };
 
         // Helper for partial match regex
         const regex = (val) => new RegExp(val, 'i');

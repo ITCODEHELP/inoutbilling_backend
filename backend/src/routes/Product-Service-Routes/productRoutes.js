@@ -7,7 +7,9 @@ const {
     updateProduct,
     deleteProduct,
     getProductStats,
-    getManageStock
+    getManageStock,
+    cancelProduct,
+    restoreProduct
 } = require('../../controllers/Product-Service-Controller/productController');
 const { exportProductLog } = require('../../controllers/Product-Service-Controller/productLogExportController');
 const { protect } = require('../../middlewares/authMiddleware');
@@ -38,6 +40,8 @@ router.post('/', protect, productImageUpload.array('images', 5), createProduct);
 router.get('/', protect, getProducts);
 router.get('/:id', protect, getProductById);
 router.put('/:id', protect, productImageUpload.array('images', 5), updateProduct);
+router.post('/:id/cancel', protect, cancelProduct);
+router.post('/:id/restore', protect, restoreProduct);
 router.delete('/:id', protect, deleteProduct);
 
 module.exports = router;

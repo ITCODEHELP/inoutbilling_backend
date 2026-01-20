@@ -92,6 +92,12 @@ const productSchema = new mongoose.Schema({
     productGroup: { type: String },
     manufactureFlag: { type: Boolean, default: false },
     nonSellableFlag: { type: Boolean, default: false },
+    status: {
+        type: String,
+        enum: ['Active', 'Cancelled', 'Deleted'],
+        default: 'Active',
+        index: true
+    },
 
     // Images
     images: [{

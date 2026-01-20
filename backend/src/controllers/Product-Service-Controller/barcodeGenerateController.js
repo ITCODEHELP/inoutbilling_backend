@@ -89,16 +89,25 @@ const generateBarcodes = async (req, res) => {
         const items = [];
 
         for (const item of cartItems) {
-            // Logic to generate unique barcode numbers
-            // If the product already has a barcode, we use it or generate new ones?
-            // "Generate Barcode Number" usually implies creating new ones.
-            // Requirement says "create unique barcode numbers".
+            // Fetch the product to get its barcode number
+            const product = await Product.findOne({
+                _id: item.productId,
+                userId: req.user._id
+            });
 
+            if (!product) {
+                return res.status(404).json({
+                    message: `Product not found for ${item.productName}`
+                });
+            }
+
+            // Use the product's barcode number
+            const productBarcodeNumber = product.barcodeNumber || product.sku || product._id.toString();
+
+            // Generate the requested number of labels with the same barcode
             const generatedBarcodes = [];
             for (let i = 0; i < item.noOfLabels; i++) {
-                // simple generation logic: Timestamp + Random suffix or Product ID based
-                const uniqueCode = `${Date.now()}${Math.floor(Math.random() * 1000)}${i}`;
-                generatedBarcodes.push(uniqueCode);
+                generatedBarcodes.push(productBarcodeNumber);
             }
 
             items.push({
@@ -136,10 +145,64 @@ const getBarcodeHistory = async (req, res) => {
     }
 };
 
+// @desc    Download barcode PDF
+// @route   GET /api/barcode-generate/history/:id/download
+// @access  Private
+const downloadBarcodePDF = async (req, res) => {
+    try {
+        const history = await BarcodeHistory.findOne({
+            _id: req.params.id,
+            userId: req.user._id
+        });
+
+        if (!history) {
+            return res.status(404).json({ message: 'Barcode history not found' });
+        }
+
+        // Generate single barcode PDF for download
+        const { generateBarcodePDF } = require('../../utils/barcodePdfHelper');
+        const pdfBuffer = await generateBarcodePDF(history, true); // true = single barcode mode
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="barcodes-${history._id}.pdf"`);
+        res.status(200).send(pdfBuffer);
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
+// @desc    Print barcode PDF (inline display)
+// @route   GET /api/barcode-generate/history/:id/print
+// @access  Private
+const printBarcodePDF = async (req, res) => {
+    try {
+        const history = await BarcodeHistory.findOne({
+            _id: req.params.id,
+            userId: req.user._id
+        });
+
+        if (!history) {
+            return res.status(404).json({ message: 'Barcode history not found' });
+        }
+
+        // Generate single barcode PDF for printing
+        const { generateBarcodePDF } = require('../../utils/barcodePdfHelper');
+        const pdfBuffer = await generateBarcodePDF(history, true); // true = single barcode mode
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="barcodes-${history._id}.pdf"`);
+        res.status(200).send(pdfBuffer);
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
 module.exports = {
     addToBarcodeCart,
     getBarcodeCart,
     removeFromBarcodeCart,
     generateBarcodes,
-    getBarcodeHistory
+    getBarcodeHistory,
+    downloadBarcodePDF,
+    printBarcodePDF
 };
