@@ -133,6 +133,26 @@ Same fields as Create. Uploading new images will replace existing image metadata
 DELETE /products/:id
 Authorization: Bearer <token>
 ```
+Performs a **soft delete** by setting the status to `Deleted` and returns the updated product object.
+
+### Cancel Product / Service
+```http
+POST /products/:id/cancel
+Authorization: Bearer <token>
+```
+Sets the product status to `Cancelled`.
+
+### Restore Product / Service
+```http
+POST /products/:id/restore
+Authorization: Bearer <token>
+```
+Sets the product status to `Active`.
+
+### Note on Status & Deletion
+- All products/services include a `status` field (`Active`, `Cancelled`, `Deleted`).
+- `GET /products` and `GET /api/products/manage-stock` hide `Deleted` items by default.
+- To filter by status, use the `status` query parameter (e.g., `GET /products?status=Cancelled`).
 
 ---
 
