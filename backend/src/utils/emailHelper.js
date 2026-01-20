@@ -34,7 +34,7 @@ const sendInvoiceEmail = async (invoice, email, isPurchase = false) => {
         const senderLabel = isPurchase ? 'Vendor' : 'Customer';
 
         const mailOptions = {
-            from: process.env.FROM_EMAIL || process.env.SMTP_USER,
+            from: `${process.env.FROM_NAME} <${process.env.FROM_EMAIL}>`,
             to: email,
             subject: `${invoiceType} ${invoice.invoiceDetails.invoiceNumber} from Inout Billing`,
             text: `Dear ${senderLabel},\n\nPlease find attached the ${invoiceType.toLowerCase()} ${invoice.invoiceDetails.invoiceNumber}.\n\nThank you!`,
@@ -53,7 +53,6 @@ const sendInvoiceEmail = async (invoice, email, isPurchase = false) => {
         };
 
         const info = await transporter.sendMail(mailOptions);
-        console.log('Email sent with PDF attachment: %s', info.messageId);
         return { success: true, messageId: info.messageId };
     } catch (error) {
         console.error('Error sending email with PDF:', error);
@@ -84,7 +83,7 @@ const sendReceiptEmail = async (mappedReceipt, email) => {
         });
 
         const mailOptions = {
-            from: process.env.FROM_EMAIL || process.env.SMTP_USER,
+            from: `${process.env.FROM_NAME} <${process.env.FROM_EMAIL}>`,
             to: email,
             subject: `Receipt Voucher ${mappedReceipt.invoiceDetails.invoiceNumber} from Inout Billing`,
             text: `Dear Customer,\n\nPlease find attached the receipt voucher ${mappedReceipt.invoiceDetails.invoiceNumber}.\n\nThank you!`,
@@ -103,7 +102,6 @@ const sendReceiptEmail = async (mappedReceipt, email) => {
         };
 
         const info = await transporter.sendMail(mailOptions);
-        console.log('Receipt Email sent: %s', info.messageId);
         return { success: true, messageId: info.messageId };
     } catch (error) {
         console.error('Error sending receipt email:', error);
@@ -134,7 +132,7 @@ const sendOutwardPaymentEmail = async (mappedPayment, email) => {
         });
 
         const mailOptions = {
-            from: process.env.FROM_EMAIL || process.env.SMTP_USER,
+            from: `${process.env.FROM_NAME} <${process.env.FROM_EMAIL}>`,
             to: email,
             subject: `Payment Voucher ${mappedPayment.invoiceDetails.invoiceNumber} from Inout Billing`,
             text: `Dear Vendor,\n\nPlease find attached the payment voucher ${mappedPayment.invoiceDetails.invoiceNumber}.\n\nThank you!`,
@@ -153,7 +151,6 @@ const sendOutwardPaymentEmail = async (mappedPayment, email) => {
         };
 
         const info = await transporter.sendMail(mailOptions);
-        console.log('Outward Payment Email sent: %s', info.messageId);
         return { success: true, messageId: info.messageId };
     } catch (error) {
         console.error('Error sending outward payment email:', error);
@@ -172,17 +169,17 @@ const sendProformaEmail = async (proforma, email) => {
         const pdfBuffer = await generateProformaPDF(proforma);
 
         const transporter = nodemailer.createTransport({
-            host: process.env.EMAIL_HOST,
-            port: process.env.EMAIL_PORT,
-            secure: process.env.EMAIL_PORT == 465,
+            host: process.env.SMTP_HOST,
+            port: process.env.SMTP_PORT,
+            secure: process.env.SMTP_PORT == 465,
             auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASS,
+                user: process.env.SMTP_USER,
+                pass: process.env.SMTP_PASS,
             },
         });
 
         const mailOptions = {
-            from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+            from: `${process.env.FROM_NAME} <${process.env.FROM_EMAIL}>`,
             to: email,
             subject: `Proforma Invoice ${proforma.proformaDetails.proformaNumber} from Inout Billing`,
             text: `Dear Customer,\n\nPlease find attached the proforma invoice ${proforma.proformaDetails.proformaNumber}.\n\nThank you!`,
@@ -201,7 +198,6 @@ const sendProformaEmail = async (proforma, email) => {
         };
 
         const info = await transporter.sendMail(mailOptions);
-        console.log('Proforma Email sent: %s', info.messageId);
     } catch (error) {
         console.error('Error sending proforma email:', error);
     }
@@ -218,17 +214,17 @@ const sendDeliveryChallanEmail = async (challan, email) => {
         const pdfBuffer = await generateDeliveryChallanPDF(challan);
 
         const transporter = nodemailer.createTransport({
-            host: process.env.EMAIL_HOST,
-            port: process.env.EMAIL_PORT,
-            secure: process.env.EMAIL_PORT == 465,
+            host: process.env.SMTP_HOST,
+            port: process.env.SMTP_PORT,
+            secure: process.env.SMTP_PORT == 465,
             auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASS,
+                user: process.env.SMTP_USER,
+                pass: process.env.SMTP_PASS,
             },
         });
 
         const mailOptions = {
-            from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+            from: `${process.env.FROM_NAME} <${process.env.FROM_EMAIL}>`,
             to: email,
             subject: `Delivery Challan ${challan.deliveryChallanDetails.challanNumber} from Inout Billing`,
             text: `Dear Customer,\n\nPlease find attached the delivery challan ${challan.deliveryChallanDetails.challanNumber}.\n\nThank you!`,
@@ -247,7 +243,6 @@ const sendDeliveryChallanEmail = async (challan, email) => {
         };
 
         const info = await transporter.sendMail(mailOptions);
-        console.log('Delivery Challan Email sent: %s', info.messageId);
     } catch (error) {
         console.error('Error sending delivery challan email:', error);
     }
@@ -261,17 +256,17 @@ const sendLedgerEmail = async (ledgerData, email) => {
         const pdfBuffer = await generateLedgerPDF(ledgerData);
 
         const transporter = nodemailer.createTransport({
-            host: process.env.EMAIL_HOST,
-            port: process.env.EMAIL_PORT,
-            secure: process.env.EMAIL_PORT == 465,
+            host: process.env.SMTP_HOST,
+            port: process.env.SMTP_PORT,
+            secure: process.env.SMTP_PORT == 465,
             auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASS,
+                user: process.env.SMTP_USER,
+                pass: process.env.SMTP_PASS,
             },
         });
 
         const mailOptions = {
-            from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+            from: `${process.env.FROM_NAME} <${process.env.FROM_EMAIL}>`,
             to: email,
             subject: `Ledger Statement: ${ledgerData.target.companyName} from Inout Billing`,
             text: `Dear User,\n\nPlease find attached the Ledger Statement for ${ledgerData.target.companyName} for the period ${new Date(ledgerData.fromDate).toLocaleDateString()} to ${new Date(ledgerData.toDate).toLocaleDateString()}.\n\nThank you!`,
@@ -291,7 +286,6 @@ const sendLedgerEmail = async (ledgerData, email) => {
         };
 
         const info = await transporter.sendMail(mailOptions);
-        console.log('Ledger Email sent: %s', info.messageId);
     } catch (error) {
         console.error('Error sending ledger email:', error);
     }

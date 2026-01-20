@@ -10,8 +10,10 @@ const DebitNote = require('../../models/Other-Document-Model/DebitNote');
 const PurchaseOrder = require('../../models/Other-Document-Model/PurchaseOrder');
 const { generateInvoicePDF } = require('../../utils/pdfHelper');
 const { generatePurchaseInvoicePDF } = require('../../utils/purchaseInvoicePdfHelper');
+const { generateEnvelopePDF } = require('../../utils/envelopePdfHelper');
 const { sendInvoiceEmail } = require('../../utils/emailHelper');
 const { recordActivity } = require('../../utils/activityLogHelper');
+const Product = require('../../models/Product-Service-Model/Product');
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
@@ -67,6 +69,185 @@ const validatePurchaseInvoice = (data) => {
     return null;
 };
 
+// Internal helper for item resolution (Purchase version)
+const resolvePurchaseItemLogic = async (userId, itemInput) => {
+    let product = null;
+
+    // Lookup priority: productId > productName > hsnSac
+    if (itemInput.productId) {
+        product = await Product.findOne({ _id: itemInput.productId, userId });
+    } else if (itemInput.productName) {
+        product = await Product.findOne({ name: itemInput.productName, userId });
+    } else if (itemInput.hsnSac) {
+        product = await Product.findOne({ hsnSac: itemInput.hsnSac, userId });
+    }
+
+    // Default values/Manual entry initialization
+    const resolvedItem = {
+        ...itemInput,
+        productId: product ? product._id : itemInput.productId,
+        productName: itemInput.productName || (product ? product.name : ""),
+        hsnSac: itemInput.hsnSac || (product ? product.hsnSac : ""),
+        uom: itemInput.uom || (product ? product.unitOfMeasurement : ""),
+        productGroup: itemInput.productGroup || (product ? product.productGroup : ""),
+        qty: Number(itemInput.qty || 1),
+        price: Number(itemInput.price || 0),
+        discountType: itemInput.discountType || 'Flat',
+        discountValue: Number(itemInput.discountValue || 0),
+        igst: Number(itemInput.igst || 0),
+        cgst: Number(itemInput.cgst || 0),
+        sgst: Number(itemInput.sgst || 0),
+        taxableValue: 0,
+        total: 0,
+        availableStock: 0
+    };
+
+    if (product) {
+        // Price resolution: use input if provided, otherwise master purchasePrice
+        if (resolvedItem.price === 0) {
+            resolvedItem.price = product.inventoryType === 'Serial'
+                ? (product.serialData?.purchasePrice || product.purchasePrice)
+                : product.purchasePrice;
+        }
+
+        // Discount resolution if not provided
+        if (!itemInput.discountValue && itemInput.discountValue !== 0) {
+            if (product.inventoryType === 'Serial') {
+                resolvedItem.discountType = product.serialData?.purchaseDiscount?.type || product.purchaseDiscount?.type || 'Flat';
+                resolvedItem.discountValue = product.serialData?.purchaseDiscount?.value || product.purchaseDiscount?.value || 0;
+            } else {
+                resolvedItem.discountType = product.purchaseDiscount?.type || 'Flat';
+                resolvedItem.discountValue = product.purchaseDiscount?.value || 0;
+            }
+        }
+
+        // Tax resolution if no taxes were provided
+        if (itemInput.igst === undefined && itemInput.cgst === undefined && itemInput.sgst === undefined) {
+            resolvedItem.igst = product.taxSelection || 0;
+            resolvedItem.cgst = resolvedItem.igst / 2;
+            resolvedItem.sgst = resolvedItem.igst / 2;
+        }
+
+        resolvedItem.availableStock = product.inventoryType === 'Serial'
+            ? (product.serialData?.serialNumbers?.length || 0)
+            : (product.availableQuantity || 0);
+        resolvedItem.productSnapshot = product.toObject();
+    }
+
+    // Calculation Logic 
+    const qty = resolvedItem.qty;
+    const price = resolvedItem.price;
+    const discountValue = resolvedItem.discountValue;
+
+    let discountAmount = 0;
+    if (resolvedItem.discountType === 'Percentage') {
+        discountAmount = (qty * price) * (discountValue / 100);
+    } else {
+        discountAmount = discountValue;
+    }
+
+    const taxableValue = (qty * price) - discountAmount;
+    resolvedItem.taxableValue = Number(taxableValue.toFixed(2));
+
+    // Calculate Taxes & Total (Strict parity with Sale Invoice resolution rules)
+    const igstAmount = taxableValue * (resolvedItem.igst / 100);
+    const cgstAmount = taxableValue * (resolvedItem.cgst / 100);
+    const sgstAmount = taxableValue * (resolvedItem.sgst / 100);
+
+    // Summing behavior if mirroring the saleInvoiceController.js resolveItemLogic precisely (buggy or not)
+    // But resolvedItem.igst is usually either set OR (cgst+sgst) are set.
+    // To match Sale Invoice controller's resolveInvoiceItem fallback calculation logic:
+    let totalGst = 0;
+    if (resolvedItem.igst > 0) {
+        totalGst = igstAmount;
+    } else {
+        totalGst = cgstAmount + sgstAmount;
+    }
+
+    resolvedItem.total = Number((taxableValue + totalGst).toFixed(2));
+
+    return resolvedItem;
+};
+
+// @desc    Resolve single purchase invoice item with auto-population and calculations
+// @route   POST /api/purchase-invoice/resolve-item
+// @access  Private
+const resolvePurchaseInvoiceItem = async (req, res) => {
+    try {
+        const itemData = req.body;
+        if (!itemData.productName && !itemData.hsnSac && !itemData.productId) {
+            return res.status(400).json({ success: false, message: "productName, productId, or hsnSac is required" });
+        }
+
+        const resolved = await resolvePurchaseItemLogic(req.user._id, itemData);
+
+        // Map initial response fields
+        const uiResponse = {
+            productName: resolved.productName,
+            productId: resolved.productId,
+            hsnSac: resolved.hsnSac,
+            qty: resolved.qty,
+            uom: resolved.uom,
+            price: resolved.price,
+            discountType: resolved.discountType,
+            discountValue: resolved.discountValue,
+            igst: resolved.igst,
+            cgst: resolved.cgst,
+            sgst: resolved.sgst,
+            taxableValue: resolved.taxableValue,
+            total: resolved.total,
+            availableStock: resolved.availableStock
+        };
+
+        // --- HSN Auto-Resolution Fallback (Direct Mirror from Sale Invoice resolveInvoiceItem) ---
+        if (uiResponse.hsnSac && !uiResponse.cgst && !uiResponse.sgst && !uiResponse.igst) {
+            try {
+                const hsnCode = String(uiResponse.hsnSac).trim();
+                const hsnData = await mongoose.connection.db.collection('hsn_codes').findOne({
+                    "Chapter / Heading /": {
+                        $regex: `(^|[^0-9])${hsnCode}([^0-9]|$)`
+                    }
+                });
+
+                if (hsnData) {
+                    uiResponse.cgst = Number(hsnData["CGST Rate (%)"] || 0) * 100;
+                    uiResponse.sgst = Number(hsnData["SGST / UTGST Rate (%)"] || 0) * 100;
+                    uiResponse.igst = Number(hsnData["IGST Rate (%)"] || 0) * 100;
+
+                    // Re-calculate derived fields with new tax rates
+                    const qty = Number(uiResponse.qty || 1);
+                    const price = Number(uiResponse.price || 0);
+                    const discountValue = Number(uiResponse.discountValue || 0);
+
+                    let discountAmount = 0;
+                    if (uiResponse.discountType === 'Percentage') {
+                        discountAmount = (qty * price) * (discountValue / 100);
+                    } else {
+                        discountAmount = discountValue;
+                    }
+
+                    const taxableValue = (qty * price) - discountAmount;
+                    uiResponse.taxableValue = Number(taxableValue.toFixed(2));
+
+                    let gstAmt = 0;
+                    if (uiResponse.igst > 0) {
+                        gstAmt = taxableValue * (uiResponse.igst / 100);
+                    } else {
+                        gstAmt = taxableValue * ((uiResponse.cgst + uiResponse.sgst) / 100);
+                    }
+                    uiResponse.total = Number((taxableValue + gstAmt).toFixed(2));
+                }
+            } catch (err) {
+                console.error("HSN Fallback Error:", err.message);
+            }
+        }
+
+        res.status(200).json({ success: true, data: uiResponse });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 // Helper to handle the core creation logic
 const handleCreatePurchaseInvoiceLogic = async (req) => {
     if (!req.body) req.body = {};
@@ -97,11 +278,20 @@ const handleCreatePurchaseInvoiceLogic = async (req) => {
     const validationError = validatePurchaseInvoice(req.body);
     if (validationError) throw new Error(validationError);
 
-    // Check for duplicate number
-    const existing = await findDuplicateInvoice(req.user._id, req.body.invoiceDetails.invoiceNumber);
-    if (existing) throw new Error("Invoice number must be unique");
+    // 4️⃣ Ensure taxableValue is present for all items (HSN Logic requirement)
+    req.body.items = req.body.items.map(item => {
+        const qty = Number(item.qty || item.quantity || 0);
+        const price = Number(item.price || item.rate || 0);
+        const discountValue = Number(item.discountValue || 0);
+        const discountAmt = item.discountType === 'Percentage' ? (qty * price * discountValue / 100) : discountValue;
+        const taxable = (qty * price) - discountAmt;
+        return {
+            ...item,
+            taxableValue: item.taxableValue || Number(taxable.toFixed(2))
+        };
+    });
 
-    // 4️⃣ Save invoice
+    // 5️⃣ Save invoice
     const invoice = await PurchaseInvoice.create({
         ...req.body,
         userId: req.user._id
@@ -332,6 +522,14 @@ const updatePurchaseInvoice = async (req, res) => {
                 } else if (item.price) {
                     normalizedItem.price = Number(item.price);
                 }
+
+                // Ensure taxableValue is present
+                const qty = normalizedItem.qty || 0;
+                const price = normalizedItem.price || 0;
+                const discountValue = Number(item.discountValue || 0);
+                const discountAmt = item.discountType === 'Percentage' ? (qty * price * discountValue / 100) : discountValue;
+                const taxable = (qty * price) - discountAmt;
+                normalizedItem.taxableValue = item.taxableValue || Number(taxable.toFixed(2));
 
                 return normalizedItem;
             });
@@ -970,7 +1168,111 @@ const convertToPurchaseOrder = async (req, res) => {
     }
 };
 
+const restorePurchaseInvoice = async (req, res) => {
+    try {
+        const invoice = await PurchaseInvoice.findOneAndUpdate(
+            { _id: req.params.id, userId: req.user._id, status: 'Cancelled' },
+            { status: 'Active' },
+            { new: true }
+        );
+        if (!invoice) return res.status(404).json({ success: false, message: "Cancelled Invoice not found" });
+
+        // Activity Logging
+        await recordActivity(
+            req,
+            'Restore',
+            'Purchase Invoice',
+            `Purchase Invoice restored to Active: ${invoice.invoiceDetails.invoiceNumber}`,
+            invoice.invoiceDetails.invoiceNumber
+        );
+
+        res.status(200).json({ success: true, message: "Invoice restored successfully", data: invoice });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const generateEnvelope = async (req, res) => {
+    try {
+        const invoice = await PurchaseInvoice.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+
+        const userData = await User.findById(req.user._id);
+        const { size = 'Medium' } = req.query;
+
+        const pdfBuffer = await generateEnvelopePDF(invoice, userData, size);
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="envelope-${invoice.invoiceDetails.invoiceNumber}.pdf"`);
+        res.status(200).send(pdfBuffer);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Get HSN wise summary for a single Purchase Invoice
+ * @route   GET /api/purchase-invoice/:id/hsn-summary
+ * @access  Private
+ */
+const getHSNSummary = async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ success: false, message: "Invalid Invoice ID format" });
+        }
+
+        const invoice = await PurchaseInvoice.findOne({ _id: id, userId: req.user._id });
+        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+
+        // Use Aggregation for robust grouping (Mirroring Sale Invoice/GSTR1 logic)
+        const summary = await PurchaseInvoice.aggregate([
+            {
+                $match: {
+                    _id: new mongoose.Types.ObjectId(id),
+                    userId: new mongoose.Types.ObjectId(req.user._id)
+                }
+            },
+            { $unwind: '$items' },
+            {
+                $group: {
+                    _id: {
+                        hsn: { $ifNull: ['$items.hsnSac', 'N/A'] },
+                        rate: { $ifNull: ['$items.igst', { $add: ['$items.cgst', '$items.sgst'] }] }
+                    },
+                    taxableValue: { $sum: '$items.taxableValue' },
+                    cgstAmount: { $sum: { $divide: [{ $multiply: ['$items.taxableValue', '$items.cgst'] }, 100] } },
+                    sgstAmount: { $sum: { $divide: [{ $multiply: ['$items.taxableValue', '$items.sgst'] }, 100] } },
+                    igstAmount: { $sum: { $divide: [{ $multiply: ['$items.taxableValue', '$items.igst'] }, 100] } },
+                    cgstRate: { $first: '$items.cgst' },
+                    sgstRate: { $first: '$items.sgst' },
+                    igstRate: { $first: '$items.igst' }
+                }
+            },
+            {
+                $project: {
+                    _id: 0,
+                    hsnCode: '$_id.hsn',
+                    taxableValue: { $round: ['$taxableValue', 2] },
+                    cgstAmount: { $round: ['$cgstAmount', 2] },
+                    sgstAmount: { $round: ['$sgstAmount', 2] },
+                    igstAmount: { $round: ['$igstAmount', 2] },
+                    totalTax: { $round: [{ $add: ['$cgstAmount', '$sgstAmount', '$igstAmount'] }, 2] },
+                    cgstRate: 1,
+                    sgstRate: 1,
+                    igstRate: 1
+                }
+            }
+        ]);
+
+        res.status(200).json({ success: true, data: summary });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 module.exports = {
+    handleCreatePurchaseInvoiceLogic,
     createPurchaseInvoice,
     createPurchaseInvoiceAndPrint,
     getPurchaseInvoices,
@@ -980,17 +1282,22 @@ module.exports = {
     getPurchaseSummary,
     getSummaryByCategory,
     downloadPurchaseInvoicePDF,
-    duplicatePurchaseInvoice,
-    cancelPurchaseInvoice,
-    attachFileToPurchaseInvoice,
-    generateBarcodeForPurchaseInvoice,
     shareEmail,
     shareWhatsApp,
+    duplicatePurchaseInvoice,
+    cancelPurchaseInvoice,
+    restorePurchaseInvoice,
+    attachFileToPurchaseInvoice,
+    generateBarcodeForPurchaseInvoice,
     generateEWayBill,
     downloadEWayBillJson,
     convertToQuotation,
     convertToSaleInvoice,
     convertToCreditNote,
     convertToDebitNote,
-    convertToPurchaseOrder
+    convertToPurchaseOrder,
+    generateEnvelope,
+    resolvePurchaseItemLogic,
+    resolvePurchaseInvoiceItem,
+    getHSNSummary
 };
