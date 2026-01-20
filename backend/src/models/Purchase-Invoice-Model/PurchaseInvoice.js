@@ -13,6 +13,7 @@ const purchaseItemSchema = new mongoose.Schema({
     igst: { type: Number, default: 0 },
     cgst: { type: Number, default: 0 },
     sgst: { type: Number, default: 0 },
+    taxableValue: { type: Number, default: 0 },
     total: { type: Number, default: 0 },
     productGroup: { type: String, index: true }
 }, { _id: false });

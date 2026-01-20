@@ -27,6 +27,8 @@ router.post('/:id/share-email', protect, PurchaseInvoiceController.shareEmail);
 router.post('/:id/share-whatsapp', protect, PurchaseInvoiceController.shareWhatsApp);
 router.post('/:id/duplicate', protect, PurchaseInvoiceController.duplicatePurchaseInvoice);
 router.post('/:id/cancel', protect, PurchaseInvoiceController.cancelPurchaseInvoice);
+router.post('/:id/restore', protect, PurchaseInvoiceController.restorePurchaseInvoice);
+router.get('/:id/envelope', protect, PurchaseInvoiceController.generateEnvelope);
 router.post('/:id/attach', protect, invoiceAttachment.array('attachments', 5), PurchaseInvoiceController.attachFileToPurchaseInvoice);
 router.post('/:id/generate-barcode', protect, PurchaseInvoiceController.generateBarcodeForPurchaseInvoice);
 
@@ -40,5 +42,9 @@ router.post('/:id/convert/sale-invoice', protect, PurchaseInvoiceController.conv
 router.post('/:id/convert/credit-note', protect, PurchaseInvoiceController.convertToCreditNote);
 router.post('/:id/convert/debit-note', protect, PurchaseInvoiceController.convertToDebitNote);
 router.post('/:id/convert/purchase-order', protect, PurchaseInvoiceController.convertToPurchaseOrder);
+
+// HSN Logic
+router.get('/:id/hsn-summary', protect, PurchaseInvoiceController.getHSNSummary);
+router.post('/resolve-item', protect, PurchaseInvoiceController.resolvePurchaseInvoiceItem);
 
 module.exports = router;

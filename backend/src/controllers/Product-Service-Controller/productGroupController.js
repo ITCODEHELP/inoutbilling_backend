@@ -1,4 +1,5 @@
 const ProductGroup = require('../../models/Product-Service-Model/ProductGroup');
+const Product = require('../../models/Product-Service-Model/Product');
 
 // @desc    Create new Product Group
 // @route   POST /api/product-group
@@ -67,8 +68,88 @@ const searchProductGroups = async (req, res) => {
     }
 };
 
+// @desc    Update Product Group
+// @route   PUT /api/product-group/:id
+// @access  Private
+const updateProductGroup = async (req, res) => {
+    try {
+        const { groupName, description } = req.body;
+        const groupId = req.params.id;
+
+        const group = await ProductGroup.findOne({ _id: groupId, userId: req.user._id });
+
+        if (!group) {
+            return res.status(404).json({ message: 'Product Group not found' });
+        }
+
+        const oldGroupName = group.groupName;
+
+        if (groupName && groupName !== oldGroupName) {
+            // Check for duplicates
+            const existingGroup = await ProductGroup.findOne({
+                userId: req.user._id,
+                groupName: groupName
+            });
+
+            if (existingGroup) {
+                return res.status(400).json({ message: 'Group Name already exists' });
+            }
+
+            // Update all products linked to this group name
+            await Product.updateMany(
+                { userId: req.user._id, productGroup: oldGroupName },
+                { $set: { productGroup: groupName } }
+            );
+        }
+
+        group.groupName = groupName || group.groupName;
+        group.description = description !== undefined ? description : group.description;
+
+        await group.save();
+
+        res.status(200).json(group);
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
+// @desc    Delete Product Group
+// @route   DELETE /api/product-group/:id
+// @access  Private
+const deleteProductGroup = async (req, res) => {
+    try {
+        const groupId = req.params.id;
+
+        const group = await ProductGroup.findOne({ _id: groupId, userId: req.user._id });
+
+        if (!group) {
+            return res.status(404).json({ message: 'Product Group not found' });
+        }
+
+        // Check dependencies (Products linked to this group name)
+        const linkedProducts = await Product.findOne({
+            userId: req.user._id,
+            productGroup: group.groupName
+        });
+
+        if (linkedProducts) {
+            return res.status(400).json({
+                message: 'Cannot delete group. There are products linked to this group.'
+            });
+        }
+
+        await group.deleteOne();
+
+        res.status(200).json({ message: 'Product Group deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
 module.exports = {
     createProductGroup,
     getProductGroups,
-    searchProductGroups
+    searchProductGroups,
+    updateProductGroup,
+    deleteProductGroup
 };

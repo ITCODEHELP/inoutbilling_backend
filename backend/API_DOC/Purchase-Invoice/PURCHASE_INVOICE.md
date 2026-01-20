@@ -95,6 +95,73 @@ GET /:id/download
 Authorization: Bearer <token>
 ```
 
+### Delete Purchase Invoice
+```http
+DELETE /:id
+Authorization: Bearer <token>
+```
+Permanently removes the invoice from all records.
+
+---
+
+### Action: Restore
+```http
+POST /:id/restore
+Authorization: Bearer <token>
+```
+Restores a previously **Cancelled** invoice back to **Active** status.
+
+### Public Envelope PDF
+`GET /:id/envelope?size=Small|Medium|Large`
+Returns envelope PDF.
+
+### Resolve Purchase Item
+`POST /resolve-item`
+Authorization required. Resolves item details (price, tax, stock) based on product name, ID, or HSN/SAC. Replicates Sale Invoice resolution logic including HSN fallback.
+
+**Request Body:**
+```json
+{
+  "productName": "Product A",
+  "hsnSac": "1234",
+  "qty": 1
+}
+```
+
+### Action: HSN Summary
+`GET /:id/hsn-summary`
+Authorization required. Returns a grouped summary of items by HSN code with aggregated taxable value and tax amounts.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "hsnCode": "1234",
+      "taxableValue": 1000,
+      "cgstRate": 9,
+      "sgstRate": 9,
+      "igstRate": 18,
+      "cgstAmount": 90,
+      "sgstAmount": 90,
+      "igstAmount": 180,
+      "totalTax": 180
+    }
+  ]
+}
+```
+
+### Action: Envelope
+```http
+GET /:id/envelope?size=Medium
+Authorization: Bearer <token>
+```
+**Query Parameters**:
+- `size`: `Small`, `Medium`, or `Large`. Default is `Medium`.
+
+Generates an envelope PDF with the sender (Company) at the top-left and recipient (Vendor) at the bottom-right.
+  
 ### Action: Share Email
 ```http
 POST /:id/share-email

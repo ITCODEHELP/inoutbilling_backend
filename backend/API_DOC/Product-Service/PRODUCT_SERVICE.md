@@ -217,6 +217,25 @@ GET /product-group/search?name=elec
 Authorization: Bearer <token>
 ```
 
+### Update Group
+```http
+PUT /product-group/:id
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+**Request Body**
+```json
+{ "groupName": "New Name", "description": "New Description" }
+```
+
+### Delete Group
+```http
+DELETE /product-group/:id
+Authorization: Bearer <token>
+```
+*Note: Deletion is blocked if products are linked to this group.*
+
+
 ---
 
 ## Product Search (Counts)

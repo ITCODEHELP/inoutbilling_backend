@@ -3,15 +3,19 @@ const router = express.Router();
 const {
     createProductGroup,
     getProductGroups,
-    searchProductGroups
+    searchProductGroups,
+    updateProductGroup,
+    deleteProductGroup
 } = require('../../controllers/Product-Service-Controller/productGroupController');
 const { protect } = require('../../middlewares/authMiddleware');
 
-// Search route (must be before generic / route to avoid considering 'search' as an ID if parameterized routes existed, though here they don't yet)
+// Search route
 router.get('/search', protect, searchProductGroups);
 
-// Create and List
+// CRUD operations
 router.post('/', protect, createProductGroup);
 router.get('/', protect, getProductGroups);
+router.put('/:id', protect, updateProductGroup);
+router.delete('/:id', protect, deleteProductGroup);
 
 module.exports = router;
