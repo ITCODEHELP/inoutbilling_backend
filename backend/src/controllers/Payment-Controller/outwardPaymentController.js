@@ -6,8 +6,19 @@ const fs = require('fs');
 const crypto = require('crypto');
 const User = require('../../models/User-Model/User');
 const { generateReceiptVoucherPDF } = require('../../utils/receiptPdfHelper');
+const { getCopyOptions } = require('../../utils/pdfHelper');
 const { sendOutwardPaymentEmail } = require('../../utils/emailHelper');
 const { recordActivity } = require('../../utils/activityLogHelper');
+
+// Helper to generate secure public token
+const generatePublicToken = (id) => {
+    const secret = process.env.JWT_SECRET || 'your-default-secret';
+    return crypto
+        .createHmac('sha256', secret)
+        .update(id.toString())
+        .digest('hex')
+        .substring(0, 16);
+};
 const numberToWords = require('../../utils/numberToWords');
 
 // Ensure upload directory exists
@@ -684,21 +695,26 @@ const duplicateOutwardPayment = async (req, res) => {
  */
 const downloadPaymentPDF = async (req, res) => {
     try {
-        const payment = await OutwardPayment.findOne({ _id: req.params.id, userId: req.user._id });
-        if (!payment) return res.status(404).json({ success: false, message: "Payment not found" });
+        const ids = req.params.id.split(',');
+        const payments = await OutwardPayment.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!payments || payments.length === 0) return res.status(404).json({ success: false, message: "Payment(s) not found" });
 
         const userData = await User.findById(req.user._id);
-        const mappedData = mapPaymentToInvoice(payment);
+        const mappedDataItems = payments.map(p => mapPaymentToInvoice(p));
+        const options = getCopyOptions(req);
 
         const pdfBuffer = await generateReceiptVoucherPDF(
-            mappedData,
+            mappedDataItems,
             userData || {},
             "PAYMENT VOUCHER",
-            { no: "Payment No.", date: "Payment Date", details: "Vendor Details" }
+            { no: "Payment No.", date: "Payment Date", details: "Vendor Details" },
+            options
         );
 
+        const filename = payments.length === 1 ? `Payment_${mappedDataItems[0].invoiceDetails.invoiceNumber}.pdf` : `Merged_Payments.pdf`;
+
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="Payment_${mappedData.invoiceDetails.invoiceNumber}.pdf"`);
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.status(200).send(pdfBuffer);
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -710,23 +726,25 @@ const downloadPaymentPDF = async (req, res) => {
  */
 const shareEmail = async (req, res) => {
     try {
-        const payment = await OutwardPayment.findOne({ _id: req.params.id, userId: req.user._id });
-        if (!payment) return res.status(404).json({ success: false, message: "Payment not found" });
+        const ids = req.params.id.split(',');
+        const payments = await OutwardPayment.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!payments || payments.length === 0) return res.status(404).json({ success: false, message: "Payment(s) not found" });
 
-        const mappedData = mapPaymentToInvoice(payment);
+        const mappedDataItems = payments.map(p => mapPaymentToInvoice(p));
         const targetEmail = req.body.email;
+        const options = getCopyOptions(req);
 
-        await sendOutwardPaymentEmail(mappedData, targetEmail);
+        await sendOutwardPaymentEmail(mappedDataItems, targetEmail, options);
 
         await recordActivity(
             req,
             'Share Email',
             'Outward Payment',
-            `Payment ${mappedData.invoiceDetails.invoiceNumber} shared via email`,
-            mappedData.invoiceDetails.invoiceNumber
+            `Payment(s) shared via email`,
+            payments.length === 1 ? mappedDataItems[0].invoiceDetails.invoiceNumber : 'Multiple'
         );
 
-        res.status(200).json({ success: true, message: "Payment shared via email" });
+        res.status(200).json({ success: true, message: "Payment(s) shared via email" });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -737,23 +755,42 @@ const shareEmail = async (req, res) => {
  */
 const shareWhatsApp = async (req, res) => {
     try {
-        const payment = await OutwardPayment.findOne({ _id: req.params.id, userId: req.user._id });
-        if (!payment) return res.status(404).json({ success: false, message: "Payment not found" });
+        const ids = req.params.id.split(',');
+        const payments = await OutwardPayment.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!payments || payments.length === 0) return res.status(404).json({ success: false, message: "Payment(s) not found" });
 
-        const mappedData = mapPaymentToInvoice(payment);
+        const mappedDataItems = payments.map(p => mapPaymentToInvoice(p));
         const { phone } = req.body;
 
         if (!phone) return res.status(400).json({ success: false, message: "Phone number is required for WhatsApp share" });
 
-        const message = `Dear Vendor, our payment ${mappedData.invoiceDetails.invoiceNumber} for amount ${mappedData.totals.grandTotal.toFixed(2)} is ready.`;
-        const waLink = `https://wa.me/${phone.replace('+', '')}?text=${encodeURIComponent(message)}`;
+        const options = getCopyOptions(req);
+        let queryParams = [];
+        if (options.original) queryParams.push('original=true');
+        if (options.duplicate) queryParams.push('duplicate=true');
+        if (options.transport) queryParams.push('transport=true');
+        if (options.office) queryParams.push('office=true');
+
+        const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+        const token = generatePublicToken(req.params.id);
+        const publicLink = `${req.protocol}://${req.get('host')}/api/outward-payments/view-public/${req.params.id}/${token}${queryString}`;
+
+        let message = '';
+        if (payments.length === 1) {
+            message = `Dear Vendor, our payment ${mappedDataItems[0].invoiceDetails.invoiceNumber} for amount ${mappedDataItems[0].totals.grandTotal.toFixed(2)} is ready.\n\nView Link: ${publicLink}`;
+        } else {
+            const totalAmount = mappedDataItems.reduce((sum, item) => sum + item.totals.grandTotal, 0);
+            message = `Dear Vendor, our merged payments for total amount ${totalAmount.toFixed(2)} are ready.\n\nView Link: ${publicLink}`;
+        }
+
+        const waLink = `https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`;
 
         await recordActivity(
             req,
             'Share WhatsApp',
             'Outward Payment',
-            `Payment ${mappedData.invoiceDetails.invoiceNumber} shared via WhatsApp`,
-            mappedData.invoiceDetails.invoiceNumber
+            `Payment(s) shared via WhatsApp`,
+            payments.length === 1 ? mappedDataItems[0].invoiceDetails.invoiceNumber : 'Multiple'
         );
 
         res.status(200).json({ success: true, waLink });
@@ -767,18 +804,14 @@ const shareWhatsApp = async (req, res) => {
  */
 const generatePublicLink = async (req, res) => {
     try {
-        const payment = await OutwardPayment.findOne({ _id: req.params.id, userId: req.user._id });
-        if (!payment) return res.status(404).json({ success: false, message: "Payment not found" });
+        const ids = req.params.id.split(',');
+        const payments = await OutwardPayment.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!payments || payments.length === 0) return res.status(404).json({ success: false, message: "Payment(s) not found" });
 
-        const secret = process.env.JWT_SECRET || 'your-default-secret';
-        const token = crypto
-            .createHmac('sha256', secret)
-            .update(payment._id.toString())
-            .digest('hex')
-            .substring(0, 16);
+        const token = generatePublicToken(req.params.id);
 
         const baseUrl = `${req.protocol}://${req.get('host')}`;
-        const publicLink = `${baseUrl}/api/outward-payments/view-public/${payment._id}/${token}`;
+        const publicLink = `${baseUrl}/api/outward-payments/view-public/${req.params.id}/${token}`;
 
         res.status(200).json({ success: true, publicLink });
     } catch (error) {
@@ -793,28 +826,27 @@ const viewPaymentPublic = async (req, res) => {
     try {
         const { id, token } = req.params;
 
-        const secret = process.env.JWT_SECRET || 'your-default-secret';
-        const expectedToken = crypto
-            .createHmac('sha256', secret)
-            .update(id)
-            .digest('hex')
-            .substring(0, 16);
+        // Verify token
+        const expectedToken = generatePublicToken(id);
 
         if (token !== expectedToken) {
             return res.status(401).send("Invalid or expired link");
         }
 
-        const payment = await OutwardPayment.findById(id);
-        if (!payment) return res.status(404).send("Payment not found");
+        const ids = id.split(',');
+        const payments = await OutwardPayment.find({ _id: { $in: ids } });
+        if (!payments || payments.length === 0) return res.status(404).send("Payment(s) not found");
 
-        const userData = await User.findById(payment.userId);
-        const mappedData = mapPaymentToInvoice(payment);
+        const userData = await User.findById(payments[0].userId);
+        const mappedDataItems = payments.map(p => mapPaymentToInvoice(p));
+        const options = getCopyOptions(req);
 
         const pdfBuffer = await generateReceiptVoucherPDF(
-            mappedData,
+            mappedDataItems,
             userData || {},
             "PAYMENT VOUCHER",
-            { no: "Payment No.", date: "Payment Date", details: "Vendor Details" }
+            { no: "Payment No.", date: "Payment Date", details: "Vendor Details" },
+            options
         );
 
         res.setHeader('Content-Type', 'application/pdf');

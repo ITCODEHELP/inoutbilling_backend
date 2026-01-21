@@ -23,6 +23,10 @@
 - `roundOff`: Number
 - `grandTotal`: Number
 - `amountInWords`: String
+- `original`: Boolean (Optional, for print)
+- `duplicate`: Boolean (Optional, for print)
+- `transport`: Boolean (Optional, for print)
+- `office`: Boolean (Optional, for print)
 
 ### Response
 ```json
@@ -191,6 +195,12 @@ Body:
 `GET` /api/daily-expenses/:id/print
 - Returns PDF receipt.
 - Also supported via `print: true` in `POST /api/daily-expenses`.
+
+### Query Parameters (for GET) / Body (for POST)
+- `original`: Boolean (default: true)
+- `duplicate`: Boolean
+- `transport`: Boolean
+- `office`: Boolean
 
 ## Import History
 `GET` /api/daily-expenses/import-history
@@ -422,3 +432,170 @@ Toggles the category status between `Active` and `Inactive`. When a category is 
 - All data is user-based (company-based)
 - Response includes `categoryId`, `categoryName`, and `status`
 - Deleted categories are excluded from listing
+
+### Attach File to Expense
+Use this API to upload or replace an attachment for a daily expense.
+
+```http
+POST /daily-expenses/attach-file
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+```
+
+**Form Data**
+| Key | Type | Description |
+| :--- | :--- | :--- |
+| `attachment` | File | **Required**. Image or Document (jpg, png, pdf, doc) |
+| `expenseId` | ObjectId | **Optional**. Existing Expense ID to attach/replace file for |
+
+**Response**
+```json
+{
+    "success": true,
+    "message": "File attached successfully",
+    "data": {
+        "attachment": "uploads/expenses/expense-1721532.jpg",
+        "fileName": "receipt.jpg",
+        "mimetype": "image/jpeg",
+        "size": 102456
+    }
+}
+```
+
+### Update Attachment
+To replace an existing attachment, use the **Attach File to Expense** API (`POST /daily-expenses/attach-file`).
+- Provide the same `expenseId`.
+- The new file will replace the old one (which will be deleted from storage).
+
+### Get Attachment
+Use this API to retrieve attachment details for a daily expense.
+
+```http
+GET /daily-expenses/attachment/:id
+Authorization: Bearer <token>
+```
+
+**Response**
+```json
+{
+    "success": true,
+    "data": {
+        "attachment": "uploads/expenses/expense-1721532.jpg",
+        "fileName": "expense-1721532.jpg",
+        "mimetype": "image/jpeg"
+    }
+}
+```
+
+### Delete Attachment
+Use this API to remove an attachment from a daily expense.
+
+```http
+DELETE /daily-expenses/attachment/:id
+Authorization: Bearer <token>
+```
+
+**Response**
+```json
+{
+    "success": true,
+    "message": "Attachment deleted successfully"
+}
+```
+
+### Download Expense PDF
+`GET` /daily-expenses/:id/download-pdf
+
+**Query Parameters**
+- `original`: Boolean (default: true)
+- `duplicate`: Boolean
+- `transport`: Boolean
+- `office`: Boolean
+
+Response: PDF File Stream (Content-Disposition: attachment)
+
+### Share Expense via Email
+`POST` /daily-expenses/:id/share-email
+Body:
+```json
+{
+    "email": "vendor@example.com",
+    "original": true,
+    "duplicate": false,
+    "transport": false,
+    "office": false
+}
+```
+Response:
+```json
+{
+    "success": true,
+    "message": "Email sent successfully"
+}
+```
+
+### Share Expense via WhatsApp
+`POST` /daily-expenses/:id/share-whatsapp
+Body:
+```json
+{
+    "mobile": "919876543210",
+    "original": true,
+    "duplicate": false,
+    "transport": false,
+    "office": false
+}
+```
+Response:
+```json
+{
+    "success": true,
+    "message": "WhatsApp link generated",
+    "data": {
+        "link": "https://wa.me/919876543210?text=..."
+    }
+}
+```
+
+### Generate Public Link (Single or Multiple)
+```http
+GET /api/daily-expenses/:id/public-link
+Authorization: Bearer <token>
+```
+**Parameters**
+- `:id`: Expense ID OR comma-separated Expense IDs for merged PDF.
+Generates a secure, shareable public link for viewing the expense without authentication.
+
+**Response**:
+```json
+{
+  "success": true,
+  "publicLink": "http://.../api/daily-expenses/view-public/:id/:token"
+}
+```
+
+### View Public PDF (Single or Multiple)
+```http
+GET /api/daily-expenses/view-public/:id/:token
+```
+**Parameters**
+- `:id`: Expense ID OR comma-separated Expense IDs for merged PDF.
+**No authentication required**. Validates the token and returns the expense PDF for browser viewing.
+
+**Query Parameters (Optional)**
+- `original`: Boolean (default: true)
+- `duplicate`: Boolean
+- `transport`: Boolean
+- `office`: Boolean
+
+**Response**: PDF binary file (Content-Type: application/pdf)
+
+### Merged Expense PDF (Multi-Selection)
+All PDF-related endpoints (`/print`, `/download-pdf`, `/share-email`, `/share-whatsapp`, `/public-link`) support generating a merged PDF for multiple expenses by passing a comma-separated list of IDs in the `:id` parameter.
+
+**Usage Example**:
+- `GET /api/daily-expenses/id1,id2,id3/download-pdf`
+- `GET /api/daily-expenses/id1,id2,id3/print`
+- `GET /api/daily-expenses/id1,id2,id3/public-link`
+
+The resulting PDF will contain the selected copies (Original, Duplicate, etc.) for each expense ID sequentially.

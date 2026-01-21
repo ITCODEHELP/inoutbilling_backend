@@ -5,9 +5,20 @@ const fs = require('fs');
 const crypto = require('crypto');
 const User = require('../../models/User-Model/User');
 const { generateReceiptVoucherPDF } = require('../../utils/receiptPdfHelper');
+const { getCopyOptions } = require('../../utils/pdfHelper');
 const { sendReceiptEmail } = require('../../utils/emailHelper');
 const { recordActivity } = require('../../utils/activityLogHelper');
 const numberToWords = require('../../utils/numberToWords');
+
+// Helper to generate secure public token
+const generatePublicToken = (id) => {
+    const secret = process.env.JWT_SECRET || 'your-default-secret';
+    return crypto
+        .createHmac('sha256', secret)
+        .update(id.toString())
+        .digest('hex')
+        .substring(0, 16);
+};
 
 // Ensure upload directory exists
 const uploadDir = path.join(__dirname, '../uploads/inward-payments');
@@ -528,21 +539,26 @@ const mapPaymentToInvoice = (payment) => {
  */
 const downloadPaymentPDF = async (req, res) => {
     try {
-        const payment = await InwardPayment.findOne({ _id: req.params.id, userId: req.user._id });
-        if (!payment) return res.status(404).json({ success: false, message: "Receipt not found" });
+        const ids = req.params.id.split(',');
+        const payments = await InwardPayment.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!payments || payments.length === 0) return res.status(404).json({ success: false, message: "Receipt(s) not found" });
 
         const userData = await User.findById(req.user._id);
-        const mappedData = mapPaymentToInvoice(payment);
+        const mappedDataItems = payments.map(p => mapPaymentToInvoice(p));
+        const options = getCopyOptions(req);
 
         const pdfBuffer = await generateReceiptVoucherPDF(
-            mappedData,
+            mappedDataItems,
             userData || {},
             "RECEIPT VOUCHER",
-            { no: "Receipt No.", date: "Receipt Date", details: "Customer Detail" }
+            { no: "Receipt No.", date: "Receipt Date", details: "Customer Detail" },
+            options
         );
 
+        const filename = payments.length === 1 ? `Receipt_${mappedDataItems[0].invoiceDetails.invoiceNumber}.pdf` : `Merged_Receipts.pdf`;
+
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="Receipt_${mappedData.invoiceDetails.invoiceNumber}.pdf"`);
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.status(200).send(pdfBuffer);
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -554,23 +570,25 @@ const downloadPaymentPDF = async (req, res) => {
  */
 const shareEmail = async (req, res) => {
     try {
-        const payment = await InwardPayment.findOne({ _id: req.params.id, userId: req.user._id });
-        if (!payment) return res.status(404).json({ success: false, message: "Receipt not found" });
+        const ids = req.params.id.split(',');
+        const payments = await InwardPayment.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!payments || payments.length === 0) return res.status(404).json({ success: false, message: "Receipt(s) not found" });
 
-        const mappedData = mapPaymentToInvoice(payment);
-        const targetEmail = req.body.email; // Client can provide email or we use a default if available
+        const mappedDataItems = payments.map(p => mapPaymentToInvoice(p));
+        const targetEmail = req.body.email;
+        const options = getCopyOptions(req);
 
-        await sendReceiptEmail(mappedData, targetEmail);
+        await sendReceiptEmail(mappedDataItems, targetEmail, options);
 
         await recordActivity(
             req,
             'Share Email',
             'Inward Payment',
-            `Receipt ${mappedData.invoiceDetails.invoiceNumber} shared via email`,
-            mappedData.invoiceDetails.invoiceNumber
+            `Receipt(s) shared via email`,
+            payments.length === 1 ? mappedDataItems[0].invoiceDetails.invoiceNumber : 'Multiple'
         );
 
-        res.status(200).json({ success: true, message: "Receipt shared via email" });
+        res.status(200).json({ success: true, message: "Receipt(s) shared via email" });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -581,23 +599,42 @@ const shareEmail = async (req, res) => {
  */
 const shareWhatsApp = async (req, res) => {
     try {
-        const payment = await InwardPayment.findOne({ _id: req.params.id, userId: req.user._id });
-        if (!payment) return res.status(404).json({ success: false, message: "Receipt not found" });
+        const ids = req.params.id.split(',');
+        const payments = await InwardPayment.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!payments || payments.length === 0) return res.status(404).json({ success: false, message: "Receipt(s) not found" });
 
-        const mappedData = mapPaymentToInvoice(payment);
+        const mappedDataItems = payments.map(p => mapPaymentToInvoice(p));
         const { phone } = req.body;
 
         if (!phone) return res.status(400).json({ success: false, message: "Phone number is required for WhatsApp share" });
 
-        const message = `Dear Customer, your receipt ${mappedData.invoiceDetails.invoiceNumber} for amount ${mappedData.totals.grandTotal.toFixed(2)} is ready.`;
-        const waLink = `https://wa.me/${phone.replace('+', '')}?text=${encodeURIComponent(message)}`;
+        const options = getCopyOptions(req);
+        let queryParams = [];
+        if (options.original) queryParams.push('original=true');
+        if (options.duplicate) queryParams.push('duplicate=true');
+        if (options.transport) queryParams.push('transport=true');
+        if (options.office) queryParams.push('office=true');
+
+        const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+        const token = generatePublicToken(req.params.id);
+        const publicLink = `${req.protocol}://${req.get('host')}/api/inward-payments/view-public/${req.params.id}/${token}${queryString}`;
+
+        let message = '';
+        if (payments.length === 1) {
+            message = `Dear Customer, your receipt ${mappedDataItems[0].invoiceDetails.invoiceNumber} for amount ${mappedDataItems[0].totals.grandTotal.toFixed(2)} is ready.\n\nView Link: ${publicLink}`;
+        } else {
+            const totalAmount = mappedDataItems.reduce((sum, item) => sum + item.totals.grandTotal, 0);
+            message = `Dear Customer, your merged receipts for total amount ${totalAmount.toFixed(2)} are ready.\n\nView Link: ${publicLink}`;
+        }
+
+        const waLink = `https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`;
 
         await recordActivity(
             req,
             'Share WhatsApp',
             'Inward Payment',
-            `Receipt ${mappedData.invoiceDetails.invoiceNumber} shared via WhatsApp`,
-            mappedData.invoiceDetails.invoiceNumber
+            `Receipt(s) shared via WhatsApp`,
+            payments.length === 1 ? mappedDataItems[0].invoiceDetails.invoiceNumber : 'Multiple'
         );
 
         res.status(200).json({ success: true, waLink });
@@ -611,19 +648,14 @@ const shareWhatsApp = async (req, res) => {
  */
 const generatePublicLink = async (req, res) => {
     try {
-        const payment = await InwardPayment.findOne({ _id: req.params.id, userId: req.user._id });
-        if (!payment) return res.status(404).json({ success: false, message: "Receipt not found" });
+        const ids = req.params.id.split(',');
+        const payments = await InwardPayment.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!payments || payments.length === 0) return res.status(404).json({ success: false, message: "Receipt(s) not found" });
 
-        // Generate a secure token based on payment ID and a secret
-        const secret = process.env.JWT_SECRET || 'your-default-secret';
-        const token = crypto
-            .createHmac('sha256', secret)
-            .update(payment._id.toString())
-            .digest('hex')
-            .substring(0, 16); // Shortened for link readability
+        const token = generatePublicToken(req.params.id);
 
         const baseUrl = `${req.protocol}://${req.get('host')}`;
-        const publicLink = `${baseUrl}/api/inward-payments/view-public/${payment._id}/${token}`;
+        const publicLink = `${baseUrl}/api/inward-payments/view-public/${req.params.id}/${token}`;
 
         res.status(200).json({ success: true, publicLink });
     } catch (error) {
@@ -639,28 +671,26 @@ const viewPaymentPublic = async (req, res) => {
         const { id, token } = req.params;
 
         // Verify token
-        const secret = process.env.JWT_SECRET || 'your-default-secret';
-        const expectedToken = crypto
-            .createHmac('sha256', secret)
-            .update(id)
-            .digest('hex')
-            .substring(0, 16);
+        const expectedToken = generatePublicToken(id);
 
         if (token !== expectedToken) {
             return res.status(401).send("Invalid or expired link");
         }
 
-        const payment = await InwardPayment.findById(id);
-        if (!payment) return res.status(404).send("Receipt not found");
+        const ids = id.split(',');
+        const payments = await InwardPayment.find({ _id: { $in: ids } });
+        if (!payments || payments.length === 0) return res.status(404).send("Receipt(s) not found");
 
-        const userData = await User.findById(payment.userId);
-        const mappedData = mapPaymentToInvoice(payment);
+        const userData = await User.findById(payments[0].userId);
+        const mappedDataItems = payments.map(p => mapPaymentToInvoice(p));
+        const options = getCopyOptions(req);
 
         const pdfBuffer = await generateReceiptVoucherPDF(
-            mappedData,
+            mappedDataItems,
             userData || {},
             "RECEIPT VOUCHER",
-            { no: "Receipt No.", date: "Receipt Date", details: "Customer Detail" }
+            { no: "Receipt No.", date: "Receipt Date", details: "Customer Detail" },
+            options
         );
 
         res.setHeader('Content-Type', 'application/pdf');

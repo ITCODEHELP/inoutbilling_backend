@@ -1,6 +1,0 @@
-Total: 6217
-Has 'Chapter...': 3247
-Has 'HSN Code': 0
-Has 'Code': 0
-
-Odd Doc Keys: _id, S, Description of Goods, SOURCE
