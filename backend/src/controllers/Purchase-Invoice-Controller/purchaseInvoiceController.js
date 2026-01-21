@@ -10,6 +10,7 @@ const DebitNote = require('../../models/Other-Document-Model/DebitNote');
 const PurchaseOrder = require('../../models/Other-Document-Model/PurchaseOrder');
 const { generateInvoicePDF } = require('../../utils/pdfHelper');
 const { generatePurchaseInvoicePDF } = require('../../utils/purchaseInvoicePdfHelper');
+const { getCopyOptions } = require('../../utils/pdfHelper');
 const { generateEnvelopePDF } = require('../../utils/envelopePdfHelper');
 const { sendInvoiceEmail } = require('../../utils/emailHelper');
 const { recordActivity } = require('../../utils/activityLogHelper');
@@ -17,6 +18,7 @@ const Product = require('../../models/Product-Service-Model/Product');
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 
 
 // Helper for unique number check
@@ -255,6 +257,16 @@ const resolvePurchaseInvoiceItem = async (req, res) => {
     }
 };
 
+// Helper to generate secure public token
+const generatePublicToken = (id) => {
+    const secret = process.env.JWT_SECRET || 'your-default-secret';
+    return crypto
+        .createHmac('sha256', secret)
+        .update(id.toString())
+        .digest('hex')
+        .substring(0, 16);
+};
+
 // Helper to handle the core creation logic
 const handleCreatePurchaseInvoiceLogic = async (req) => {
     if (!req.body) req.body = {};
@@ -308,13 +320,15 @@ const handleCreatePurchaseInvoiceLogic = async (req) => {
     if (req.body.shareOnEmail) {
         const vendor = await Vendor.findOne({ userId: req.user._id, companyName: req.body.vendorInformation.ms });
         if (vendor && vendor.email) {
-            await sendInvoiceEmail(invoice, vendor.email, true);
+            const options = getCopyOptions(req);
+            await sendInvoiceEmail(invoice, vendor.email, true, options);
         }
     }
 
     // 6️⃣ Generate PDF Buffer
     const userData = await User.findById(req.user._id);
-    const pdfBuffer = await generatePurchaseInvoicePDF(invoice, userData || {});
+    const options = getCopyOptions(req);
+    const pdfBuffer = await generatePurchaseInvoicePDF(invoice, userData || {}, options);
 
     return { invoice, pdfBuffer };
 };
@@ -484,7 +498,7 @@ const updatePurchaseInvoice = async (req, res) => {
 
         let bodyData = {};
 
-        // 1\ufe0f\u20e3 Extract data from req.body.data if it exists, otherwise use req.body
+        // 1️⃣ Extract data from req.body.data if it exists, otherwise use req.body
         if (req.body.data) {
             try {
                 bodyData = typeof req.body.data === 'string' ? JSON.parse(req.body.data) : req.body.data;
@@ -509,7 +523,7 @@ const updatePurchaseInvoice = async (req, res) => {
             });
         }
 
-        // 1.5\ufe0f\u20e3 Normalize item field names
+        // 1.5️⃣ Normalize item field names
         if (bodyData.items && Array.isArray(bodyData.items)) {
             bodyData.items = bodyData.items.map(item => {
                 const normalizedItem = { ...item };
@@ -545,7 +559,7 @@ const updatePurchaseInvoice = async (req, res) => {
             });
         }
 
-        // 1.6\ufe0f\u20e3 Normalize totals fields
+        // 1.6️⃣ Normalize totals fields
         if (bodyData.totals && typeof bodyData.totals === 'object') {
             const totals = bodyData.totals;
             bodyData.totals = {
@@ -560,12 +574,12 @@ const updatePurchaseInvoice = async (req, res) => {
             };
         }
 
-        // 1.7\ufe0f\u20e3 Normalize paymentType to uppercase
+        // 1.7️⃣ Normalize paymentType to uppercase
         if (bodyData.paymentType && typeof bodyData.paymentType === 'string') {
             bodyData.paymentType = bodyData.paymentType.toUpperCase();
         }
 
-        // 2\ufe0f\u20e3 Handle attachments
+        // 2️⃣ Handle attachments
         if (req.files && req.files.length > 0) {
             const newAttachments = req.files.map(file => ({
                 fileName: file.filename,
@@ -576,7 +590,7 @@ const updatePurchaseInvoice = async (req, res) => {
             bodyData.attachments = newAttachments;
         }
 
-        // 3\ufe0f\u20e3 Validate
+        // 3️⃣ Validate
         const validationError = validatePurchaseInvoice(bodyData);
         if (validationError) return res.status(400).json({ success: false, message: validationError });
 
@@ -592,7 +606,7 @@ const updatePurchaseInvoice = async (req, res) => {
             }
         }
 
-        // 4\ufe0f\u20e3 Update invoice
+        // 4️⃣ Update invoice
         const invoice = await PurchaseInvoice.findOneAndUpdate(
             { _id: req.params.id, userId: req.user._id },
             { ...bodyData },
@@ -603,7 +617,7 @@ const updatePurchaseInvoice = async (req, res) => {
             return res.status(404).json({ success: false, message: "Invoice not found" });
         }
 
-        // 5\ufe0f\u20e3 Record Activity
+        // 5️⃣ Record Activity
         await recordActivity(
             req,
             'Update',
@@ -612,9 +626,10 @@ const updatePurchaseInvoice = async (req, res) => {
             invoice.invoiceDetails.invoiceNumber
         );
 
-        // 6\ufe0f\u20e3 Re-generate PDF
+        // 6️⃣ Re-generate PDF
         const userData = await User.findById(req.user._id);
-        const pdfBuffer = await generatePurchaseInvoicePDF(invoice, userData || {});
+        const options = getCopyOptions(req);
+        const pdfBuffer = await generatePurchaseInvoicePDF(invoice, userData || {}, options);
         const pdfDir = 'src/uploads/invoices/pdf';
         if (!fs.existsSync(pdfDir)) {
             fs.mkdirSync(pdfDir, { recursive: true });
@@ -747,14 +762,18 @@ const getSummaryByCategory = async (req, res) => {
 
 const downloadPurchaseInvoicePDF = async (req, res) => {
     try {
-        const invoice = await PurchaseInvoice.findOne({ _id: req.params.id, userId: req.user._id });
-        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+        const ids = req.params.id.split(',');
+        const invoices = await PurchaseInvoice.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!invoices || invoices.length === 0) return res.status(404).json({ success: false, message: "Invoice(s) not found" });
 
         const userData = await User.findById(req.user._id);
-        const pdfBuffer = await generatePurchaseInvoicePDF(invoice, userData || {});
+        const options = getCopyOptions(req);
+        const pdfBuffer = await generatePurchaseInvoicePDF(invoices, userData || {}, options);
+
+        const filename = invoices.length === 1 ? `Purchase_Invoice_${invoices[0].invoiceDetails.invoiceNumber}.pdf` : `Merged_Purchase_Invoices.pdf`;
 
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="Purchase_Invoice_${invoice.invoiceDetails.invoiceNumber}.pdf"`);
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.status(200).send(pdfBuffer);
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -888,26 +907,29 @@ const generateBarcodeForPurchaseInvoice = async (req, res) => {
 
 const shareEmail = async (req, res) => {
     try {
-        const invoice = await PurchaseInvoice.findOne({ _id: req.params.id, userId: req.user._id });
-        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+        const ids = req.params.id.split(',');
+        const invoices = await PurchaseInvoice.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!invoices || invoices.length === 0) return res.status(404).json({ success: false, message: "Invoice(s) not found" });
 
-        const vendor = await Vendor.findOne({ userId: req.user._id, companyName: invoice.vendorInformation.ms });
+        const firstInvoice = invoices[0];
+        const vendor = await Vendor.findOne({ userId: req.user._id, companyName: firstInvoice.vendorInformation.ms });
         const email = req.body.email || (vendor ? vendor.email : null);
 
         if (!email) return res.status(400).json({ success: false, message: "Vendor email not found. Please provide an email address." });
 
-        await sendInvoiceEmail(invoice, email, true);
+        const options = getCopyOptions(req);
+        await sendInvoiceEmail(invoices, email, true, options);
 
         // Activity Logging
         await recordActivity(
             req,
             'Share Email',
             'Purchase Invoice',
-            `Purchase Invoice ${invoice.invoiceDetails.invoiceNumber} shared via email to ${email}`,
-            invoice.invoiceDetails.invoiceNumber
+            `Purchase Invoice(s) shared via email to ${email}`,
+            invoices.length === 1 ? firstInvoice.invoiceDetails.invoiceNumber : 'Multiple'
         );
 
-        res.status(200).json({ success: true, message: `Invoice sent to ${email} successfully` });
+        res.status(200).json({ success: true, message: `Invoice(s) sent to ${email} successfully` });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -915,17 +937,37 @@ const shareEmail = async (req, res) => {
 
 const shareWhatsApp = async (req, res) => {
     try {
-        const invoice = await PurchaseInvoice.findOne({ _id: req.params.id, userId: req.user._id });
-        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+        const ids = req.params.id.split(',');
+        const invoices = await PurchaseInvoice.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!invoices || invoices.length === 0) return res.status(404).json({ success: false, message: "Invoice(s) not found" });
 
-        const vendor = await Vendor.findOne({ userId: req.user._id, companyName: invoice.vendorInformation.ms });
+        const firstInvoice = invoices[0];
+        const vendor = await Vendor.findOne({ userId: req.user._id, companyName: firstInvoice.vendorInformation.ms });
         const phone = req.body.phone || (vendor ? vendor.phone : null);
 
         if (!phone) return res.status(400).json({ success: false, message: "Vendor phone not found. Please provide a phone number." });
 
         const cleanPhone = phone.replace(/\D/g, '');
         const whatsappNumber = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
-        const message = `Dear ${invoice.vendorInformation.ms},\n\nWe have recorded your Purchase Invoice No: ${invoice.invoiceDetails.invoiceNumber} for Total Amount: ${invoice.totals.grandTotal.toFixed(2)}.\n\nThank you!`;
+
+        const options = getCopyOptions(req);
+        let queryParams = [];
+        if (options.original) queryParams.push('original=true');
+        if (options.duplicate) queryParams.push('duplicate=true');
+        if (options.transport) queryParams.push('transport=true');
+        if (options.office) queryParams.push('office=true');
+
+        const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+        const token = generatePublicToken(req.params.id);
+        const publicLink = `${req.protocol}://${req.get('host')}/api/purchase-invoice/view-public/${req.params.id}/${token}${queryString}`;
+
+        let message = '';
+        if (invoices.length === 1) {
+            message = `Dear ${firstInvoice.vendorInformation.ms},\n\nWe have recorded your Purchase Invoice No: ${firstInvoice.invoiceDetails.invoiceNumber} for Total Amount: ${firstInvoice.totals.grandTotal.toFixed(2)}.\n\nView Link: ${publicLink}\n\nThank you!`;
+        } else {
+            message = `Dear ${firstInvoice.vendorInformation.ms},\n\nWe have recorded your merged Purchase Invoices for Total Amount: ${invoices.reduce((sum, inv) => sum + inv.totals.grandTotal, 0).toFixed(2)}.\n\nView Link: ${publicLink}\n\nThank you!`;
+        }
+
         const encodedMessage = encodeURIComponent(message);
         const deepLink = `https://wa.me/${whatsappNumber}?text=${encodedMessage}`;
 
@@ -934,8 +976,8 @@ const shareWhatsApp = async (req, res) => {
             req,
             'Share WhatsApp',
             'Purchase Invoice',
-            `Purchase Invoice ${invoice.invoiceDetails.invoiceNumber} shared via WhatsApp to ${whatsappNumber}`,
-            invoice.invoiceDetails.invoiceNumber
+            `Purchase Invoice(s) shared via WhatsApp to ${whatsappNumber}`,
+            invoices.length === 1 ? firstInvoice.invoiceDetails.invoiceNumber : 'Multiple'
         );
 
         res.status(200).json({ success: true, message: "WhatsApp share link generated", data: { whatsappNumber, deepLink } });
@@ -1288,26 +1330,20 @@ const getHSNSummary = async (req, res) => {
  */
 const generatePublicLink = async (req, res) => {
     try {
-        // Fetch invoice by ID only (not filtering by userId)
-        const invoice = await PurchaseInvoice.findById(req.params.id);
+        const ids = req.params.id.split(',');
+        const invoices = await PurchaseInvoice.find({ _id: { $in: ids }, userId: req.user._id });
 
-        if (!invoice) {
+        if (!invoices || invoices.length === 0) {
             return res.status(404).json({
                 success: false,
-                message: "Invoice not found"
+                message: "Invoice(s) not found"
             });
         }
 
-        const crypto = require('crypto');
-        const secret = process.env.JWT_SECRET || 'your-default-secret';
-        const token = crypto
-            .createHmac('sha256', secret)
-            .update(invoice._id.toString())
-            .digest('hex')
-            .substring(0, 16);
+        const token = generatePublicToken(req.params.id);
 
         const baseUrl = `${req.protocol}://${req.get('host')}`;
-        const publicLink = `${baseUrl}/api/purchase-invoice/view-public/${invoice._id}/${token}`;
+        const publicLink = `${baseUrl}/api/purchase-invoice/view-public/${req.params.id}/${token}`;
 
         res.status(200).json({ success: true, publicLink });
     } catch (error) {
@@ -1324,28 +1360,19 @@ const viewInvoicePublic = async (req, res) => {
     try {
         const { id, token } = req.params;
 
-        const crypto = require('crypto');
-        const secret = process.env.JWT_SECRET || 'your-default-secret';
-        const expectedToken = crypto
-            .createHmac('sha256', secret)
-            .update(id)
-            .digest('hex')
-            .substring(0, 16);
+        const expectedToken = generatePublicToken(id);
 
         if (token !== expectedToken) {
             return res.status(401).send("Invalid or expired link");
         }
 
-        const invoice = await PurchaseInvoice.findById(id);
-        if (!invoice) return res.status(404).send("Invoice not found");
+        const ids = id.split(',');
+        const invoices = await PurchaseInvoice.find({ _id: { $in: ids } });
+        if (!invoices || invoices.length === 0) return res.status(404).send("Invoice(s) not found");
 
-        // Check if invoice is cancelled or deleted
-        if (invoice.status === 'Cancelled' || invoice.status === 'Deleted') {
-            return res.status(403).send("This invoice has been cancelled or deleted and is no longer available for viewing");
-        }
-
-        const userData = await User.findById(invoice.userId);
-        const pdfBuffer = await generatePurchaseInvoicePDF(invoice, userData || {});
+        const userData = await User.findById(invoices[0].userId);
+        const options = getCopyOptions(req);
+        const pdfBuffer = await generatePurchaseInvoicePDF(invoices, userData || {}, options);
 
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', 'inline; filename="Purchase-Invoice.pdf"');

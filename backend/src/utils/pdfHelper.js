@@ -501,12 +501,33 @@ const generateLedgerPDF = (data) => {
     });
 };
 
+/**
+ * Extract copy options from request (query or body).
+ * @param {Object} req - Express request object.
+ * @returns {Object} { original, duplicate, transport, office }
+ */
+const getCopyOptions = (req) => {
+    const source = (req.method === 'GET') ? req.query : req.body;
+    const { original, duplicate, transport, office } = source;
+
+    // Default to true for original if it's the only one and it's undefined
+    const isOriginal = original === undefined ? true : (original === 'true' || original === true);
+
+    return {
+        original: isOriginal,
+        duplicate: duplicate === 'true' || duplicate === true,
+        transport: transport === 'true' || transport === true,
+        office: office === 'true' || office === true,
+    };
+};
+
 module.exports = {
     generateInvoicePDF,
     generateReceiptPDF,
     generateQuotationPDF,
     generateProformaPDF,
     generateDeliveryChallanPDF,
-    generateLedgerPDF
+    generateLedgerPDF,
+    getCopyOptions
 };
 
