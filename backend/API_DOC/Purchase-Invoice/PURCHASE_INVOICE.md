@@ -22,6 +22,10 @@ Content-Type: multipart/form-data
 | `eWayBill` | JSON Object | E-Way Bill info |
 | `attachments` | File(s) | Up to 5 document attachments |
 | `shareOnEmail` | Boolean | Flag to trigger email share |
+| `original` | Boolean | Optional. Include original copy in PDF (default: true) |
+| `duplicate` | Boolean | Optional. Include duplicate copy in PDF |
+| `transport` | Boolean | Optional. Include transport copy in PDF |
+| `office` | Boolean | Optional. Include office copy in PDF |
 
 ### Create and Print
 ```http
@@ -29,7 +33,13 @@ POST /create-print
 Authorization: Bearer <token>
 Content-Type: multipart/form-data
 ```
-Identical to `/create`, returns PDF binary for print.
+Identical to `/create`, returns PDF binary for direct download.
+
+**Query Parameters (Optional)**
+- `original`: Boolean (default: true)
+- `duplicate`: Boolean
+- `transport`: Boolean
+- `office`: Boolean
 
 ### Get All Purchase Invoices
 ```http
@@ -67,6 +77,10 @@ Content-Type: multipart/form-data
 | `totals` | JSON Object | Summary values (totalTaxable, totalTax, grandTotal, totalInWords) |
 | `paymentType` | Enum | `CREDIT`, `CASH`, `CHEQUE`, `ONLINE` (case-insensitive, auto-converted to uppercase) |
 | `attachments` | File(s) | Optional new attachments |
+| `original` | Boolean | Optional. Include original copy in PDF (default: true) |
+| `duplicate` | Boolean | Optional. Include duplicate copy in PDF |
+| `transport` | Boolean | Optional. Include transport copy in PDF |
+| `office` | Boolean | Optional. Include office copy in PDF |
 
 **Field Normalization**: The API automatically handles field variations:
 - Items: `name`→`productName`, `quantity`→`qty`, `rate`→`price`
@@ -94,6 +108,15 @@ Authorization: Bearer <token>
 GET /:id/download
 Authorization: Bearer <token>
 ```
+Returns the PDF binary file as an attachment for direct download.
+
+**Multi-Selection Support**: Supports comma-separated IDs in `:id` (e.g., `id1,id2,id3`). Returns a merged PDF containing all selected invoices.
+
+**Query Parameters (Optional)**
+- `original`: Boolean (default: true)
+- `duplicate`: Boolean
+- `transport`: Boolean
+- `office`: Boolean
 
 ### Delete Purchase Invoice
 ```http
@@ -167,14 +190,34 @@ Generates an envelope PDF with the sender (Company) at the top-left and recipien
 POST /:id/share-email
 Authorization: Bearer <token>
 ```
-**Body**: `{ "email": "vendor@example.com" }`
+**Multi-Selection Support**: Supports comma-separated IDs in `:id`.
+**Body**:
+```json
+{
+  "email": "vendor@example.com",
+  "original": true,
+  "duplicate": false,
+  "transport": false,
+  "office": false
+}
+```
   
 ### Action: Share WhatsApp
 ```http
 POST /:id/share-whatsapp
 Authorization: Bearer <token>
 ```
-**Body**: `{ "phone": "9876543210" }`
+**Multi-Selection Support**: Supports comma-separated IDs in `:id`.
+**Body**:
+```json
+{
+  "phone": "9876543210",
+  "original": true,
+  "duplicate": false,
+  "transport": false,
+  "office": false
+}
+```
 
 ### Action: Duplicate
 ```http
@@ -230,6 +273,7 @@ All conversion endpoints return the newly created document.
 GET /:id/public-link
 Authorization: Bearer <token>
 ```
+**Multi-Selection Support**: Supports comma-separated IDs in `:id`.
 Generates a secure, shareable public link for viewing the purchase invoice without authentication.
 
 **Response**:
@@ -244,6 +288,7 @@ Generates a secure, shareable public link for viewing the purchase invoice witho
 ```http
 GET /view-public/:id/:token
 ```
+**Multi-Selection Support**: Supports comma-separated IDs in `:id`.
 **No authentication required**. Validates the token and returns the purchase invoice PDF for read-only viewing.
 
 **Features**:
@@ -252,9 +297,21 @@ GET /view-public/:id/:token
 - Validates invoice status (returns error for cancelled/deleted invoices)
 - Returns PDF inline for browser viewing
 
-**Response**: PDF binary file (Content-Type: application/pdf)
+**Response**: Returns PDF binary file (Content-Type: application/pdf)
 
-**Error Responses**:
-- `401`: Invalid or expired link
-- `403`: Invoice cancelled or deleted
-- `404`: Invoice not found
+- `office`: Boolean
+
+---
+
+## Merged Purchase Invoice PDF (Multi-Selection)
+
+Existing endpoints for Download, Email Share, WhatsApp Share, and Public View now support multiple purchase invoices by passing a comma-separated list of IDs in the `:id` parameter.
+
+**Example**:
+`GET /api/purchase-invoice/65a7...123,65a7...456/download?original=true`
+
+**Behavior**:
+1. All selected records are processed.
+2. For each invoice, each selected copy (e.g., Original, Duplicate) starts on a new page.
+3. All pages are merged into a single PDF.
+4. For WhatsApp sharing, the generated public link will open the merged PDF.

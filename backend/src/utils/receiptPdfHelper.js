@@ -2,13 +2,14 @@ const PDFDocument = require('pdfkit');
 
 /**
  * Generates a Receipt Voucher PDF matching the provided screenshot.
- * @param {Object} data - Payment data mapped to generic structure.
+ * @param {Object|Array} dataItems - Single or Multiple Payment records.
  * @param {Object} user - Logged-in User (Company) details.
  * @param {String} title - Voucher Title (e.g., "RECEIPT VOUCHER" or "PAYMENT VOUCHER").
  * @param {Object} labels - Labels for unique fields (e.g., { no: "Receipt No.", date: "Receipt Date", details: "Customer Detail" }).
+ * @param {Object} options - Multi-copy options.
  * @returns {Promise<Buffer>}
  */
-const generateReceiptVoucherPDF = (data, user, title = "RECEIPT VOUCHER", labels = { no: "Receipt No.", date: "Receipt Date", details: "Customer Detail" }) => {
+const generateReceiptVoucherPDF = (dataItems, user, title = "RECEIPT VOUCHER", labels = { no: "Receipt No.", date: "Receipt Date", details: "Customer Detail" }, options = { original: true }) => {
     return new Promise((resolve, reject) => {
         const doc = new PDFDocument({ margin: 30, size: 'A4' });
         const buffers = [];
@@ -21,147 +22,181 @@ const generateReceiptVoucherPDF = (data, user, title = "RECEIPT VOUCHER", labels
         const blackColor = "#000000";
         const lightBlueColor = "#E8F3FD";
 
-        // Layout Constants
-        const startX = 40;
-        let currentY = 40;
-        const width = 515;
+        // Determine copies to render
+        const copies = [];
+        if (options.original) copies.push('original');
+        if (options.duplicate) copies.push('duplicate');
+        if (options.transport) copies.push('transport');
+        if (options.office) copies.push('office');
 
-        // --- 1. TOP HEADER ---
-        doc.fillColor(blackColor).fontSize(16).text(user.companyName || "ITCode", startX + 5, currentY, { bold: true });
-        doc.fontSize(8).text(user.address || "", startX + 5, doc.y + 2);
-        doc.text(`${user.city || ""}, ${user.state || ""} - ${user.pincode || ""}`, startX + 5, doc.y);
+        // Fallback to original if nothing selected
+        if (copies.length === 0) copies.push('original');
 
-        doc.fontSize(9).text(`Name : ${user.fullName || ""}`, startX, currentY, { align: "right", width: width });
-        doc.text(`Phone : ${user.phone || ""}`, startX, doc.y + 2, { align: "right", width: width });
-        doc.text(`Email : ${user.email || ""}`, startX, doc.y + 2, { align: "right", width: width });
-
-        currentY = 100;
-
-        // --- 2. TITLE BAR ---
-        doc.rect(startX, currentY, width, 18).stroke(blueColor);
-        doc.fillColor(blueColor).fontSize(11).text(title, startX, currentY + 5, { align: "center", width: width, bold: true });
-
-        // --- 3. DETAILS GRID ---
-        currentY += 18;
-        const gridHeight = 90;
-        const colSplit = 350;
-
-        doc.rect(startX, currentY, width, gridHeight).stroke(blueColor);
-        doc.moveTo(startX + colSplit, currentY).lineTo(startX + colSplit, currentY + gridHeight).stroke(blueColor);
-
-        doc.fillColor(blackColor).fontSize(9).text(labels.details || "Customer Detail", startX, currentY + 6, { align: "center", width: colSplit, bold: true });
-        doc.moveTo(startX, currentY + 20).lineTo(startX + colSplit, currentY + 20).stroke(blueColor);
-
-        let fieldY = currentY + 25;
-        const drawField = (label, value) => {
-            doc.fillColor(blackColor).fontSize(8).text(label, startX + 5, fieldY, { bold: true });
-            doc.text(`: ${value || "-"}`, startX + 65, fieldY, { width: colSplit - 70 });
-            fieldY += 12;
+        const getCopyLabel = (type) => {
+            switch (type) {
+                case 'original': return "ORIGINAL FOR RECIPIENT";
+                case 'duplicate': return "DUPLICATE COPY";
+                case 'transport': return "DUPLICATE FOR TRANSPORTER";
+                case 'office': return "TRIPLICATE FOR SUPPLIER";
+                default: return "";
+            }
         };
-        drawField("Name", data.customerInformation.ms);
-        drawField("Address", data.customerInformation.address);
-        drawField("Phone", data.customerInformation.phone);
-        drawField("GSTIN", data.customerInformation.gstinPan);
-        drawField("State", data.customerInformation.placeOfSupply);
 
-        const rightStart = startX + colSplit;
-        const rightWidth = width - colSplit;
-        doc.fillColor(blackColor).fontSize(8).text(labels.no || "Receipt No.", rightStart + 5, currentY + 6, { bold: true });
-        doc.text(data.invoiceDetails.invoiceNumber, rightStart + 70, currentY + 6, { align: 'right', width: rightWidth - 75 });
-        doc.text(labels.date || "Receipt Date", rightStart + 5, currentY + 26, { bold: true });
-        doc.text(new Date(data.invoiceDetails.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }), rightStart + 70, currentY + 26, { align: 'right', width: rightWidth - 75 });
+        const records = Array.isArray(dataItems) ? dataItems : [dataItems];
+        let isFirstPage = true;
 
-        // --- 4. ITEM TABLE ---
-        currentY += gridHeight;
-        doc.rect(startX, currentY, width, 15).stroke(blueColor);
-        currentY += 15;
+        records.forEach((record) => {
+            copies.forEach((copyType) => {
+                if (!isFirstPage) {
+                    doc.addPage();
+                }
+                isFirstPage = false;
 
-        const headerHeight = 15;
-        doc.rect(startX, currentY, width, headerHeight).fillAndStroke(lightBlueColor, blueColor);
-        const colSr = 30;
-        const colParticulars = 350;
-        const colAmount = 135;
-        const cols = [startX, startX + colSr, startX + colSr + colParticulars];
-        doc.fillColor(blackColor).fontSize(8);
-        doc.text("Sr. No.", cols[0], currentY + 4, { width: colSr, align: "center", bold: true });
-        doc.text("Particulars", cols[1], currentY + 4, { width: colParticulars, align: "center", bold: true });
-        doc.text("Amount", cols[2], currentY + 4, { width: colAmount, align: "center", bold: true });
+                // Layout Constants
+                const startX = 40;
+                let currentY = 40;
+                const width = 515;
 
-        // Table Header Vertical Lines
-        doc.moveTo(cols[1], currentY).lineTo(cols[1], currentY + headerHeight).stroke(blueColor);
-        doc.moveTo(cols[2], currentY).lineTo(cols[2], currentY + headerHeight).stroke(blueColor);
+                // --- 1. TOP HEADER ---
+                doc.fillColor(blackColor).fontSize(16).text(user.companyName || "ITCode", startX + 5, currentY, { bold: true });
+                doc.fontSize(8).text(user.address || "", startX + 5, doc.y + 2);
+                doc.text(`${user.city || ""}, ${user.state || ""} - ${user.pincode || ""}`, startX + 5, doc.y);
 
-        currentY += headerHeight;
-        const bodyHeight = 350;
-        doc.rect(startX, currentY, width, bodyHeight).stroke(blueColor);
-        doc.moveTo(cols[1], currentY).lineTo(cols[1], currentY + bodyHeight).stroke(blueColor);
-        doc.moveTo(cols[2], currentY).lineTo(cols[2], currentY + bodyHeight).stroke(blueColor);
+                doc.fontSize(9).text(`Name : ${user.fullName || ""}`, startX, currentY, { align: "right", width: width });
+                doc.text(`Phone : ${user.phone || ""}`, startX, doc.y + 2, { align: "right", width: width });
+                doc.text(`Email : ${user.email || ""}`, startX, doc.y + 2, { align: "right", width: width });
 
-        let itemY = currentY + 10;
-        data.items.forEach((item, idx) => {
-            doc.fillColor(blackColor).fontSize(9);
-            doc.text((idx + 1).toString(), cols[0], itemY, { width: colSr, align: "center" });
-            doc.text(item.productName, cols[1] + 10, itemY, { width: colParticulars - 20, lineGap: 2 });
-            doc.text(item.total.toFixed(2), cols[2], itemY, { width: colAmount - 10, align: "right", bold: true });
-            itemY += 60;
-        });
-        currentY += bodyHeight;
+                currentY = 100;
 
-        // --- 5. FOOTER SECTION ---
-        const leftBoxWidth = 350;
-        const rightBoxWidth = width - leftBoxWidth;
+                // --- 2. TITLE BAR ---
+                doc.rect(startX, currentY, width, 18).stroke(blueColor);
+                doc.fillColor(blueColor).fontSize(11).text(title, startX, currentY + 5, { align: "center", width: width, bold: true });
+                doc.fillColor(blackColor).fontSize(7).text(getCopyLabel(copyType), startX, currentY + 5, { align: "right", width: width - 10, bold: true });
 
-        // Draw Watermark if Cancelled
-        if (data.status === 'CANCELLED') {
-            doc.save();
-            doc.fillColor('red').opacity(0.15).fontSize(100);
-            doc.rotate(-30, { origin: [startX + width / 2, currentY - bodyHeight / 2] });
-            doc.text('CANCELLED', startX, currentY - bodyHeight / 2 - 50, {
-                align: 'center',
-                width: width
+                // --- 3. DETAILS GRID ---
+                currentY += 18;
+                const gridHeight = 90;
+                const colSplit = 350;
+
+                doc.rect(startX, currentY, width, gridHeight).stroke(blueColor);
+                doc.moveTo(startX + colSplit, currentY).lineTo(startX + colSplit, currentY + gridHeight).stroke(blueColor);
+
+                doc.fillColor(blackColor).fontSize(9).text(labels.details || "Customer Detail", startX, currentY + 6, { align: "center", width: colSplit, bold: true });
+                doc.moveTo(startX, currentY + 20).lineTo(startX + colSplit, currentY + 20).stroke(blueColor);
+
+                // Fields
+                let fieldY = currentY + 25;
+                const drawField = (label, value) => {
+                    doc.fillColor(blackColor).fontSize(8).text(label, startX + 5, fieldY, { bold: true });
+                    doc.text(`: ${value || "-"}`, startX + 65, fieldY, { width: colSplit - 70 });
+                    fieldY += 12;
+                };
+                drawField("Name", record.customerInformation.ms);
+                drawField("Address", record.customerInformation.address);
+                drawField("Phone", record.customerInformation.phone);
+                drawField("GSTIN", record.customerInformation.gstinPan);
+                drawField("State", record.customerInformation.placeOfSupply);
+
+                const rightStart = startX + colSplit;
+                const rightWidth = width - colSplit;
+                doc.fillColor(blackColor).fontSize(8).text(labels.no || "Receipt No.", rightStart + 5, currentY + 6, { bold: true });
+                doc.text(record.invoiceDetails.invoiceNumber, rightStart + 70, currentY + 6, { align: 'right', width: rightWidth - 75 });
+                doc.text(labels.date || "Receipt Date", rightStart + 5, currentY + 26, { bold: true });
+                doc.text(new Date(record.invoiceDetails.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }), rightStart + 70, currentY + 26, { align: 'right', width: rightWidth - 75 });
+
+                // --- 4. ITEM TABLE ---
+                let tableCurrentY = currentY + gridHeight;
+                doc.rect(startX, tableCurrentY, width, 15).stroke(blueColor);
+                tableCurrentY += 15;
+
+                const tableHeaderHeight = 15;
+                doc.rect(startX, tableCurrentY, width, tableHeaderHeight).fillAndStroke(lightBlueColor, blueColor);
+                const colSr = 30;
+                const colParticulars = 350;
+                const colAmount = 135;
+                const cols = [startX, startX + colSr, startX + colSr + colParticulars];
+                doc.fillColor(blackColor).fontSize(8);
+                doc.text("Sr. No.", cols[0], tableCurrentY + 4, { width: colSr, align: "center", bold: true });
+                doc.text("Particulars", cols[1], tableCurrentY + 4, { width: colParticulars, align: "center", bold: true });
+                doc.text("Amount", cols[2], tableCurrentY + 4, { width: colAmount, align: "center", bold: true });
+
+                // Table Header Vertical Lines
+                doc.moveTo(cols[1], tableCurrentY).lineTo(cols[1], tableCurrentY + tableHeaderHeight).stroke(blueColor);
+                doc.moveTo(cols[2], tableCurrentY).lineTo(cols[2], tableCurrentY + tableHeaderHeight).stroke(blueColor);
+
+                tableCurrentY += tableHeaderHeight;
+                const bodyHeight = 350;
+                doc.rect(startX, tableCurrentY, width, bodyHeight).stroke(blueColor);
+                doc.moveTo(cols[1], tableCurrentY).lineTo(cols[1], tableCurrentY + bodyHeight).stroke(blueColor);
+                doc.moveTo(cols[2], tableCurrentY).lineTo(cols[2], tableCurrentY + bodyHeight).stroke(blueColor);
+
+                let itemY = tableCurrentY + 10;
+                record.items.forEach((item, idx) => {
+                    doc.fillColor(blackColor).fontSize(9);
+                    doc.text((idx + 1).toString(), cols[0], itemY, { width: colSr, align: "center" });
+                    doc.text(item.productName, cols[1] + 10, itemY, { width: colParticulars - 20, lineGap: 2 });
+                    doc.text(item.total.toFixed(2), cols[2], itemY, { width: colAmount - 10, align: "right", bold: true });
+                    itemY += 60;
+                });
+                tableCurrentY += bodyHeight;
+
+                // --- 5. FOOTER SECTION ---
+                const leftBoxWidth = 350;
+                const rightBoxWidth = width - leftBoxWidth;
+
+                // Draw Watermark if Cancelled
+                if (record.status === 'CANCELLED') {
+                    doc.save();
+                    doc.fillColor('red').opacity(0.15).fontSize(100);
+                    doc.rotate(-30, { origin: [startX + width / 2, tableCurrentY - bodyHeight / 2] });
+                    doc.text('CANCELLED', startX, tableCurrentY - bodyHeight / 2 - 50, {
+                        align: 'center',
+                        width: width
+                    });
+                    doc.restore();
+                }
+
+                // Row 1: Total in words Label | Total Amount box
+                doc.rect(startX, tableCurrentY, width, 15).stroke(blueColor);
+                doc.moveTo(startX + leftBoxWidth, tableCurrentY).lineTo(startX + leftBoxWidth, tableCurrentY + 15).stroke(blueColor);
+                doc.fillColor(blackColor).fontSize(8).text("Total in words", startX, tableCurrentY + 4, { width: leftBoxWidth, align: "center", bold: true });
+                doc.rect(startX + leftBoxWidth, tableCurrentY, rightBoxWidth, 15).fillAndStroke(lightBlueColor, blueColor);
+                doc.fillColor(blackColor).fontSize(8).text("Total Amount", startX + leftBoxWidth + 5, tableCurrentY + 4, { bold: true });
+                doc.fontSize(10).text(`Rs. ${record.totals.grandTotal.toFixed(2)}`, startX + leftBoxWidth, tableCurrentY + 3, { width: rightBoxWidth - 5, align: "right", bold: true });
+                tableCurrentY += 15;
+
+                // Row 2: Total in words Value | Certified... Strip
+                doc.rect(startX, tableCurrentY, width, 15).stroke(blueColor);
+                doc.moveTo(startX + leftBoxWidth, tableCurrentY).lineTo(startX + leftBoxWidth, tableCurrentY + 15).stroke(blueColor);
+                doc.fillColor(blackColor).fontSize(7).text(record.totals.totalInWords.toUpperCase(), startX, tableCurrentY + 4, { width: leftBoxWidth, align: "center", bold: true });
+                doc.fillColor(blackColor).fontSize(6).text("Certified that the particulars given above are true and correct.", startX + leftBoxWidth, tableCurrentY + 4, { width: rightBoxWidth, align: "center", bold: true });
+                tableCurrentY += 15;
+
+                // Row 3: Terms Header | (E & O.E.) Strip
+                doc.rect(startX, tableCurrentY, width, 15).stroke(blueColor);
+                doc.moveTo(startX + leftBoxWidth, tableCurrentY).lineTo(startX + leftBoxWidth, tableCurrentY + 15).stroke(blueColor);
+                doc.fillColor(blackColor).fontSize(8).text("Terms and Conditions", startX, tableCurrentY + 4, { width: leftBoxWidth, align: "center", bold: true });
+                doc.fillColor(blackColor).fontSize(7).text("(E & O.E.)", startX + leftBoxWidth, tableCurrentY + 4, { width: rightBoxWidth - 5, align: "right", bold: true });
+                tableCurrentY += 15;
+
+                // Final Stack: Terms Content (Left) | Signatory Stack (Right)
+                const finalStackHeight = 75;
+                doc.rect(startX, tableCurrentY, width, finalStackHeight).stroke(blueColor);
+                doc.moveTo(startX + leftBoxWidth, tableCurrentY).lineTo(startX + leftBoxWidth, tableCurrentY + finalStackHeight).stroke(blueColor);
+
+                // Left: Terms (Single box)
+                doc.fillColor(blackColor).fontSize(7).text(record.termsDetails || "Payment must be made within the specified timeframe.", startX + 5, tableCurrentY + 5, { width: leftBoxWidth - 10 });
+
+                // Right side splits
+                // 1. For Company
+                doc.moveTo(startX + leftBoxWidth, tableCurrentY + 20).lineTo(startX + width, tableCurrentY + 20).stroke(blueColor);
+                doc.fontSize(9).text(`For ${user.companyName || "ITCode"}`, startX + leftBoxWidth, tableCurrentY + 6, { width: rightBoxWidth, align: "center", bold: true });
+                // 2. Blank area for signature (Row 5 - 40px)
+                doc.moveTo(startX + leftBoxWidth, tableCurrentY + 60).lineTo(startX + width, tableCurrentY + 60).stroke(blueColor);
+                // 3. Authorized Signatory (Row 6 - 15px)
+                doc.fontSize(7).text("Authorized Signatory", startX + leftBoxWidth, tableCurrentY + 64, { width: rightBoxWidth, align: "center", bold: true });
             });
-            doc.restore();
-        }
-
-        // Row 1: Total in words Label | Total Amount box
-        doc.rect(startX, currentY, width, 15).stroke(blueColor);
-        doc.moveTo(startX + leftBoxWidth, currentY).lineTo(startX + leftBoxWidth, currentY + 15).stroke(blueColor);
-        doc.fillColor(blackColor).fontSize(8).text("Total in words", startX, currentY + 4, { width: leftBoxWidth, align: "center", bold: true });
-        doc.rect(startX + leftBoxWidth, currentY, rightBoxWidth, 15).fillAndStroke(lightBlueColor, blueColor);
-        doc.fillColor(blackColor).fontSize(8).text("Total Amount", startX + leftBoxWidth + 5, currentY + 4, { bold: true });
-        doc.fontSize(10).text(`Rs. ${data.totals.grandTotal.toFixed(2)}`, startX + leftBoxWidth, currentY + 3, { width: rightBoxWidth - 5, align: "right", bold: true });
-        currentY += 15;
-
-        // Row 2: Total in words Value | Certified... Strip
-        doc.rect(startX, currentY, width, 15).stroke(blueColor);
-        doc.moveTo(startX + leftBoxWidth, currentY).lineTo(startX + leftBoxWidth, currentY + 15).stroke(blueColor);
-        doc.fillColor(blackColor).fontSize(7).text(data.totals.totalInWords.toUpperCase(), startX, currentY + 4, { width: leftBoxWidth, align: "center", bold: true });
-        doc.fillColor(blackColor).fontSize(6).text("Certified that the particulars given above are true and correct.", startX + leftBoxWidth, currentY + 4, { width: rightBoxWidth, align: "center", bold: true });
-        currentY += 15;
-
-        // Row 3: Terms Header | (E & O.E.) Strip
-        doc.rect(startX, currentY, width, 15).stroke(blueColor);
-        doc.moveTo(startX + leftBoxWidth, currentY).lineTo(startX + leftBoxWidth, currentY + 15).stroke(blueColor);
-        doc.fillColor(blackColor).fontSize(8).text("Terms and Conditions", startX, currentY + 4, { width: leftBoxWidth, align: "center", bold: true });
-        doc.fillColor(blackColor).fontSize(7).text("(E & O.E.)", startX + leftBoxWidth, currentY + 4, { width: rightBoxWidth - 5, align: "right", bold: true });
-        currentY += 15;
-
-        // Final Stack: Terms Content (Left) | Signatory Stack (Right)
-        const finalStackHeight = 75;
-        doc.rect(startX, currentY, width, finalStackHeight).stroke(blueColor);
-        doc.moveTo(startX + leftBoxWidth, currentY).lineTo(startX + leftBoxWidth, currentY + finalStackHeight).stroke(blueColor);
-
-        // Left: Terms (Single box)
-        doc.fillColor(blackColor).fontSize(7).text(data.termsDetails || "Payment must be made within the specified timeframe.", startX + 5, currentY + 5, { width: leftBoxWidth - 10 });
-
-        // Right side splits
-        // 1. For Company
-        doc.moveTo(startX + leftBoxWidth, currentY + 20).lineTo(startX + width, currentY + 20).stroke(blueColor);
-        doc.fontSize(9).text(`For ${user.companyName || "ITCode"}`, startX + leftBoxWidth, currentY + 6, { width: rightBoxWidth, align: "center", bold: true });
-        // 2. Blank area for signature (Row 5 - 40px)
-        doc.moveTo(startX + leftBoxWidth, currentY + 60).lineTo(startX + width, currentY + 60).stroke(blueColor);
-        // 3. Authorized Signatory (Row 6 - 15px)
-        doc.fontSize(7).text("Authorized Signatory", startX + leftBoxWidth, currentY + 64, { width: rightBoxWidth, align: "center", bold: true });
+        });
 
         doc.end();
     });

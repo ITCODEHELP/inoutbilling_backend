@@ -6,6 +6,7 @@ const Vendor = require('../../models/Customer-Vendor-Model/Vendor');
 const Staff = require('../../models/Setting-Model/Staff');
 const mongoose = require('mongoose');
 const ExcelJS = require('exceljs');
+const crypto = require('crypto');
 const { generateReceiptPDF } = require('../../utils/pdfHelper');
 
 // Helper to build shared search query
@@ -193,21 +194,10 @@ const createExpense = async (req, res) => {
         await newExpense.save();
 
         if (req.body.print === 'true' || req.body.print === true) {
-            const printableFields = definitions
-                .filter(def => def.print && parsedCustomFields[def._id.toString()])
-                .map(def => ({ name: def.name, value: parsedCustomFields[def._id.toString()] }));
-
-            const pdfBuffer = await generateReceiptPDF({
-                no: newExpense.expenseNo,
-                date: newExpense.expenseDate,
-                category: newExpense.category,
-                paymentType: newExpense.paymentType,
-                remarks: newExpense.remarks,
-                items: newExpense.items.map(i => ({ name: i.name, amount: i.amount })),
-                grandTotal: newExpense.grandTotal,
-                amountInWords: newExpense.amountInWords,
-                customFields: printableFields
-            }, "EXPENSE");
+            const user = await User.findById(req.user._id);
+            const pdfData = await mapExpenseToPDFData(newExpense, req.user._id);
+            const options = getCopyOptions(req);
+            const pdfBuffer = await generateDailyExpensePDF(pdfData, user, options);
 
             res.setHeader('Content-Type', 'application/pdf');
             res.setHeader('Content-Disposition', `attachment; filename=expense-${newExpense.expenseNo}.pdf`);
@@ -410,34 +400,26 @@ const createItemColumn = async (req, res) => {
     }
 };
 
-// @desc    Print Single Expense
+// @desc    Print Single or Multiple Expenses
 // @route   GET /api/daily-expenses/:id/print
 const printExpense = async (req, res) => {
     try {
-        const expense = await DailyExpense.findOne({ _id: req.params.id, userId: req.user._id });
-        if (!expense) return res.status(404).json({ success: false, message: 'Not found' });
+        const ids = req.params.id.split(',');
+        const expenses = await DailyExpense.find({ _id: { $in: ids }, userId: req.user._id }).populate('party');
+        if (!expenses || expenses.length === 0) return res.status(404).json({ success: false, message: 'Not found' });
 
-        const definitions = await DailyExpenseCustomField.find({ userId: req.user._id, status: 'Active', print: true });
-        const printableFields = definitions
-            .filter(def => expense.customFields.get(def._id.toString()))
-            .map(def => ({ name: def.name, value: expense.customFields.get(def._id.toString()) }));
+        const user = await User.findById(req.user._id);
+        const allPdfData = await Promise.all(expenses.map(exp => mapExpenseToPDFData(exp, req.user._id)));
+        const options = getCopyOptions(req);
 
-        const pdfBuffer = await generateReceiptPDF({
-            no: expense.expenseNo,
-            date: expense.expenseDate,
-            category: expense.category,
-            paymentType: expense.paymentType,
-            remarks: expense.remarks,
-            items: expense.items.map(i => ({ name: i.name, amount: i.amount })),
-            grandTotal: expense.grandTotal,
-            amountInWords: expense.amountInWords,
-            customFields: printableFields
-        }, "EXPENSE");
+        const pdfBuffer = await generateDailyExpensePDF(allPdfData, user, options);
 
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename=expense-${expense.expenseNo}.pdf`);
+        const filename = expenses.length === 1 ? `expense-${expenses[0].expenseNo}.pdf` : 'expenses-merged.pdf';
+        res.setHeader('Content-Disposition', `inline; filename=${filename}`);
         res.send(pdfBuffer);
     } catch (error) {
+        console.error('Print Expense Error:', error);
         res.status(500).json({ success: false, message: 'Server Error' });
     }
 };
@@ -672,6 +654,460 @@ const getImportHistory = async (req, res) => {
     }
 };
 
+// @desc    Attach file to expense
+// @route   POST /api/daily-expenses/attach-file
+// @access  Private
+const attachFile = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ success: false, message: 'No file uploaded' });
+        }
+
+        const { expenseId } = req.body;
+        const fs = require('fs');
+        const attachmentUrl = req.file.path; // Or cloud URL if using S3/etc later
+
+        let expense;
+
+        if (expenseId) {
+            // --- UPDATE EXISTING ---
+            expense = await DailyExpense.findOne({ _id: expenseId, userId: req.user._id });
+            if (!expense) {
+                // Cleanup uploaded file since orphaned
+                if (fs.existsSync(attachmentUrl)) fs.unlinkSync(attachmentUrl);
+                return res.status(404).json({ success: false, message: 'Expense not found' });
+            }
+
+            // Cleanup old attachment if replacing
+            if (expense.attachment && expense.attachment !== attachmentUrl) {
+                if (fs.existsSync(expense.attachment)) {
+                    try {
+                        fs.unlinkSync(expense.attachment);
+                    } catch (err) {
+                        console.error("Error deleting old attachment:", err);
+                    }
+                }
+            }
+
+            expense.attachment = attachmentUrl;
+        } else {
+            // --- CREATE NEW (Auto-Generate) ---
+            // Create a placeholder expense record so the file has a home
+            expense = new DailyExpense({
+                userId: req.user._id,
+                // Generate a unique temp number. User can edit later.
+                expenseNo: `AUTO-${Date.now()}`,
+                expenseDate: new Date(),
+                category: 'General', // Default required category
+                paymentType: 'CASH', // Default required payment type
+                attachment: attachmentUrl,
+                items: [], // Empty items allowed
+                grandTotal: 0
+            });
+        }
+
+        await expense.save();
+
+        res.status(200).json({
+            success: true,
+            message: expenseId ? 'File attached successfully' : 'New expense created with attachment',
+            data: {
+                expenseId: expense._id,
+                attachment: attachmentUrl,
+                fileName: req.file.originalname,
+                mimetype: req.file.mimetype,
+                size: req.file.size
+            }
+        });
+
+    } catch (error) {
+        console.error('Attach File Error:', error);
+        // Attempt cleanup on server error
+        if (req.file && require('fs').existsSync(req.file.path)) {
+            try { require('fs').unlinkSync(req.file.path); } catch (e) { }
+        }
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// @desc    Delete attachment
+// @route   DELETE /api/daily-expenses/attachment/:id
+// @access  Private
+const deleteAttachment = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const expense = await DailyExpense.findOne({ _id: id, userId: req.user._id });
+
+        if (!expense) {
+            return res.status(404).json({ success: false, message: 'Expense not found' });
+        }
+
+        if (expense.attachment) {
+            const fs = require('fs');
+            if (fs.existsSync(expense.attachment)) {
+                try {
+                    fs.unlinkSync(expense.attachment);
+                } catch (err) {
+                    console.error("Error deleting attachment:", err);
+                }
+            }
+            expense.attachment = '';
+            await expense.save();
+        }
+
+        res.status(200).json({ success: true, message: 'Attachment deleted successfully' });
+    } catch (error) {
+        console.error('Delete Attachment Error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// @desc    Get attachment details
+// @route   GET /api/daily-expenses/attachment/:id
+// @access  Private
+const getAttachment = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const expense = await DailyExpense.findOne({ _id: id, userId: req.user._id });
+
+        if (!expense) {
+            return res.status(404).json({ success: false, message: 'Expense not found' });
+        }
+
+        if (!expense.attachment) {
+            return res.status(404).json({ success: false, message: 'No attachment found' });
+        }
+
+        const path = require('path');
+        const fileName = path.basename(expense.attachment);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                attachment: expense.attachment,
+                fileName: fileName,
+                // Simple mime type derivation for response consistency
+                mimetype: fileName.endsWith('.pdf') ? 'application/pdf' :
+                    (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) ? 'image/jpeg' :
+                        fileName.endsWith('.png') ? 'image/png' : 'application/octet-stream'
+            }
+        });
+
+    } catch (error) {
+        console.error('Get Attachment Error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// --- PDF PDF & SHARING HELPERS ---
+const { generateDailyExpensePDF } = require('../../utils/dailyExpensePdfHelper');
+const { sendEmail } = require('../../utils/emailHelper'); // Assumption: reusable or need create
+const User = require('../../models/User-Model/User');
+
+const getCopyOptions = (req) => {
+    const { original, duplicate, transport, office } = req.method === 'GET' ? req.query : req.body;
+    return {
+        original: original === 'true' || original === true,
+        duplicate: duplicate === 'true' || duplicate === true,
+        transport: transport === 'true' || transport === true,
+        office: office === 'true' || office === true
+    };
+};
+
+const generatePublicToken = (id) => {
+    return crypto.createHmac('sha256', process.env.JWT_SECRET || 'secret').update(id.toString()).digest('hex').substring(0, 16);
+};
+
+const mapExpenseToPDFData_Deprecated = (expense) => {
+    // Determine Vendor/Party Details
+    // If expense.party is populated, use it. Else if basic details are there.
+    // Ideally party should be populated.
+
+    // Vendor Details
+    const vendorDetails = {
+        name: expense.party ? expense.party.name : (expense.customFields?.vendorName || "-"),
+        category: expense.category,
+        paymentType: expense.paymentType,
+        gstin: expense.party ? expense.party.gstin : "-",
+        state: expense.party ? expense.party.state : "-",
+        address: expense.party ? expense.party.address : "-"
+    };
+
+    // Item Mapping
+    const items = expense.items.map(item => {
+        // Calculate tax amount per item if not explicitly stored
+        // item structure: { name, note, quantity, price, amount }
+        // The detailed structure (taxable, igst etc) might be in item or calculated. 
+        // Based on DailyExpense Schema, we have: items: [{ name, quantity, price, amount, note }]
+        // But schema might have been updated or we assume basic calc.
+        // User request "taxable value, IGST/Cess/Total" implies these exist or need calculation.
+        // DailyExpense usually is simple. If items don't have tax fields, we assume inclusive or 0? 
+        // Existing `resolve-item` logic suggests we do have tax info available in frontend, 
+        // but does DailyExpense `items` array store it? 
+        // Let's assume standard fields or calculate. For now, simple mapping.
+
+        const qty = Number(item.quantity) || 0;
+        const rate = Number(item.price) || 0;
+        const total = Number(item.amount) || 0;
+        // Back-calculate taxable if not present (Assuming 0 tax if not stored)
+        // If tax fields are missing in DB items, we show 0.
+
+        return {
+            name: item.name,
+            qty: qty,
+            rate: rate,
+            discount: 0, // Field might not exist in simple expense
+            taxable: total, // Simplified if no tax info
+            tax: 0,
+            total: total
+        };
+    });
+
+    return {
+        expenseDetails: {
+            no: expense.expenseNo,
+            date: expense.expenseDate
+        },
+        vendorDetails,
+        items,
+        totals: {
+            grandTotal: expense.grandTotal,
+            totalInWords: expense.amountInWords || "",
+            currency: 'Rs.'
+        },
+        remarks: expense.remarks,
+        status: 'ACTIVE' // Expenses don't usually have CANCELLED status in this system yet
+    };
+};
+
+const mapExpenseToPDFData = async (expense, userId) => {
+    // Vendor Details
+    const vendorDetails = {
+        name: expense.party ? expense.party.name : (expense.customFields ? expense.customFields.get('vendorName') || "-" : "-"),
+        category: expense.category,
+        paymentType: expense.paymentType,
+        gstin: expense.party ? expense.party.gstin : "-",
+        state: expense.party ? expense.party.state : (expense.customFields ? expense.customFields.get('placeOfSupply') || "-" : "-"),
+        address: expense.party ? expense.party.address : "-",
+        phone: expense.party ? expense.party.phone : "-"
+    };
+
+    let totalQty = 0;
+    let totalDisc = 0;
+    let totalTaxable = 0;
+    let totalIgst = 0;
+    let totalCess = 0;
+
+    // Item Mapping
+    const items = expense.items.map(item => {
+        const qty = Number(item.quantity) || 0;
+        const rate = Number(item.price) || 0;
+        const amount = Number(item.amount) || 0;
+
+        const disc = 0;
+        const taxable = amount;
+        const igstPer = 0;
+        const igstAmt = 0;
+        const cess = 0;
+
+        totalQty += qty;
+        totalDisc += disc;
+        totalTaxable += taxable;
+        totalIgst += igstAmt;
+        totalCess += cess;
+
+        return {
+            name: item.name,
+            qty: qty,
+            rate: rate,
+            discount: disc,
+            taxable: taxable,
+            igstPer: igstPer,
+            igstAmt: igstAmt,
+            cess: cess,
+            total: amount
+        };
+    });
+
+    // Custom Fields (Printable)
+    const definitions = await DailyExpenseCustomField.find({ userId, status: 'Active', print: true });
+    const printableFields = definitions
+        .filter(def => expense.customFields && expense.customFields.get && expense.customFields.get(def._id.toString()))
+        .map(def => ({ name: def.name, value: expense.customFields.get(def._id.toString()) }));
+
+    return {
+        expenseDetails: {
+            no: expense.expenseNo,
+            date: expense.expenseDate
+        },
+        vendorDetails,
+        items,
+        totals: {
+            totalQty,
+            totalDisc,
+            totalTaxable,
+            totalIgst,
+            totalCess,
+            grandTotal: expense.grandTotal,
+            totalInWords: expense.amountInWords || "",
+            currency: 'Rs.'
+        },
+        customFields: printableFields,
+        remarks: expense.remarks,
+        status: 'ACTIVE'
+    };
+};
+
+// @desc    Download Expense PDF (Single or Merged)
+// @route   GET /api/daily-expenses/:id/download-pdf
+const downloadExpensePDF = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const expenses = await DailyExpense.find({ _id: { $in: ids }, userId: req.user._id }).populate('party');
+        if (!expenses || expenses.length === 0) return res.status(404).json({ success: false, message: 'Expense not found' });
+
+        const user = await User.findById(req.user._id);
+        const allPdfData = await Promise.all(expenses.map(exp => mapExpenseToPDFData(exp, req.user._id)));
+        const options = getCopyOptions(req);
+
+        const pdfBuffer = await generateDailyExpensePDF(allPdfData, user, options);
+
+        const filename = expenses.length === 1 ? `Expense_${expenses[0].expenseNo}.pdf` : 'Expenses_Merged.pdf';
+        res.set({
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': `attachment; filename="${filename}"`,
+            'Content-Length': pdfBuffer.length
+        });
+        res.send(pdfBuffer);
+
+    } catch (error) {
+        console.error('Download PDF Error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// @desc    Share Expense via Email (Single or Merged)
+// @route   POST /api/daily-expenses/:id/share-email
+const shareExpenseEmail = async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
+
+        const ids = req.params.id.split(',');
+        const expenses = await DailyExpense.find({ _id: { $in: ids }, userId: req.user._id }).populate('party');
+        if (!expenses || expenses.length === 0) return res.status(404).json({ success: false, message: 'Expense not found' });
+
+        const user = await User.findById(req.user._id);
+        const allPdfData = await Promise.all(expenses.map(exp => mapExpenseToPDFData(exp, req.user._id)));
+        const options = getCopyOptions(req);
+        const pdfBuffer = await generateDailyExpensePDF(allPdfData, user, options);
+
+        const filename = expenses.length === 1 ? `Expense_${expenses[0].expenseNo}.pdf` : 'Expenses_Merged.pdf';
+        const subject = expenses.length === 1 ? `Expense Voucher - ${expenses[0].expenseNo}` : 'Merged Expense Vouchers';
+
+        await sendEmail({
+            to: email,
+            subject: subject,
+            text: `Please find attached the expense voucher(s).`,
+            attachments: [{
+                filename: filename,
+                content: pdfBuffer
+            }]
+        });
+
+        res.status(200).json({ success: true, message: 'Email sent successfully' });
+
+    } catch (error) {
+        console.error('Share Email Error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// @desc    Share Expense via WhatsApp
+// @desc    Share Expense via WhatsApp (Single or Merged)
+// @route   POST /api/daily-expenses/:id/share-whatsapp
+const shareExpenseWhatsApp = async (req, res) => {
+    try {
+        const { mobile } = req.body;
+        if (!mobile) return res.status(400).json({ success: false, message: 'Mobile number is required' });
+
+        const ids = req.params.id.split(',');
+        const expenses = await DailyExpense.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!expenses || expenses.length === 0) return res.status(404).json({ success: false, message: 'Expense not found' });
+
+        // Generate a public link
+        const options = getCopyOptions(req);
+        let queryParams = [];
+        if (options.original) queryParams.push('original=true');
+        if (options.duplicate) queryParams.push('duplicate=true');
+        if (options.transport) queryParams.push('transport=true');
+        if (options.office) queryParams.push('office=true');
+
+        const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+        const link = `${req.protocol}://${req.get('host')}/api/daily-expenses/view-public/${req.params.id}/${generatePublicToken(req.params.id)}${queryString}`;
+
+        const message = expenses.length === 1
+            ? `Expense Voucher: ${expenses[0].expenseNo}\nDate: ${new Date(expenses[0].expenseDate).toLocaleDateString()}\nAmount: ${expenses[0].grandTotal}\nView Link: ${link}`
+            : `Multiple Expense Vouchers (${expenses.length})\nView Merged Link: ${link}`;
+
+        const waLink = `https://wa.me/${mobile}?text=${encodeURIComponent(message)}`;
+
+        res.status(200).json({ success: true, message: 'WhatsApp link generated', data: { link: waLink } });
+    } catch (error) {
+        console.error('Share WhatsApp Error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// @desc    Generate a secure public link for the expense (Single or Merged)
+// @route   GET /api/daily-expenses/:id/public-link
+const generatePublicLink = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const expenses = await DailyExpense.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!expenses || expenses.length === 0) return res.status(404).json({ success: false, message: "Expense not found" });
+
+        const token = generatePublicToken(req.params.id);
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const publicLink = `${baseUrl}/api/daily-expenses/view-public/${req.params.id}/${token}`;
+
+        res.status(200).json({ success: true, publicLink });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Public View Expense PDF (Single or Merged)
+// @route   GET /api/daily-expenses/view-public/:id/:token
+const viewExpensePublic = async (req, res) => {
+    try {
+        const { id, token } = req.params;
+        const expectedToken = generatePublicToken(id);
+
+        if (token !== expectedToken) {
+            return res.status(401).send("Invalid or expired link");
+        }
+
+        const ids = id.split(',');
+        const expenses = await DailyExpense.find({ _id: { $in: ids } }).populate('party');
+        if (!expenses || expenses.length === 0) return res.status(404).send("Expense not found");
+
+        // Use the userId from the first expense found
+        const userId = expenses[0].userId;
+        const user = await User.findById(userId);
+        const allPdfData = await Promise.all(expenses.map(exp => mapExpenseToPDFData(exp, userId)));
+        const options = getCopyOptions(req);
+        const pdfBuffer = await generateDailyExpensePDF(allPdfData, user || {}, options);
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'inline; filename="Expenses.pdf"');
+        res.status(200).send(pdfBuffer);
+    } catch (error) {
+        console.error('View Public Error:', error);
+        res.status(500).send("Error rendering expense");
+    }
+};
+
 module.exports = {
     createExpense,
     listExpenses,
@@ -687,5 +1123,13 @@ module.exports = {
     deleteItemColumn,
     importExpenses,
     getImportHistory,
-    printExpense
+    printExpense,
+    attachFile,
+    deleteAttachment,
+    getAttachment,
+    downloadExpensePDF,
+    shareExpenseEmail,
+    shareExpenseWhatsApp,
+    generatePublicLink,
+    viewExpensePublic
 };

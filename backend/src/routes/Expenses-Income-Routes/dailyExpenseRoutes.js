@@ -17,7 +17,15 @@ const {
     deleteItemColumn,
     importExpenses,
     getImportHistory,
-    printExpense
+    printExpense,
+    attachFile,
+    deleteAttachment,
+    getAttachment,
+    downloadExpensePDF,
+    shareExpenseEmail,
+    shareExpenseWhatsApp,
+    generatePublicLink,
+    viewExpensePublic
 } = require('../../controllers/Expenses-Income-Controller/dailyExpensesController');
 const multer = require('multer');
 const memoryUpload = multer({ storage: multer.memoryStorage() });
@@ -50,5 +58,14 @@ router.get('/summary', protect, getExpenseSummary);
 router.post('/import', protect, memoryUpload.single('file'), importExpenses);
 router.get('/import-history', protect, getImportHistory);
 router.get('/:id/print', protect, printExpense);
+
+router.post('/attach-file', protect, upload.single('attachment'), attachFile);
+router.delete('/attachment/:id', protect, deleteAttachment);
+router.get('/attachment/:id', protect, getAttachment);
+router.get('/:id/download-pdf', protect, downloadExpensePDF);
+router.post('/:id/share-email', protect, shareExpenseEmail);
+router.post('/:id/share-whatsapp', protect, shareExpenseWhatsApp);
+router.get('/:id/public-link', protect, generatePublicLink);
+router.get('/view-public/:id/:token', viewExpensePublic);
 
 module.exports = router;

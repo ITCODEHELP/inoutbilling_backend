@@ -13,11 +13,22 @@ const User = require('../../models/User-Model/User');
 const Staff = require('../../models/Setting-Model/Staff');
 const { sendInvoiceEmail } = require('../../utils/emailHelper');
 const { generateSaleInvoicePDF } = require('../../utils/saleInvoicePdfHelper');
+const { getCopyOptions } = require('../../utils/pdfHelper');
 const { recordActivity } = require('../../utils/activityLogHelper');
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
 const crypto = require('crypto');
+
+// Helper to generate secure public token
+const generatePublicToken = (id) => {
+    const secret = process.env.JWT_SECRET || 'your-default-secret';
+    return crypto
+        .createHmac('sha256', secret)
+        .update(id.toString())
+        .digest('hex')
+        .substring(0, 16);
+};
 const Product = require('../../models/Product-Service-Model/Product');
 const numberToWords = require('../../utils/numberToWords');
 
@@ -386,7 +397,8 @@ const handleCreateInvoiceLogic = async (req) => {
 
     // 7️⃣ Generate PDF Buffer
     const userData = await User.findById(req.user._id);
-    const pdfBuffer = await generateSaleInvoicePDF(invoice, userData);
+    const options = getCopyOptions(req);
+    const pdfBuffer = await generateSaleInvoicePDF(invoice, userData, options);
 
     // Save PDF to disk (optional but recommended for persistence)
     const pdfDir = 'src/uploads/invoices/pdf';
@@ -871,7 +883,8 @@ const handleCreateDynamicInvoiceLogic = async (req) => {
     }
 
     const userData = await User.findById(req.user._id);
-    const pdfBuffer = await generateSaleInvoicePDF(invoice, userData);
+    const options = getCopyOptions(req);
+    const pdfBuffer = await generateSaleInvoicePDF(invoice, userData, options);
     const pdfDir = 'src/uploads/invoices/pdf';
     if (!fs.existsSync(pdfDir)) fs.mkdirSync(pdfDir, { recursive: true });
     const pdfFileName = `invoice-${invoice._id}.pdf`;
@@ -978,18 +991,20 @@ const getInvoiceSummary = async (req, res) => {
 
 const shareEmail = async (req, res) => {
     try {
-        const invoice = await SaleInvoice.findOne({ _id: req.params.id, userId: req.user._id });
-        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+        const ids = req.params.id.split(',');
+        const invoices = await SaleInvoice.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!invoices || invoices.length === 0) return res.status(404).json({ success: false, message: "Invoice(s) not found" });
 
-        const customer = await Customer.findOne({ userId: req.user._id, companyName: invoice.customerInformation.ms });
+        const firstInvoice = invoices[0];
+        const customer = await Customer.findOne({ userId: req.user._id, companyName: firstInvoice.customerInformation.ms });
         const email = req.body.email || (customer ? customer.email : null);
 
         if (!email) return res.status(400).json({ success: false, message: "Customer email not found. Please provide an email address." });
 
-        const userData = await User.findById(req.user._id);
+        const options = getCopyOptions(req);
         const { sendInvoiceEmail } = require('../../utils/emailHelper');
-        await sendInvoiceEmail(invoice, email);
-        res.status(200).json({ success: true, message: `Invoice sent to ${email} successfully` });
+        await sendInvoiceEmail(invoices, email, false, options);
+        res.status(200).json({ success: true, message: `Invoice(s) sent to ${email} successfully` });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -997,10 +1012,12 @@ const shareEmail = async (req, res) => {
 
 const shareWhatsApp = async (req, res) => {
     try {
-        const invoice = await SaleInvoice.findOne({ _id: req.params.id, userId: req.user._id });
-        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+        const ids = req.params.id.split(',');
+        const invoices = await SaleInvoice.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!invoices || invoices.length === 0) return res.status(404).json({ success: false, message: "Invoice(s) not found" });
 
-        const customer = await Customer.findOne({ userId: req.user._id, companyName: invoice.customerInformation.ms });
+        const firstInvoice = invoices[0];
+        const customer = await Customer.findOne({ userId: req.user._id, companyName: firstInvoice.customerInformation.ms });
         const phone = req.body.phone || (customer ? customer.phone : null);
 
         if (!phone) return res.status(400).json({ success: false, message: "Customer phone not found. Please provide a phone number." });
@@ -1009,7 +1026,24 @@ const shareWhatsApp = async (req, res) => {
         const whatsappNumber = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
 
         // Construct message
-        const message = `Dear ${invoice.customerInformation.ms},\n\nPlease find your Invoice No: ${invoice.invoiceDetails.invoiceNumber} for Total Amount: ${invoice.totals.grandTotal.toFixed(2)}.\n\nThank you for your business!`;
+        const options = getCopyOptions(req);
+        let queryParams = [];
+        if (options.original) queryParams.push('original=true');
+        if (options.duplicate) queryParams.push('duplicate=true');
+        if (options.transport) queryParams.push('transport=true');
+        if (options.office) queryParams.push('office=true');
+
+        const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+        const token = generatePublicToken(req.params.id);
+        const publicLink = `${req.protocol}://${req.get('host')}/api/sale-invoice/view-public/${req.params.id}/${token}${queryString}`;
+
+        let message = '';
+        if (invoices.length === 1) {
+            message = `Dear ${firstInvoice.customerInformation.ms},\n\nPlease find your Invoice No: ${firstInvoice.invoiceDetails.invoiceNumber} for Total Amount: ${firstInvoice.totals.grandTotal.toFixed(2)}.\n\nView Link: ${publicLink}\n\nThank you for your business!`;
+        } else {
+            message = `Dear ${firstInvoice.customerInformation.ms},\n\nPlease find your merged Invoices for Total Amount: ${invoices.reduce((sum, inv) => sum + inv.totals.grandTotal, 0).toFixed(2)}.\n\nView Link: ${publicLink}\n\nThank you for your business!`;
+        }
+
         const encodedMessage = encodeURIComponent(message);
         const deepLink = `https://wa.me/${whatsappNumber}?text=${encodedMessage}`;
 
@@ -1061,14 +1095,18 @@ const shareSMS = async (req, res) => {
 
 const downloadInvoicePDF = async (req, res) => {
     try {
-        const invoice = await SaleInvoice.findOne({ _id: req.params.id, userId: req.user._id });
-        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+        const ids = req.params.id.split(',');
+        const invoices = await SaleInvoice.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!invoices || invoices.length === 0) return res.status(404).json({ success: false, message: "Invoice(s) not found" });
 
         const userData = await User.findById(req.user._id);
-        const pdfBuffer = await generateSaleInvoicePDF(invoice, userData);
+        const options = getCopyOptions(req);
+        const pdfBuffer = await generateSaleInvoicePDF(invoices, userData, options);
+
+        const filename = invoices.length === 1 ? `Invoice_${invoices[0].invoiceDetails.invoiceNumber}.pdf` : `Merged_Invoices.pdf`;
 
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="Invoice_${invoice.invoiceDetails.invoiceNumber}.pdf"`);
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.status(200).send(pdfBuffer);
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -1557,7 +1595,8 @@ const updateInvoice = async (req, res) => {
 
         // 6️⃣ Re-generate PDF
         const userData = await User.findById(req.user._id);
-        const pdfBuffer = await generateSaleInvoicePDF(invoice, userData);
+        const options = getCopyOptions(req);
+        const pdfBuffer = await generateSaleInvoicePDF(invoice, userData, options);
         const pdfDir = 'src/uploads/invoices/pdf';
         if (!fs.existsSync(pdfDir)) {
             fs.mkdirSync(pdfDir, { recursive: true });
@@ -1586,18 +1625,14 @@ const updateInvoice = async (req, res) => {
  */
 const generatePublicLink = async (req, res) => {
     try {
-        const invoice = await SaleInvoice.findOne({ _id: req.params.id, userId: req.user._id });
-        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+        const ids = req.params.id.split(',');
+        const invoices = await SaleInvoice.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!invoices || invoices.length === 0) return res.status(404).json({ success: false, message: "Invoice(s) not found" });
 
-        const secret = process.env.JWT_SECRET || 'your-default-secret';
-        const token = crypto
-            .createHmac('sha256', secret)
-            .update(invoice._id.toString())
-            .digest('hex')
-            .substring(0, 16);
+        const token = generatePublicToken(req.params.id);
 
         const baseUrl = `${req.protocol}://${req.get('host')}`;
-        const publicLink = `${baseUrl}/api/sale-invoice/view-public/${invoice._id}/${token}`;
+        const publicLink = `${baseUrl}/api/sale-invoice/view-public/${req.params.id}/${token}`;
 
         res.status(200).json({ success: true, publicLink });
     } catch (error) {
@@ -1612,22 +1647,19 @@ const viewInvoicePublic = async (req, res) => {
     try {
         const { id, token } = req.params;
 
-        const secret = process.env.JWT_SECRET || 'your-default-secret';
-        const expectedToken = crypto
-            .createHmac('sha256', secret)
-            .update(id)
-            .digest('hex')
-            .substring(0, 16);
+        const expectedToken = generatePublicToken(id);
 
         if (token !== expectedToken) {
             return res.status(401).send("Invalid or expired link");
         }
 
-        const invoice = await SaleInvoice.findById(id);
-        if (!invoice) return res.status(404).send("Invoice not found");
+        const ids = id.split(',');
+        const invoices = await SaleInvoice.find({ _id: { $in: ids } });
+        if (!invoices || invoices.length === 0) return res.status(404).send("Invoice(s) not found");
 
-        const userData = await User.findById(invoice.userId);
-        const pdfBuffer = await generateSaleInvoicePDF(invoice, userData || {});
+        const userData = await User.findById(invoices[0].userId);
+        const options = getCopyOptions(req);
+        const pdfBuffer = await generateSaleInvoicePDF(invoices, userData || {}, options);
 
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', 'inline; filename="Invoice.pdf"');

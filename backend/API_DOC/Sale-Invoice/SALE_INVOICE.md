@@ -31,6 +31,10 @@ Content-Type: multipart/form-data
 | `shareOnEmail` | Boolean | Flag to trigger email share |
 | `createDeliveryChallan`| Boolean | Flag to auto-create delivery challan |
 | `attachments` | File(s) | Up to 5 document attachments |
+| `original` | Boolean | Optional. Include original copy in PDF (default: true) |
+| `duplicate` | Boolean | Optional. Include duplicate copy in PDF |
+| `transport` | Boolean | Optional. Include transport copy in PDF |
+| `office` | Boolean | Optional. Include office copy in PDF |
 
 **Nested Object Structures**
 
@@ -242,16 +246,29 @@ Authorization: Bearer <token>
 ```
 Returns the PDF binary file as an attachment for direct download.
 
+**Multi-Selection Support**: Supports comma-separated IDs in `:id` (e.g., `id1,id2,id3`). Returns a merged PDF containing all selected invoices.
+
+**Query Parameters (Optional)**
+- `original`: Boolean (default: true)
+- `duplicate`: Boolean
+- `transport`: Boolean
+- `office`: Boolean
+
 ### Share via Email
 ```http
 POST /:id/share-email
 Authorization: Bearer <token>
 Content-Type: application/json
 ```
+**Multi-Selection Support**: Supports comma-separated IDs in `:id`.
+
 **Request Body**:
-```json
 {
-  "email": "customer@example.com" (Optional - defaults to customer record email)
+  "email": "customer@example.com",
+  "original": true,
+  "duplicate": false,
+  "transport": false,
+  "office": false
 }
 ```
 
@@ -261,10 +278,16 @@ POST /:id/share-whatsapp
 Authorization: Bearer <token>
 Content-Type: application/json
 ```
+**Multi-Selection Support**: Supports comma-separated IDs in `:id`.
+
 **Request Body**:
 ```json
 {
-  "phone": "9876543210" (Optional - defaults to customer record phone)
+  "phone": "9876543210",
+  "original": true,
+  "duplicate": false,
+  "transport": false,
+  "office": false
 }
 ```
 **Response**: Returns a `wa.me` deep link with a pre-filled message.
@@ -338,6 +361,8 @@ All conversion endpoints return the newly created document.
 GET /:id/public-link 
 Authorization: Bearer <token>
 ```
+**Multi-Selection Support**: Supports comma-separated IDs in `:id`.
+
 **Response**: `{ "success": true, "publicLink": "http://.../api/sale-invoice/view-public/:id/:token" }`
 
 ### View Public PDF (Unprotected) 
@@ -345,3 +370,29 @@ Authorization: Bearer <token>
 GET /view-public/:id/:token
 ```
 Returns PDF binary for Sale Invoice. This URL is used for the "Copy Link" feature.
+
+**Multi-Selection Support**: Supports comma-separated IDs in `:id`.
+
+**Query Parameters (Optional)**
+- `original`: Boolean (default: true)
+- `duplicate`: Boolean
+- `transport`: Boolean
+- `transport`: Boolean
+- `office`: Boolean
+
+---
+
+## Merged Invoice PDF (Multi-Selection)
+
+Existing endpoints for Print, Download, Email Share, WhatsApp Share, and Public View now support multiple invoices by passing a comma-separated list of IDs in the `:id` parameter.
+
+**Example**:
+`GET /api/sale-invoice/65a7...123,65a7...456,65a7...789/download?original=true&duplicate=true`
+
+**Behavior**:
+1. All selected IDs are validated and fetched.
+2. For each invoice:
+   - All selected copies (Original, Duplicate, etc.) are generated sequentially.
+   - Each copy starts on a new page.
+3. All generated pages are merged into a single PDF document.
+4. If sharing via WhatsApp, a single public link is generated that opens the merged PDF.

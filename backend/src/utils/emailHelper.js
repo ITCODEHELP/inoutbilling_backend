@@ -1,23 +1,27 @@
 const nodemailer = require('nodemailer');
 const { generateSaleInvoicePDF } = require('./saleInvoicePdfHelper');
 const { generatePurchaseInvoicePDF } = require('./purchaseInvoicePdfHelper');
+const { generateReceiptVoucherPDF } = require('./receiptPdfHelper');
 const User = require('../models/User-Model/User');
 
-const sendInvoiceEmail = async (invoice, email, isPurchase = false) => {
+const sendInvoiceEmail = async (invoices, email, isPurchase = false, options = { original: true }) => {
     try {
         if (!email) {
             console.log(`No ${isPurchase ? 'vendor' : 'customer'} email provided, skipping email share.`);
             return;
         }
 
-        const userData = await User.findById(invoice.userId);
+        const items = Array.isArray(invoices) ? invoices : [invoices];
+        if (items.length === 0) return;
+
+        const userData = await User.findById(items[0].userId);
         let pdfBuffer;
         if (isPurchase) {
             // Use professional PDF helper for purchase invoices
-            pdfBuffer = await generatePurchaseInvoicePDF(invoice, userData || {});
+            pdfBuffer = await generatePurchaseInvoicePDF(items, userData || {}, options);
         } else {
             // Use specialized Sale Invoice PDF helper with professional template
-            pdfBuffer = await generateSaleInvoicePDF(invoice, userData || {});
+            pdfBuffer = await generateSaleInvoicePDF(items, userData || {}, options);
         }
 
         const transporter = nodemailer.createTransport({
@@ -32,20 +36,21 @@ const sendInvoiceEmail = async (invoice, email, isPurchase = false) => {
 
         const invoiceType = isPurchase ? 'Purchase Invoice' : 'Tax Invoice';
         const senderLabel = isPurchase ? 'Vendor' : 'Customer';
+        const invoiceNo = items.length === 1 ? items[0].invoiceDetails.invoiceNumber : 'Multiple';
 
         const mailOptions = {
             from: `${process.env.FROM_NAME} <${process.env.FROM_EMAIL}>`,
             to: email,
-            subject: `${invoiceType} ${invoice.invoiceDetails.invoiceNumber} from Inout Billing`,
-            text: `Dear ${senderLabel},\n\nPlease find attached the ${invoiceType.toLowerCase()} ${invoice.invoiceDetails.invoiceNumber}.\n\nThank you!`,
+            subject: `${invoiceType} ${invoiceNo} from Inout Billing`,
+            text: `Dear ${senderLabel},\n\nPlease find attached the ${invoiceType.toLowerCase()} ${invoiceNo}.\n\nThank you!`,
             html: `
                 <p>Dear ${senderLabel},</p>
-                <p>Please find attached the <strong>${invoiceType.toLowerCase()} ${invoice.invoiceDetails.invoiceNumber}</strong>.</p>
+                <p>Please find attached the <strong>${invoiceType.toLowerCase()} ${invoiceNo}</strong>.</p>
                 <p>Thank you!</p>
             `,
             attachments: [
                 {
-                    filename: `${invoiceType.replace(' ', '_')}_${invoice.invoiceDetails.invoiceNumber}.pdf`,
+                    filename: items.length === 1 ? `${invoiceType.replace(' ', '_')}_${invoiceNo}.pdf` : `Merged_${invoiceType.replace(' ', '_')}s.pdf`,
                     content: pdfBuffer,
                     contentType: 'application/pdf'
                 }
@@ -60,16 +65,20 @@ const sendInvoiceEmail = async (invoice, email, isPurchase = false) => {
     }
 };
 
-const sendReceiptEmail = async (mappedReceipt, email) => {
+const sendReceiptEmail = async (invoices, email, options = { original: true }) => {
     try {
         if (!email) return;
 
-        const userData = await User.findById(mappedReceipt.userId);
-        const pdfBuffer = await generateSaleInvoicePDF(
-            mappedReceipt,
+        const items = Array.isArray(invoices) ? invoices : [invoices];
+        if (items.length === 0) return;
+
+        const userData = await User.findById(items[0].userId);
+        const pdfBuffer = await generateReceiptVoucherPDF(
+            items,
             userData || {},
             "RECEIPT VOUCHER",
-            { no: "Receipt No.", date: "Receipt Date", sectionTitle: "Customer Detail" }
+            { no: "Receipt No.", date: "Receipt Date", details: "Customer Detail" },
+            options
         );
 
         const transporter = nodemailer.createTransport({
@@ -82,19 +91,21 @@ const sendReceiptEmail = async (mappedReceipt, email) => {
             },
         });
 
+        const receiptNo = items.length === 1 ? items[0].invoiceDetails.invoiceNumber : 'Multiple';
+
         const mailOptions = {
             from: `${process.env.FROM_NAME} <${process.env.FROM_EMAIL}>`,
             to: email,
-            subject: `Receipt Voucher ${mappedReceipt.invoiceDetails.invoiceNumber} from Inout Billing`,
-            text: `Dear Customer,\n\nPlease find attached the receipt voucher ${mappedReceipt.invoiceDetails.invoiceNumber}.\n\nThank you!`,
+            subject: `Receipt Voucher ${receiptNo} from Inout Billing`,
+            text: `Dear Customer,\n\nPlease find attached the receipt voucher ${receiptNo}.\n\nThank you!`,
             html: `
                 <p>Dear Customer,</p>
-                <p>Please find attached the <strong>receipt voucher ${mappedReceipt.invoiceDetails.invoiceNumber}</strong>.</p>
+                <p>Please find attached the <strong>receipt voucher ${receiptNo}</strong>.</p>
                 <p>Thank you!</p>
             `,
             attachments: [
                 {
-                    filename: `Receipt_${mappedReceipt.invoiceDetails.invoiceNumber}.pdf`,
+                    filename: items.length === 1 ? `Receipt_${receiptNo}.pdf` : `Merged_Receipts.pdf`,
                     content: pdfBuffer,
                     contentType: 'application/pdf'
                 }
@@ -109,16 +120,20 @@ const sendReceiptEmail = async (mappedReceipt, email) => {
     }
 };
 
-const sendOutwardPaymentEmail = async (mappedPayment, email) => {
+const sendOutwardPaymentEmail = async (payments, email, options = { original: true }) => {
     try {
         if (!email) return;
 
-        const userData = await User.findById(mappedPayment.userId);
-        const pdfBuffer = await generateSaleInvoicePDF(
-            mappedPayment,
+        const items = Array.isArray(payments) ? payments : [payments];
+        if (items.length === 0) return;
+
+        const userData = await User.findById(items[0].userId);
+        const pdfBuffer = await generateReceiptVoucherPDF(
+            items,
             userData || {},
             "PAYMENT VOUCHER",
-            { no: "Payment No.", date: "Payment Date", sectionTitle: "Vendor Details" }
+            { no: "Payment No.", date: "Payment Date", details: "Vendor Details" },
+            options
         );
 
         const transporter = nodemailer.createTransport({
@@ -131,19 +146,21 @@ const sendOutwardPaymentEmail = async (mappedPayment, email) => {
             },
         });
 
+        const paymentNo = items.length === 1 ? items[0].invoiceDetails.invoiceNumber : 'Multiple';
+
         const mailOptions = {
             from: `${process.env.FROM_NAME} <${process.env.FROM_EMAIL}>`,
             to: email,
-            subject: `Payment Voucher ${mappedPayment.invoiceDetails.invoiceNumber} from Inout Billing`,
-            text: `Dear Vendor,\n\nPlease find attached the payment voucher ${mappedPayment.invoiceDetails.invoiceNumber}.\n\nThank you!`,
+            subject: `Payment Voucher ${paymentNo} from Inout Billing`,
+            text: `Dear Vendor,\n\nPlease find attached the payment voucher ${paymentNo}.\n\nThank you!`,
             html: `
                 <p>Dear Vendor,</p>
-                <p>Please find attached the <strong>payment voucher ${mappedPayment.invoiceDetails.invoiceNumber}</strong>.</p>
+                <p>Please find attached the <strong>payment voucher ${paymentNo}</strong>.</p>
                 <p>Thank you!</p>
             `,
             attachments: [
                 {
-                    filename: `Payment_${mappedPayment.invoiceDetails.invoiceNumber}.pdf`,
+                    filename: items.length === 1 ? `Payment_${paymentNo}.pdf` : `Merged_Payments.pdf`,
                     content: pdfBuffer,
                     contentType: 'application/pdf'
                 }
