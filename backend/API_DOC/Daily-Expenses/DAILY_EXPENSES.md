@@ -216,3 +216,209 @@ Body:
 }
 ```
 
+---
+
+# [EXPENSE CATEGORY MANAGEMENT]
+
+## Get All Expense Categories
+`GET` /api/expense-categories
+
+### Header
+> Authorization: Bearer <token>
+
+### Query Parameters (Optional)
+- `search`: String (Partial, case-insensitive match on category name)
+
+### Description
+This endpoint **derives unique expense categories dynamically from the DailyExpense table** and merges them with the ExpenseCategory master table. It groups all expenses by their `category` field to get unique category names, then retrieves or creates status records from the ExpenseCategory table for each unique category.
+
+**How it works:**
+1. Aggregates unique category names from user's expenses
+2. For each unique category, checks if a status record exists in ExpenseCategory
+3. If no status record exists, creates one with default "Active" status
+4. Filters out deleted categories (isDeleted = true)
+5. Returns category list with name, categoryId, and current status
+
+**Note:** Categories appear automatically when used in expenses, but can also be manually created.
+
+### Response
+```json
+{
+  "success": true,
+  "count": 3,
+  "data": [
+    {
+      "_id": "categoryId123",
+      "categoryId": "categoryId123",
+      "categoryName": "Travel",
+      "name": "Travel",
+      "status": "Active",
+      "isDeleted": false,
+      "createdAt": "2026-01-20T10:00:00.000Z",
+      "updatedAt": "2026-01-20T10:00:00.000Z"
+    },
+    {
+      "_id": "categoryId456",
+      "categoryId": "categoryId456",
+      "categoryName": "Fuel",
+      "name": "Fuel",
+      "status": "Active",
+      "isDeleted": false,
+      "createdAt": "2026-01-20T10:00:00.000Z",
+      "updatedAt": "2026-01-20T10:00:00.000Z"
+    }
+  ]
+}
+```
+
+## Create Expense Category
+`POST` /api/expense-categories
+
+### Header
+> Authorization: Bearer <token>
+> Content-Type: application/json
+
+### Description
+Manually create a new expense category in the master table. Categories can also be created automatically when used in expenses.
+
+### Request Body
+```json
+{
+  "name": "Office Supplies"
+}
+```
+
+### Response
+```json
+{
+  "success": true,
+  "message": "Category created successfully",
+  "data": {
+    "_id": "categoryId789",
+    "userId": "userId123",
+    "name": "Office Supplies",
+    "status": "Active",
+    "isDeleted": false,
+    "createdAt": "2026-01-20T10:00:00.000Z",
+    "updatedAt": "2026-01-20T10:00:00.000Z"
+  }
+}
+```
+
+### Error Response
+```json
+{
+  "success": false,
+  "message": "Category already exists"
+}
+```
+
+## Update Expense Category
+`PUT` /api/expense-categories/:id
+
+### Header
+> Authorization: Bearer <token>
+> Content-Type: application/json
+
+### Description
+Update an existing expense category name. This does not affect existing expense records.
+
+### Request Body
+```json
+{
+  "name": "Business Travel"
+}
+```
+
+### Response
+```json
+{
+  "success": true,
+  "message": "Category updated successfully",
+  "data": {
+    "_id": "categoryId123",
+    "userId": "userId123",
+    "name": "Business Travel",
+    "status": "Active",
+    "isDeleted": false,
+    "createdAt": "2026-01-20T10:00:00.000Z",
+    "updatedAt": "2026-01-20T10:30:00.000Z"
+  }
+}
+```
+
+### Error Response
+```json
+{
+  "success": false,
+  "message": "Category name already exists"
+}
+```
+
+## Delete Expense Category
+`DELETE` /api/expense-categories/:id
+
+### Header
+> Authorization: Bearer <token>
+
+### Description
+**Soft delete** an expense category. The category is marked as deleted (isDeleted = true) but not removed from the database. Deleted categories are hidden from the listing by default.
+
+**Protection:** Cannot delete a category if it is linked to existing expenses. You must remove or reassign those expenses first.
+
+### Response (Success)
+```json
+{
+  "success": true,
+  "message": "Category deleted successfully"
+}
+```
+
+### Error Response (Linked to Expenses)
+```json
+{
+  "success": false,
+  "message": "Cannot delete category. It is linked to 15 expense(s). Please remove or reassign those expenses first."
+}
+```
+
+### Error Response (Not Found)
+```json
+{
+  "success": false,
+  "message": "Category not found"
+}
+```
+
+## Toggle Category Status
+`PATCH` /api/expense-categories/:id/toggle-status
+
+### Header
+> Authorization: Bearer <token>
+
+### Description
+Toggles the category status between `Active` and `Inactive`. When a category is clicked in the UI, this endpoint is called to switch its status.
+
+### Response
+```json
+{
+  "success": true,
+  "message": "Category status updated to Inactive",
+  "data": {
+    "_id": "categoryId123",
+    "userId": "userId123",
+    "name": "Travel",
+    "status": "Inactive",
+    "createdAt": "2026-01-20T10:00:00.000Z",
+    "updatedAt": "2026-01-20T10:30:00.000Z"
+  }
+}
+```
+
+### Features
+- Categories are listed uniquely by `categoryName`
+- Each category displays current status (Active/Inactive)
+- Clicking status toggles between Active and Inactive
+- All data is user-based (company-based)
+- Response includes `categoryId`, `categoryName`, and `status`
+- Deleted categories are excluded from listing

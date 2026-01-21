@@ -224,3 +224,37 @@ POST /:id/convert/debit-note
 POST /:id/convert/purchase-order
 ```
 All conversion endpoints return the newly created document.
+
+### Generate Public Link (Copy Link)
+```http
+GET /:id/public-link
+Authorization: Bearer <token>
+```
+Generates a secure, shareable public link for viewing the purchase invoice without authentication.
+
+**Response**:
+```json
+{
+  "success": true,
+  "publicLink": "http://localhost:5000/api/purchase-invoice/view-public/:id/:token"
+}
+```
+
+### View Public Purchase Invoice (Unprotected)
+```http
+GET /view-public/:id/:token
+```
+**No authentication required**. Validates the token and returns the purchase invoice PDF for read-only viewing.
+
+**Features**:
+- Token-based security (HMAC-SHA256)
+- Read-only access (no edit/delete)
+- Validates invoice status (returns error for cancelled/deleted invoices)
+- Returns PDF inline for browser viewing
+
+**Response**: PDF binary file (Content-Type: application/pdf)
+
+**Error Responses**:
+- `401`: Invalid or expired link
+- `403`: Invoice cancelled or deleted
+- `404`: Invoice not found

@@ -1,0 +1,19 @@
+Sample S Doc:
+{
+  "_id": "696e071783ad00bb7dbfa5b1",
+  "S": {
+    " No": {
+      "": 1
+    }
+  },
+  "Chapter / Heading /": "0202, 0203,",
+  "SGST / UTGST Rate (%)": 0.025,
+  "Description of Goods": "All goods [other than fresh or chilled] pre-packaged and labelled.",
+  "CGST Rate (%)": 0.025,
+  "IGST Rate (%)": 0.05,
+  "SOURCE": "GST_TAX_RATES"
+}
+
+Count 'S' with 9954: 0
+
+Count 'S' with ^99: 0

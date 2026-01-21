@@ -47,4 +47,8 @@ router.post('/:id/convert/purchase-order', protect, PurchaseInvoiceController.co
 router.get('/:id/hsn-summary', protect, PurchaseInvoiceController.getHSNSummary);
 router.post('/resolve-item', protect, PurchaseInvoiceController.resolvePurchaseInvoiceItem);
 
+// Public Link (Copy Link feature)
+router.get('/:id/public-link', protect, PurchaseInvoiceController.generatePublicLink);
+router.get('/view-public/:id/:token', PurchaseInvoiceController.viewInvoicePublic); // No auth required
+
 module.exports = router;

@@ -295,3 +295,48 @@ GET /product/custom-columns
 Authorization: Bearer <token>
 ```
 
+
+---
+
+## Utilities
+
+### Resolve Tax from HSN/SAC
+Use this API to resolve tax details and calculations based on HSN or SAC code explicitly, or product selection. Suitable for auto-filling tax fields in Product/Service forms.
+
+```http
+POST /sale-invoice/resolve-item
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body**
+```json
+{
+  "hsnSac": "9954",  // HSN or SAC Code
+  "price": 100,
+  "qty": 1
+}
+```
+
+**Response**
+Returns resolved tax details (if found in DB) along with calculations.
+```json
+{
+  "success": true,
+  "data": {
+    "hsnSac": "9954",
+    "price": 100,
+    "qty": 1,
+    "cgst": 9,
+    "sgst": 9,
+    "igst": 18,
+    "resolvedTaxType": "CGST+SGST",
+    "resolvedGstRate": 18,
+    "resolvedIgst": 18,
+    "resolvedCgst": 9,
+    "resolvedSgst": 9,
+    "taxableValue": 100,
+    "total": 118
+  }
+}
+```
