@@ -106,7 +106,27 @@ const quotationSchema = new mongoose.Schema({
         type: Map,
         of: mongoose.Schema.Types.Mixed,
         default: {}
-    }
+    },
+    conversions: {
+        convertedTo: [{
+            docType: { type: String },
+            docId: { type: mongoose.Schema.Types.ObjectId },
+            docNo: { type: String },
+            convertedAt: { type: Date }
+        }],
+        convertedFrom: {
+            docType: { type: String },
+            docId: { type: mongoose.Schema.Types.ObjectId }
+        }
+    },
+    attachments: [{
+        fileName: { type: String },
+        filePath: { type: String },
+        fileSize: { type: Number },
+        mimeType: { type: String },
+        uploadedAt: { type: Date, default: Date.now },
+        uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+    }]
 }, {
     timestamps: true
 });

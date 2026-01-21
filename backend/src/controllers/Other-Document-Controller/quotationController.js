@@ -7,6 +7,9 @@ const { calculateDocumentTotals, getSummaryAggregation } = require('../../utils/
 const numberToWords = require('../../utils/numberToWords');
 const { generateQuotationPDF } = require('../../utils/pdfHelper');
 const { calculateShippingDistance } = require('../../utils/shippingHelper');
+const { recordActivity } = require('../../utils/activityLogHelper');
+const fs = require('fs');
+const path = require('path');
 
 // Helper to build search query (mirrors DailyExpense buildExpenseQuery)
 const buildQuotationQuery = async (userId, queryParams) => {
@@ -493,6 +496,339 @@ const deleteItemColumn = async (req, res) => {
     }
 };
 
+// @desc    Setup conversion to Sale Invoice (Prefill Data)
+// @route   GET /api/quotations/:id/convert-to-invoice
+const convertToSaleInvoiceData = async (req, res) => {
+    try {
+        const quotation = await Quotation.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!quotation) {
+            return res.status(404).json({ success: false, message: 'Quotation not found' });
+        }
+
+        const data = quotation.toObject();
+
+        // Map data to Sale Invoice structure for frontend prefilling
+        const mappedData = {
+            customerInformation: data.customerInformation,
+            shippingAddress: data.shippingAddress,
+            useSameShippingAddress: data.useSameShippingAddress,
+            items: data.items.map(item => ({
+                productName: item.productName,
+                productGroup: item.productGroup,
+                itemNote: item.itemNote,
+                hsnSac: item.hsnSac,
+                qty: item.qty,
+                uom: item.uom,
+                price: item.price,
+                discountValue: item.discount, // Quotation uses 'discount', Invoice uses 'discountValue'
+                discountType: 'Percentage', // Defaulting to Percentage as Quotation discount is usually percentage
+                igst: item.igst,
+                cgst: item.cgst,
+                sgst: item.sgst,
+                taxableValue: item.price * item.qty, // Simple estimate, will be recalculated on save
+                total: item.total
+            })),
+            additionalCharges: data.additionalCharges || [],
+            totals: data.totals,
+            paymentType: data.paymentType,
+            staff: data.staff,
+            branch: data.branch,
+            bankDetails: data.bankDetails,
+            termsTitle: data.termsTitle,
+            termsDetails: data.termsDetails,
+            documentRemarks: data.documentRemarks,
+            customFields: data.customFields || {},
+            conversions: {
+                convertedFrom: {
+                    docType: 'Quotation',
+                    docId: quotation._id
+                }
+            }
+        };
+
+        res.status(200).json({
+            success: true,
+            message: 'Quotation data for conversion retrieved',
+            data: mappedData
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Setup conversion to Purchase Invoice (Prefill Data)
+// @route   GET /api/quotations/:id/convert-to-purchase-invoice
+const convertToPurchaseInvoiceData = async (req, res) => {
+    try {
+        const quotation = await Quotation.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!quotation) return res.status(404).json({ success: false, message: 'Quotation not found' });
+
+        const data = quotation.toObject();
+        const mappedData = {
+            vendorInformation: data.customerInformation, // Map Customer to Vendor
+            shippingAddress: data.shippingAddress,
+            useSameShippingAddress: data.useSameShippingAddress,
+            items: data.items.map(item => ({
+                productName: item.productName,
+                productGroup: item.productGroup,
+                itemNote: item.itemNote,
+                hsnSac: item.hsnSac,
+                qty: item.qty,
+                uom: item.uom,
+                price: item.price,
+                discountValue: item.discount,
+                discountType: 'Percentage',
+                igst: item.igst,
+                cgst: item.cgst,
+                sgst: item.sgst,
+                taxableValue: item.price * item.qty,
+                total: item.total
+            })),
+            additionalCharges: data.additionalCharges || [],
+            totals: data.totals,
+            paymentType: data.paymentType,
+            staff: data.staff,
+            branch: data.branch,
+            bankDetails: data.bankDetails,
+            termsTitle: data.termsTitle,
+            termsDetails: data.termsDetails,
+            documentRemarks: data.documentRemarks,
+            customFields: data.customFields || {},
+            conversions: {
+                convertedFrom: { docType: 'Quotation', docId: quotation._id }
+            }
+        };
+        res.status(200).json({ success: true, message: 'Quotation data for Purchase Invoice conversion retrieved', data: mappedData });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
+// @desc    Setup conversion to Proforma Invoice (Prefill Data)
+// @route   GET /api/quotations/:id/convert-to-proforma
+const convertToProformaData = async (req, res) => {
+    try {
+        const quotation = await Quotation.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!quotation) return res.status(404).json({ success: false, message: 'Quotation not found' });
+
+        const data = quotation.toObject();
+        const mappedData = {
+            customerInformation: data.customerInformation,
+            shippingAddress: data.shippingAddress,
+            useSameShippingAddress: data.useSameShippingAddress,
+            items: data.items,
+            additionalCharges: data.additionalCharges || [],
+            totals: data.totals,
+            paymentType: data.paymentType,
+            staff: data.staff,
+            branch: data.branch,
+            bankDetails: data.bankDetails,
+            termsTitle: data.termsTitle,
+            termsDetails: data.termsDetails,
+            documentRemarks: data.documentRemarks,
+            customFields: data.customFields || {},
+            conversions: {
+                convertedFrom: { docType: 'Quotation', docId: quotation._id }
+            }
+        };
+        res.status(200).json({ success: true, message: 'Quotation data for Proforma conversion retrieved', data: mappedData });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
+// @desc    Setup conversion to Delivery Challan (Prefill Data)
+// @route   GET /api/quotations/:id/convert-to-challan
+const convertToChallanData = async (req, res) => {
+    try {
+        const quotation = await Quotation.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!quotation) return res.status(404).json({ success: false, message: 'Quotation not found' });
+
+        const data = quotation.toObject();
+        const mappedData = {
+            customerInformation: data.customerInformation,
+            shippingAddress: data.shippingAddress,
+            useSameShippingAddress: data.useSameShippingAddress,
+            items: data.items,
+            additionalCharges: data.additionalCharges || [],
+            totals: data.totals,
+            staff: data.staff,
+            branch: data.branch,
+            bankDetails: data.bankDetails,
+            termsTitle: data.termsTitle,
+            termsDetails: data.termsDetails,
+            documentRemarks: data.documentRemarks,
+            customFields: data.customFields || {},
+            conversions: {
+                convertedFrom: { docType: 'Quotation', docId: quotation._id }
+            }
+        };
+        res.status(200).json({ success: true, message: 'Quotation data for Delivery Challan conversion retrieved', data: mappedData });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
+// @desc    Setup conversion to Purchase Order (Prefill Data)
+// @route   GET /api/quotations/:id/convert-to-purchase-order
+const convertToPurchaseOrderData = async (req, res) => {
+    try {
+        const quotation = await Quotation.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!quotation) return res.status(404).json({ success: false, message: 'Quotation not found' });
+
+        const data = quotation.toObject();
+        const mappedData = {
+            vendorInformation: data.customerInformation, // Map Customer to Vendor
+            shippingAddress: data.shippingAddress,
+            useSameShippingAddress: data.useSameShippingAddress,
+            items: data.items,
+            additionalCharges: data.additionalCharges || [],
+            totals: data.totals,
+            staff: data.staff,
+            branch: data.branch,
+            bankDetails: data.bankDetails,
+            termsTitle: data.termsTitle,
+            termsDetails: data.termsDetails,
+            documentRemarks: data.documentRemarks,
+            customFields: data.customFields || {},
+            conversions: {
+                convertedFrom: { docType: 'Quotation', docId: quotation._id }
+            }
+        };
+        res.status(200).json({ success: true, message: 'Quotation data for Purchase Order conversion retrieved', data: mappedData });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
+
+// --- Attachment Handlers ---
+
+// @desc    Attach files to Quotation
+// @route   POST /api/quotations/:id/attach-file
+const attachQuotationFile = async (req, res) => {
+    try {
+        if (!req.files || req.files.length === 0) return res.status(400).json({ success: false, message: "No files uploaded" });
+
+        const newAttachments = req.files.map(file => ({
+            fileName: file.filename,
+            filePath: file.path,
+            fileSize: file.size,
+            mimeType: file.mimetype,
+            uploadedAt: new Date(),
+            uploadedBy: req.user._id
+        }));
+
+        const quotation = await Quotation.findOneAndUpdate(
+            { _id: req.params.id, userId: req.user._id },
+            { $push: { attachments: { $each: newAttachments } } },
+            { new: true }
+        );
+
+        if (!quotation) return res.status(404).json({ success: false, message: "Quotation not found" });
+
+        await recordActivity(
+            req,
+            'Attachment',
+            'Quotation',
+            `Files attached to Quotation: ${quotation.quotationDetails.quotationNumber}`,
+            quotation.quotationDetails.quotationNumber
+        );
+
+        res.status(200).json({ success: true, message: "Files attached successfully", data: quotation.attachments });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Get Quotation Attachments
+// @route   GET /api/quotations/:id/attachments
+const getQuotationAttachments = async (req, res) => {
+    try {
+        const quotation = await Quotation.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!quotation) return res.status(404).json({ success: false, message: "Quotation not found" });
+        res.status(200).json({ success: true, data: quotation.attachments || [] });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Update (Replace) Quotation Attachment
+// @route   PUT /api/quotations/:id/attachment/:attachmentId
+const updateQuotationAttachment = async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded" });
+
+        const quotation = await Quotation.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!quotation) {
+            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return res.status(404).json({ success: false, message: "Quotation not found" });
+        }
+
+        const attachmentIndex = quotation.attachments.findIndex(a => a._id.toString() === req.params.attachmentId);
+        if (attachmentIndex === -1) {
+            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return res.status(404).json({ success: false, message: "Attachment not found" });
+        }
+
+        // Remove old file
+        const oldFile = quotation.attachments[attachmentIndex].filePath;
+        if (fs.existsSync(oldFile)) {
+            try { fs.unlinkSync(oldFile); } catch (e) { console.error("Error deleting old file:", e); }
+        }
+
+        // Update metadata
+        quotation.attachments[attachmentIndex] = {
+            _id: quotation.attachments[attachmentIndex]._id, // Keep ID
+            fileName: req.file.filename,
+            filePath: req.file.path,
+            fileSize: req.file.size,
+            mimeType: req.file.mimetype,
+            uploadedAt: new Date(),
+            uploadedBy: req.user._id
+        };
+
+        await quotation.save();
+
+        await recordActivity(
+            req,
+            'Update Attachment',
+            'Quotation',
+            `Attachment replaced for Quotation: ${quotation.quotationDetails.quotationNumber}`,
+            quotation.quotationDetails.quotationNumber
+        );
+
+        res.status(200).json({ success: true, message: "Attachment replaced successfully", data: quotation.attachments });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Delete Quotation Attachment
+// @route   DELETE /api/quotations/:id/attachment/:attachmentId
+const deleteQuotationAttachment = async (req, res) => {
+    try {
+        const quotation = await Quotation.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!quotation) return res.status(404).json({ success: false, message: "Quotation not found" });
+
+        const attachment = quotation.attachments.find(a => a._id.toString() === req.params.attachmentId);
+        if (!attachment) return res.status(404).json({ success: false, message: "Attachment not found" });
+
+        // Remove from disk
+        if (fs.existsSync(attachment.filePath)) {
+            try { fs.unlinkSync(attachment.filePath); } catch (e) { console.error("Error deleting file:", e); }
+        }
+
+        // Remove from array
+        quotation.attachments = quotation.attachments.filter(a => a._id.toString() !== req.params.attachmentId);
+        await quotation.save();
+
+        await recordActivity(
+            req,
+            'Delete Attachment',
+            'Quotation',
+            `Attachment deleted from Quotation: ${quotation.quotationDetails.quotationNumber}`,
+            quotation.quotationDetails.quotationNumber
+        );
+
+        res.status(200).json({ success: true, message: "Attachment deleted successfully", data: quotation.attachments });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 module.exports = {
     createQuotation,
     getQuotations,
@@ -501,6 +837,11 @@ module.exports = {
     updateQuotation,
     deleteQuotation,
     printQuotation,
+    convertToSaleInvoiceData,
+    convertToPurchaseInvoiceData,
+    convertToProformaData,
+    convertToChallanData,
+    convertToPurchaseOrderData,
     getCustomFields,
     createCustomField,
     updateCustomField,
@@ -508,5 +849,9 @@ module.exports = {
     getItemColumns,
     createItemColumn,
     updateItemColumn,
-    deleteItemColumn
+    deleteItemColumn,
+    attachQuotationFile,
+    getQuotationAttachments,
+    updateQuotationAttachment,
+    deleteQuotationAttachment
 };

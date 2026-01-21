@@ -316,7 +316,24 @@ const handleCreatePurchaseInvoiceLogic = async (req) => {
         userId: req.user._id
     });
 
-    // 5️⃣ Send email if requested
+    // 5.1️⃣ Update source document if converted (e.g., Quotation)
+    if (req.body.conversions && req.body.conversions.convertedFrom) {
+        const { docType, docId } = req.body.conversions.convertedFrom;
+        if (docType === 'Quotation' && docId) {
+            await Quotation.findByIdAndUpdate(docId, {
+                $push: {
+                    'conversions.convertedTo': {
+                        docType: 'Purchase Invoice',
+                        docId: invoice._id,
+                        docNo: invoice.invoiceDetails.invoiceNumber,
+                        convertedAt: new Date()
+                    }
+                }
+            });
+        }
+    }
+
+    // 5.2️⃣ Send email if requested
     if (req.body.shareOnEmail) {
         const vendor = await Vendor.findOne({ userId: req.user._id, companyName: req.body.vendorInformation.ms });
         if (vendor && vendor.email) {

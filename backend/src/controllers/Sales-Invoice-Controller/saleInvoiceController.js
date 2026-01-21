@@ -364,6 +364,23 @@ const handleCreateInvoiceLogic = async (req) => {
         bodyData.invoiceDetails.invoiceNumber
     );
 
+    // 4.6️⃣ Update source document if converted from another document (e.g., Quotation)
+    if (bodyData.conversions && bodyData.conversions.convertedFrom) {
+        const { docType, docId } = bodyData.conversions.convertedFrom;
+        if (docType === 'Quotation' && docId) {
+            await Quotation.findByIdAndUpdate(docId, {
+                $push: {
+                    'conversions.convertedTo': {
+                        docType: 'Sale Invoice',
+                        docId: invoice._id,
+                        docNo: invoice.invoiceDetails.invoiceNumber,
+                        convertedAt: new Date()
+                    }
+                }
+            });
+        }
+    }
+
     // 5️⃣ Auto-create Delivery Challan if requested
     if (bodyData.createDeliveryChallan) {
         const challan = await DeliveryChallan.create({
