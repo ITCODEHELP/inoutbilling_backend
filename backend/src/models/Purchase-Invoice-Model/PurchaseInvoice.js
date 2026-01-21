@@ -78,9 +78,11 @@ const purchaseInvoiceSchema = new mongoose.Schema({
         index: true
     },
 
+    paidAmount: { type: Number, default: 0 },
+
     status: {
         type: String,
-        enum: ['Active', 'Cancelled', 'Draft'],
+        enum: ['Active', 'Cancelled', 'Draft', 'Paid', 'Partial', 'Unpaid', 'Completed', 'Pending'],
         default: 'Active',
         index: true
     },

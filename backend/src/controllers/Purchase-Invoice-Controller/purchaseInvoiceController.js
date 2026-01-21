@@ -437,12 +437,15 @@ const getPurchaseInvoices = async (req, res) => {
         const invoices = await PurchaseInvoice.find(query).sort({ createdAt: -1 });
 
         const formattedData = invoices.map(inv => ({
+            id: inv._id,
             purchaseNo: inv.invoiceDetails.invoiceNumber,
             companyName: inv.vendorInformation.ms,
             purchaseDate: inv.invoiceDetails.date,
             total: inv.totals.grandTotal,
             paymentType: inv.paymentType,
-            outstanding: inv.totals.grandTotal,
+            status: inv.status,
+            paidAmount: inv.paidAmount || 0,
+            outstanding: Number(inv.totals.grandTotal || 0) - Number(inv.paidAmount || 0),
             action: inv._id
         }));
 

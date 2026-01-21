@@ -69,7 +69,7 @@ const getHSNSuggestions = async (req, res) => {
             });
         }
 
-        // Search for HSN codes
+        // Search for HSN codes with full product information
         const suggestions = await Product.aggregate([
             {
                 $match: {
@@ -81,7 +81,18 @@ const getHSNSuggestions = async (req, res) => {
                 $group: {
                     _id: '$hsnSac',
                     productCount: { $sum: 1 },
-                    sampleProduct: { $first: '$name' }
+                    // Get the first product's details as default
+                    sampleProduct: { $first: '$name' },
+                    productId: { $first: '$_id' },
+                    productName: { $first: '$name' },
+                    sellingPrice: { $first: '$sellPrice' },
+                    purchasePrice: { $first: '$purchasePrice' },
+                    uom: { $first: '$unitOfMeasurement' },
+                    taxRate: { $first: '$taxSelection' },
+                    cessPercent: { $first: '$cessPercent' },
+                    cessAmount: { $first: '$cessAmount' },
+                    currentStock: { $first: '$availableQuantity' },
+                    description: { $first: '$productNote' }
                 }
             },
             {
@@ -89,7 +100,17 @@ const getHSNSuggestions = async (req, res) => {
                     _id: 0,
                     code: '$_id',
                     productCount: 1,
-                    sampleProduct: 1
+                    sampleProduct: 1,
+                    productId: 1,
+                    productName: 1,
+                    sellingPrice: 1,
+                    purchasePrice: 1,
+                    uom: 1,
+                    taxRate: 1,
+                    cessPercent: 1,
+                    cessAmount: 1,
+                    currentStock: 1,
+                    description: 1
                 }
             },
             { $sort: { productCount: -1 } },
