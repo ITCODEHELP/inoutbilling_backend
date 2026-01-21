@@ -3,6 +3,7 @@ const PurchaseOrderCustomField = require('../../models/Other-Document-Model/Purc
 const PurchaseOrderItemColumn = require('../../models/Other-Document-Model/PurchaseOrderItemColumn');
 const Staff = require('../../models/Setting-Model/Staff');
 const Vendor = require('../../models/Customer-Vendor-Model/Vendor');
+const Quotation = require('../../models/Other-Document-Model/Quotation');
 const mongoose = require('mongoose');
 const { calculateDocumentTotals, getSummaryAggregation } = require('../../utils/documentHelper');
 const numberToWords = require('../../utils/numberToWords');
@@ -262,6 +263,23 @@ const createPurchaseOrder = async (req, res) => {
         });
 
         await newPurchaseOrder.save();
+
+        // Update source document if converted (e.g., Quotation)
+        if (req.body.conversions && req.body.conversions.convertedFrom) {
+            const { docType, docId } = req.body.conversions.convertedFrom;
+            if (docType === 'Quotation' && docId) {
+                await Quotation.findByIdAndUpdate(docId, {
+                    $push: {
+                        'conversions.convertedTo': {
+                            docType: 'Purchase Order',
+                            docId: newPurchaseOrder._id,
+                            docNo: newPurchaseOrder.purchaseOrderDetails.poNumber,
+                            convertedAt: new Date()
+                        }
+                    }
+                });
+            }
+        }
 
         res.status(201).json({
             success: true,

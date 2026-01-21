@@ -69,3 +69,61 @@
 ### Print PDF
 `GET` /api/quotations/:id/print
 
+### Convert to Sale Invoice
+`GET` /api/quotations/:id/convert-to-invoice
+- Fetches quotation data mapped specifically for the Sale Invoice "Add" form.
+- **Response**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "customerInformation": { ... },
+      "items": [ { ... } ],
+      "conversions": {
+        "convertedFrom": {
+            "docType": "Quotation",
+            "docId": "..."
+        }
+      }
+    }
+  }
+  ```
+- **Note**: When this data is sent back to the `POST /api/sale-invoice/create` endpoint, the system automatically updates the source quotation with a conversion reference.
+
+### Convert to Purchase Invoice
+`GET` /api/quotations/:id/convert-to-purchase-invoice
+- Fetches quotation data mapped for the Purchase Invoice "Add" form (maps Customer details to Vendor).
+
+### Convert to Proforma Invoice
+`GET` /api/quotations/:id/convert-to-proforma
+- Fetches quotation data mapped for the Proforma Invoice "Add" form.
+
+### Convert to Delivery Challan
+`GET` /api/quotations/:id/convert-to-challan
+- Fetches quotation data mapped for the Delivery Challan "Add" form.
+
+### Convert to Purchase Order
+`GET` /api/quotations/:id/convert-to-purchase-order
+- Fetches quotation data mapped for the Purchase Order "Add" form (maps Customer details to Vendor).
+
+## Attachment APIs
+
+### Attach Files
+`POST` /api/quotations/:id/attach-file
+- Uploads multiple files (up to 10) to a quotation.
+- **Form Data**: `attachments` (file array)
+- **Response**: Returns the updated `attachments` array with metadata (fileName, filePath, fileSize, mimeType, uploadedAt, uploadedBy).
+
+### Get Attachments
+`GET` /api/quotations/:id/attachments
+- Retrieves all attachments linked to a quotation.
+
+### Update (Replace) Attachment
+`PUT` /api/quotations/:id/attachment/:attachmentId
+- Replaces an existing attachment while preserving its reference order.
+- **Form Data**: `attachment` (single file)
+
+### Delete Attachment
+`DELETE` /api/quotations/:id/attachment/:attachmentId
+- Permanently deletes an attachment from the database and disk.
+

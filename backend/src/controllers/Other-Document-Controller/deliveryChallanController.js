@@ -1,4 +1,5 @@
 const DeliveryChallan = require('../../models/Other-Document-Model/DeliveryChallan');
+const Quotation = require('../../models/Other-Document-Model/Quotation');
 const DeliveryChallanCustomField = require('../../models/Other-Document-Model/DeliveryChallanCustomField');
 const DeliveryChallanItemColumn = require('../../models/Other-Document-Model/DeliveryChallanItemColumn');
 const Staff = require('../../models/Setting-Model/Staff');
@@ -281,6 +282,23 @@ const createDeliveryChallan = async (req, res) => {
         });
 
         await newChallan.save();
+
+        // Update source document if converted (e.g., Quotation)
+        if (req.body.conversions && req.body.conversions.convertedFrom) {
+            const { docType, docId } = req.body.conversions.convertedFrom;
+            if (docType === 'Quotation' && docId) {
+                await Quotation.findByIdAndUpdate(docId, {
+                    $push: {
+                        'conversions.convertedTo': {
+                            docType: 'Delivery Challan',
+                            docId: newChallan._id,
+                            docNo: newChallan.deliveryChallanDetails.challanNumber,
+                            convertedAt: new Date()
+                        }
+                    }
+                });
+            }
+        }
 
         if (shareOnEmail) {
             const customer = await Customer.findOne({ userId: req.user._id, companyName: customerInformation.ms });

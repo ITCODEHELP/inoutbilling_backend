@@ -1,4 +1,5 @@
 const Proforma = require('../../models/Other-Document-Model/Proforma');
+const Quotation = require('../../models/Other-Document-Model/Quotation');
 const ProformaCustomField = require('../../models/Other-Document-Model/ProformaCustomField');
 const ProformaItemColumn = require('../../models/Other-Document-Model/ProformaItemColumn');
 const Staff = require('../../models/Setting-Model/Staff');
@@ -250,6 +251,23 @@ const createProforma = async (req, res) => {
         });
 
         await newProforma.save();
+
+        // Update source document if converted (e.g., Quotation)
+        if (req.body.conversions && req.body.conversions.convertedFrom) {
+            const { docType, docId } = req.body.conversions.convertedFrom;
+            if (docType === 'Quotation' && docId) {
+                await Quotation.findByIdAndUpdate(docId, {
+                    $push: {
+                        'conversions.convertedTo': {
+                            docType: 'Proforma',
+                            docId: newProforma._id,
+                            docNo: newProforma.proformaDetails.proformaNumber,
+                            convertedAt: new Date()
+                        }
+                    }
+                });
+            }
+        }
 
         if (shareOnEmail) {
             const customer = await Customer.findOne({

@@ -15,9 +15,19 @@ const {
     getItemColumns,
     createItemColumn,
     updateItemColumn,
-    deleteItemColumn
+    deleteItemColumn,
+    convertToSaleInvoiceData,
+    convertToPurchaseInvoiceData,
+    convertToProformaData,
+    convertToChallanData,
+    convertToPurchaseOrderData,
+    attachQuotationFile,
+    getQuotationAttachments,
+    updateQuotationAttachment,
+    deleteQuotationAttachment
 } = require('../../controllers/Other-Document-Controller/quotationController');
 const { protect } = require('../../middlewares/authMiddleware');
+const quotationAttachment = require('../../middlewares/quotationAttachmentMiddleware');
 
 router.use(protect);
 
@@ -52,5 +62,16 @@ router.route('/:id')
     .delete(deleteQuotation);
 
 router.get('/:id/print', printQuotation);
+router.get('/:id/convert-to-invoice', convertToSaleInvoiceData);
+router.get('/:id/convert-to-purchase-invoice', convertToPurchaseInvoiceData);
+router.get('/:id/convert-to-proforma', convertToProformaData);
+router.get('/:id/convert-to-challan', convertToChallanData);
+router.get('/:id/convert-to-purchase-order', convertToPurchaseOrderData);
+
+// Attachment Routes
+router.post('/:id/attach-file', protect, quotationAttachment.array('attachments', 10), attachQuotationFile);
+router.get('/:id/attachments', protect, getQuotationAttachments);
+router.put('/:id/attachment/:attachmentId', protect, quotationAttachment.single('attachment'), updateQuotationAttachment);
+router.delete('/:id/attachment/:attachmentId', protect, deleteQuotationAttachment);
 
 module.exports = router;
