@@ -214,6 +214,13 @@ const resolvePurchaseInvoiceItem = async (req, res) => {
                     uiResponse.sgst = Number(hsnData["SGST / UTGST Rate (%)"] || 0) * 100;
                     uiResponse.igst = Number(hsnData["IGST Rate (%)"] || 0) * 100;
 
+                    // Add resolved tax metadata for frontend pre-selection (non-binding)
+                    uiResponse.resolvedTaxType = uiResponse.igst > 0 ? 'IGST' : 'CGST+SGST';
+                    uiResponse.resolvedGstRate = uiResponse.igst > 0 ? uiResponse.igst : (uiResponse.cgst + uiResponse.sgst);
+                    uiResponse.resolvedIgst = uiResponse.igst;
+                    uiResponse.resolvedCgst = uiResponse.cgst;
+                    uiResponse.resolvedSgst = uiResponse.sgst;
+
                     // Re-calculate derived fields with new tax rates
                     const qty = Number(uiResponse.qty || 1);
                     const price = Number(uiResponse.price || 0);
@@ -1271,6 +1278,80 @@ const getHSNSummary = async (req, res) => {
     }
 };
 
+/**
+ * @desc    Generate Public Link for Purchase Invoice
+ * @route   GET /api/purchase-invoice/:id/public-link
+ * @access  Private
+ */
+const generatePublicLink = async (req, res) => {
+    try {
+        // Fetch invoice by ID only (not filtering by userId)
+        const invoice = await PurchaseInvoice.findById(req.params.id);
+
+        if (!invoice) {
+            return res.status(404).json({
+                success: false,
+                message: "Invoice not found"
+            });
+        }
+
+        const crypto = require('crypto');
+        const secret = process.env.JWT_SECRET || 'your-default-secret';
+        const token = crypto
+            .createHmac('sha256', secret)
+            .update(invoice._id.toString())
+            .digest('hex')
+            .substring(0, 16);
+
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const publicLink = `${baseUrl}/api/purchase-invoice/view-public/${invoice._id}/${token}`;
+
+        res.status(200).json({ success: true, publicLink });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Public View Purchase Invoice PDF (Unprotected)
+ * @route   GET /api/purchase-invoice/view-public/:id/:token
+ * @access  Public
+ */
+const viewInvoicePublic = async (req, res) => {
+    try {
+        const { id, token } = req.params;
+
+        const crypto = require('crypto');
+        const secret = process.env.JWT_SECRET || 'your-default-secret';
+        const expectedToken = crypto
+            .createHmac('sha256', secret)
+            .update(id)
+            .digest('hex')
+            .substring(0, 16);
+
+        if (token !== expectedToken) {
+            return res.status(401).send("Invalid or expired link");
+        }
+
+        const invoice = await PurchaseInvoice.findById(id);
+        if (!invoice) return res.status(404).send("Invoice not found");
+
+        // Check if invoice is cancelled or deleted
+        if (invoice.status === 'Cancelled' || invoice.status === 'Deleted') {
+            return res.status(403).send("This invoice has been cancelled or deleted and is no longer available for viewing");
+        }
+
+        const userData = await User.findById(invoice.userId);
+        const pdfBuffer = await generatePurchaseInvoicePDF(invoice, userData || {});
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'inline; filename="Purchase-Invoice.pdf"');
+        res.status(200).send(pdfBuffer);
+    } catch (error) {
+        res.status(500).send("Error rendering invoice");
+    }
+};
+
 module.exports = {
     handleCreatePurchaseInvoiceLogic,
     createPurchaseInvoice,
@@ -1299,5 +1380,7 @@ module.exports = {
     generateEnvelope,
     resolvePurchaseItemLogic,
     resolvePurchaseInvoiceItem,
-    getHSNSummary
+    getHSNSummary,
+    generatePublicLink,
+    viewInvoicePublic
 };

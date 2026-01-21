@@ -570,26 +570,35 @@ const resolveInvoiceItem = async (req, res) => {
             availableStock: resolved.availableStock
         };
 
-        // --- HSN Auto-Resolution Fallback ---
+        // --- HSN/SAC Auto-Resolution Fallback ---
         if (uiResponse.hsnSac && !uiResponse.cgst && !uiResponse.sgst && !uiResponse.igst) {
             try {
-                const hsnCode = String(uiResponse.hsnSac).trim();
-                console.log(`[HSN Debug] DB: ${mongoose.connection.name}, Searching HSN: ${hsnCode}`);
+                const code = String(uiResponse.hsnSac).trim();
+                // Create a regex that matches the code with optional whitespace between characters
+                // e.g. "9954" becomes "9\s*9\s*5\s*4" to match "99 54" or "9954"
+                const robustRegex = new RegExp(`(^|[^0-9])${code.split('').join('\\s*')}([^0-9]|$)`);
 
-                const hsnData = await mongoose.connection.db.collection('hsn_codes').findOne({
-                    "Chapter / Heading /": {
-                        $regex: `(^|[^0-9])${hsnCode}([^0-9]|$)`
-                    }
+                // Search in hsn_codes collection (expected to contain both HSN and SAC codes)
+                const taxData = await mongoose.connection.db.collection('hsn_codes').findOne({
+                    "Chapter / Heading /": { $regex: robustRegex }
                 });
 
-                if (hsnData) {
-                    console.log(`[HSN Debug] Found match for ${hsnCode}`);
-                    // Access tax fields using exact bracket notation and convert to percentages
-                    uiResponse.cgst = Number(hsnData["CGST Rate (%)"] || 0) * 100;
-                    uiResponse.sgst = Number(hsnData["SGST / UTGST Rate (%)"] || 0) * 100;
-                    uiResponse.igst = Number(hsnData["IGST Rate (%)"] || 0) * 100;
+                if (taxData) {
 
-                    // Final calculation for taxableValue and total
+                    // Access tax fields using exact bracket notation and convert to percentages
+                    uiResponse.cgst = Number(taxData["CGST Rate (%)"] || 0) * 100;
+                    uiResponse.sgst = Number(taxData["SGST / UTGST Rate (%)"] || 0) * 100;
+                    uiResponse.igst = Number(taxData["IGST Rate (%)"] || 0) * 100;
+
+                    // Add resolved tax metadata for frontend pre-selection (non-binding)
+                    uiResponse.resolvedTaxType = uiResponse.igst > 0 ? 'IGST' : 'CGST+SGST';
+                    uiResponse.resolvedGstRate = uiResponse.igst > 0 ? uiResponse.igst : (uiResponse.cgst + uiResponse.sgst);
+                    uiResponse.resolvedIgst = uiResponse.igst;
+                    uiResponse.resolvedCgst = uiResponse.cgst;
+                    uiResponse.resolvedSgst = uiResponse.sgst;
+
+                    // Final calculation for taxableValue and total with resolved tax
+                    // Ensure calculations happen even if they were 0 before
                     const qty = Number(uiResponse.qty || 1);
                     const price = Number(uiResponse.price || 0);
                     const discountValue = Number(uiResponse.discountValue || 0);
@@ -612,10 +621,82 @@ const resolveInvoiceItem = async (req, res) => {
                     }
                     uiResponse.total = Number((taxableValue + gstAmount).toFixed(2));
                 } else {
-                    console.log(`[HSN Debug] No record found in hsn_codes for ${hsnCode}`);
+
+
+                    // Secondary Lookup: HSN_Rate
+                    // HSN_Rate collection has 'HSN Code' as a Number (e.g., 4061000)
+                    let hsnRateData = null;
+                    const numericCode = Number(code.replace(/\s+/g, '')); // Remove spaces for number conversion
+
+                    if (!isNaN(numericCode)) {
+                        // Try exact numeric match first
+                        hsnRateData = await mongoose.connection.db.collection('HSN_Rate').findOne({
+                            "HSN Code": numericCode
+                        });
+                    }
+
+                    // If not found or not a valid number (though validation/cleaning might imply it's numeric-ish), try string/regex match just in case some are strings
+                    if (!hsnRateData) {
+                        hsnRateData = await mongoose.connection.db.collection('HSN_Rate').findOne({
+                            "HSN Code": { $regex: robustRegex }
+                        });
+                    }
+
+                    if (hsnRateData && hsnRateData.Rate) {
+
+
+                        // Parse Rate (e.g., "18%")
+                        const rateString = String(hsnRateData.Rate).replace('%', '').trim();
+                        const totalRate = parseFloat(rateString) || 0;
+
+                        // Split IGST into CGST/SGST
+                        uiResponse.igst = totalRate;
+                        uiResponse.cgst = totalRate / 2;
+                        uiResponse.sgst = totalRate / 2;
+
+                        // Add resolved tax metadata
+                        uiResponse.resolvedTaxType = 'CGST+SGST'; // Default assumption, or split logic
+                        uiResponse.resolvedGstRate = totalRate;
+                        uiResponse.resolvedIgst = totalRate;
+                        uiResponse.resolvedCgst = totalRate / 2;
+                        uiResponse.resolvedSgst = totalRate / 2;
+
+                        // Final calculation for taxableValue and total
+                        const qty = Number(uiResponse.qty || 1);
+                        const price = Number(uiResponse.price || 0);
+                        const discountValue = Number(uiResponse.discountValue || 0);
+
+                        let discountAmount = 0;
+                        if (uiResponse.discountType === 'Percentage') {
+                            discountAmount = (qty * price) * (discountValue / 100);
+                        } else {
+                            discountAmount = discountValue;
+                        }
+
+                        const taxableValue = (qty * price) - discountAmount;
+                        uiResponse.taxableValue = Number(taxableValue.toFixed(2));
+
+                        let gstAmount = 0;
+                        // Use IGST calculation logic or CGST+SGST sum (they are equal)
+                        // But we should stick to typical logic: if local (cgst+sgst) else interstate (igst).
+                        // Since we don't know the state here, we provide the split values but calculation usually depends on place of supply.
+                        // However, the requested logic for primary was:
+                        if (uiResponse.igst > 0) {
+                            // Note: For HSN_Rate we forced IGST = Total.
+                            // But locally we typically want CGST+SGST if it's intra-state. 
+                            // The prompt says "return these values... so the frontend can auto-fill".
+                            // We calculate Total using the IGST rate effectively (since IGST = CGST+SGST).
+                            gstAmount = taxableValue * (uiResponse.igst / 100);
+                        } else {
+                            gstAmount = taxableValue * ((uiResponse.cgst + uiResponse.sgst) / 100);
+                        }
+                        uiResponse.total = Number((taxableValue + gstAmount).toFixed(2));
+                    } else {
+
+                    }
                 }
             } catch (err) {
-                console.error("HSN Fallback Error:", err.message);
+                console.error("HSN/SAC Fallback Error:", err.message);
             }
         }
         // ------------------------------------

@@ -1,23 +1,91 @@
 const ExpenseCategory = require('../../models/Expense-Income-Model/ExpenseCategory');
+const DailyExpense = require('../../models/Expense-Income-Model/DailyExpense');
 
-// @desc    Get all expense categories
+// @desc    Get all expense categories (merged from expenses + master)
 // @route   GET /api/expense-categories
 // @access  Private
 const getCategories = async (req, res) => {
     try {
         const { search } = req.query;
-        let query = { userId: req.user._id };
+
+        // Step 1: Get all master categories (not deleted)
+        let masterQuery = {
+            userId: req.user._id,
+            $or: [
+                { isDeleted: { $exists: false } },
+                { isDeleted: false }
+            ]
+        };
 
         if (search) {
-            query.name = { $regex: search, $options: 'i' };
+            masterQuery.name = { $regex: search, $options: 'i' };
         }
 
-        const categories = await ExpenseCategory.find(query).sort({ name: 1 });
+        const masterCategories = await ExpenseCategory.find(masterQuery).sort({ name: 1 });
+
+        // Step 2: Get unique category names from expenses
+        let expenseMatchQuery = { userId: req.user._id };
+        if (search) {
+            expenseMatchQuery.category = { $regex: search, $options: 'i' };
+        }
+
+        const expenseCategories = await DailyExpense.aggregate([
+            { $match: expenseMatchQuery },
+            { $group: { _id: '$category' } },
+            { $sort: { _id: 1 } }
+        ]);
+
+        // Step 3: Create a map of master categories by name (case-insensitive)
+        const categoryMap = new Map();
+
+        masterCategories.forEach(cat => {
+            const key = cat.name.toLowerCase();
+            categoryMap.set(key, {
+                _id: cat._id,
+                categoryId: cat._id,
+                categoryName: cat.name,
+                name: cat.name,
+                status: cat.status || 'Active',
+                isDeleted: cat.isDeleted || false,
+                createdAt: cat.createdAt,
+                updatedAt: cat.updatedAt
+            });
+        });
+
+        // Step 4: Merge expense-derived categories
+        for (const expCat of expenseCategories) {
+            const categoryName = expCat._id;
+            const key = categoryName.toLowerCase();
+
+            // If not in master, create it
+            if (!categoryMap.has(key)) {
+                const newCategory = await ExpenseCategory.create({
+                    userId: req.user._id,
+                    name: categoryName,
+                    status: 'Active',
+                    isDeleted: false
+                });
+
+                categoryMap.set(key, {
+                    _id: newCategory._id,
+                    categoryId: newCategory._id,
+                    categoryName: newCategory.name,
+                    name: newCategory.name,
+                    status: newCategory.status,
+                    isDeleted: newCategory.isDeleted,
+                    createdAt: newCategory.createdAt,
+                    updatedAt: newCategory.updatedAt
+                });
+            }
+        }
+
+        // Step 5: Convert map to array
+        const allCategories = Array.from(categoryMap.values());
 
         res.status(200).json({
             success: true,
-            count: categories.length,
-            data: categories
+            count: allCategories.length,
+            data: allCategories
         });
     } catch (error) {
         res.status(500).json({
@@ -104,16 +172,37 @@ const updateCategory = async (req, res) => {
     }
 };
 
-// @desc    Delete expense category
+// @desc    Delete expense category (soft delete)
 // @route   DELETE /api/expense-categories/:id
 // @access  Private
 const deleteCategory = async (req, res) => {
     try {
-        const category = await ExpenseCategory.findOneAndDelete({ _id: req.params.id, userId: req.user._id });
+        const category = await ExpenseCategory.findOne({
+            _id: req.params.id,
+            userId: req.user._id,
+            isDeleted: { $ne: true }
+        });
 
         if (!category) {
             return res.status(404).json({ success: false, message: 'Category not found' });
         }
+
+        // Check if category is linked to any expenses
+        const linkedExpenses = await DailyExpense.countDocuments({
+            userId: req.user._id,
+            category: category.name
+        });
+
+        if (linkedExpenses > 0) {
+            return res.status(400).json({
+                success: false,
+                message: `Cannot delete category. It is linked to ${linkedExpenses} expense(s). Please remove or reassign those expenses first.`
+            });
+        }
+
+        // Perform soft delete
+        category.isDeleted = true;
+        await category.save();
 
         res.status(200).json({
             success: true,
@@ -128,9 +217,42 @@ const deleteCategory = async (req, res) => {
     }
 };
 
+// @desc    Toggle expense category status (Active/Inactive)
+// @route   PATCH /api/expense-categories/:id/toggle-status
+// @access  Private
+const toggleCategoryStatus = async (req, res) => {
+    try {
+        const category = await ExpenseCategory.findOne({
+            _id: req.params.id,
+            userId: req.user._id
+        });
+
+        if (!category) {
+            return res.status(404).json({ success: false, message: 'Category not found' });
+        }
+
+        // Toggle status between Active and Inactive
+        category.status = category.status === 'Active' ? 'Inactive' : 'Active';
+        await category.save();
+
+        res.status(200).json({
+            success: true,
+            message: `Category status updated to ${category.status}`,
+            data: category
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Server Error',
+            error: error.message
+        });
+    }
+};
+
 module.exports = {
     getCategories,
     createCategory,
     updateCategory,
-    deleteCategory
+    deleteCategory,
+    toggleCategoryStatus
 };
