@@ -69,6 +69,33 @@
 ### Print PDF
 `GET` /api/quotations/:id/print
 
+### Download PDF
+`GET` /api/quotations/:id/download-pdf
+- `id` can be a single ID or a comma-separated list of IDs for merged PDFs.
+- Query Params: `original`, `duplicate`, `transport`, `office` (Booleans).
+
+### Share via Email
+`POST` /api/quotations/:id/share-email
+- `id` can be a single ID or comma-separated list.
+- Body: `email` (Optional, defaults to customer email).
+- Query Params: `original`, `duplicate`, `transport`, `office` (Booleans).
+
+### Share via WhatsApp
+`POST` /api/quotations/:id/share-whatsapp
+- `id` can be a single ID or comma-separated list.
+- Body: `phone` (Optional, defaults to customer phone).
+- Query Params: `original`, `duplicate`, `transport`, `office` (Booleans).
+- Returns: `whatsappNumber`, `deepLink`.
+
+### Public Link (Copy Link)
+`GET` /api/quotations/:id/public-link
+- Generates a secure public URL for viewing the Quotation PDF.
+- Query Params: `original`, `duplicate`, `transport`, `office` (Booleans) - determines which copies are included in the generated link.
+
+### Public View PDF (Unprotected)
+`GET` /api/quotations/view-public/:id/:token
+- Renders the Quotation PDF without authentication if the token is valid.
+
 ### Convert to Sale Invoice
 `GET` /api/quotations/:id/convert-to-invoice
 - Fetches quotation data mapped specifically for the Sale Invoice "Add" form.

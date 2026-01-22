@@ -2,6 +2,7 @@
 require('dotenv').config({ silent: true });
 
 const express = require('express');
+const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
 
@@ -202,25 +203,32 @@ app.use((err, req, res, next) => {
 });
 
 /* -------------------- SERVER START -------------------- */
+// Flag to ensure migration log appears only once
+let migrationLogged = false;
+
 async function startServer() {
     try {
         // ✅ DB CONNECTION FIRST
         await connectDB();
 
         // 🔄 One-time migration for receipt status (ACTIVE)
-        try {
-            const db = mongoose.connection.db;
-            await db.collection('inwardpayments').updateMany(
-                { $or: [{ status: { $exists: false } }, { status: 'Active' }] },
-                { $set: { status: 'ACTIVE' } }
-            );
-            await db.collection('outwardpayments').updateMany(
-                { $or: [{ status: { $exists: false } }, { status: 'Active' }] },
-                { $set: { status: 'ACTIVE' } }
-            );
-            console.log('✅ Receipt status migration completed successfully.');
-        } catch (migrationError) {
-            console.error('⚠️ Receipt status migration failed:', migrationError.message);
+        if (!migrationLogged) {
+            try {
+                const db = mongoose.connection.db;
+                await db.collection('inwardpayments').updateMany(
+                    { $or: [{ status: { $exists: false } }, { status: 'Active' }] },
+                    { $set: { status: 'ACTIVE' } }
+                );
+                await db.collection('outwardpayments').updateMany(
+                    { $or: [{ status: { $exists: false } }, { status: 'Active' }] },
+                    { $set: { status: 'ACTIVE' } }
+                );
+                console.log('✅ Receipt status migration completed successfully.');
+                migrationLogged = true;
+            } catch (migrationError) {
+                console.error('⚠️ Receipt status migration failed:', migrationError.message);
+                migrationLogged = true; // Mark as logged even on error to prevent retry spam
+            }
         }
 
         // ✅ OPTIMIZED ENV INITIALIZATION (SILENT)

@@ -4,7 +4,7 @@ const { generatePurchaseInvoicePDF } = require('./purchaseInvoicePdfHelper');
 const { generateReceiptVoucherPDF } = require('./receiptPdfHelper');
 const User = require('../models/User-Model/User');
 
-const sendInvoiceEmail = async (invoices, email, isPurchase = false, options = { original: true }) => {
+const sendInvoiceEmail = async (invoices, email, isPurchase = false, options = { original: true }, docType = 'Sale Invoice') => {
     try {
         if (!email) {
             console.log(`No ${isPurchase ? 'vendor' : 'customer'} email provided, skipping email share.`);
@@ -20,8 +20,8 @@ const sendInvoiceEmail = async (invoices, email, isPurchase = false, options = {
             // Use professional PDF helper for purchase invoices
             pdfBuffer = await generatePurchaseInvoicePDF(items, userData || {}, options);
         } else {
-            // Use specialized Sale Invoice PDF helper with professional template
-            pdfBuffer = await generateSaleInvoicePDF(items, userData || {}, options);
+            // Use specialized Sale Invoice PDF helper with professional template (supports Quotation too)
+            pdfBuffer = await generateSaleInvoicePDF(items, userData || {}, options, docType);
         }
 
         const transporter = nodemailer.createTransport({
@@ -34,9 +34,14 @@ const sendInvoiceEmail = async (invoices, email, isPurchase = false, options = {
             },
         });
 
-        const invoiceType = isPurchase ? 'Purchase Invoice' : 'Tax Invoice';
+        const isQuotation = docType === 'Quotation';
+        const isProforma = docType === 'Proforma';
+        const invoiceType = isQuotation ? 'Quotation' : (isProforma ? 'Proforma Invoice' : (isPurchase ? 'Purchase Invoice' : 'Tax Invoice'));
         const senderLabel = isPurchase ? 'Vendor' : 'Customer';
-        const invoiceNo = items.length === 1 ? items[0].invoiceDetails.invoiceNumber : 'Multiple';
+
+        const firstDoc = items[0];
+        const details = isQuotation ? firstDoc.quotationDetails : firstDoc.invoiceDetails;
+        const invoiceNo = items.length === 1 ? (isQuotation ? details.quotationNumber : details.invoiceNumber) : 'Multiple';
 
         const mailOptions = {
             from: `${process.env.FROM_NAME} <${process.env.FROM_EMAIL}>`,

@@ -95,7 +95,7 @@ const protect = async (req, res, next) => {
 
         return next();
     } catch (error) {
-        console.error('Auth middleware error:', error.message);
+        // console.error('Auth middleware error:', error.message);
 
         // Clear cache on error
         if (global.cacheManager && token) {

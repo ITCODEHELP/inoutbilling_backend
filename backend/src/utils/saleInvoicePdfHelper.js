@@ -1,13 +1,14 @@
 const PDFDocument = require('pdfkit');
 
 /**
- * Generates a professional Sale Invoice PDF matching the provided blue grid template.
- * @param {Object|Array} invoices - Single or Multiple Sale Invoice documents.
+ * Generates a professional Sale Invoice or Quotation PDF matching the provided blue grid template.
+ * @param {Object|Array} documents - Single or Multiple Sale Invoice or Quotation documents.
  * @param {Object} user - Logged-in User (Company) details.
  * @param {Object} options - Multi-copy options.
+ * @param {String} docType - 'Sale Invoice' or 'Quotation'.
  * @returns {Promise<Buffer>}
  */
-const generateSaleInvoicePDF = (invoices, user, options = { original: true }) => {
+const generateSaleInvoicePDF = (documents, user, options = { original: true }, docType = 'Sale Invoice') => {
     return new Promise((resolve, reject) => {
         const doc = new PDFDocument({ margin: 30, size: 'A4' });
         const buffers = [];
@@ -19,6 +20,11 @@ const generateSaleInvoicePDF = (invoices, user, options = { original: true }) =>
         const blueColor = "#0056b3";
         const blackColor = "#000000";
         const lightBlueColor = "#E8F3FD";
+
+        const isQuotation = docType === 'Quotation';
+        const titleLabel = options.titleLabel || (isQuotation ? "QUOTATION" : "TAX INVOICE");
+        const numLabel = options.numLabel || (isQuotation ? "Quotation No." : "Invoice No.");
+        const dateLabel = options.dateLabel || (isQuotation ? "Quotation Date" : "Invoice Date");
 
         // Determine copies to render
         const copies = [];
@@ -40,10 +46,15 @@ const generateSaleInvoicePDF = (invoices, user, options = { original: true }) =>
             }
         };
 
-        const invoiceList = Array.isArray(invoices) ? invoices : [invoices];
+        const docList = Array.isArray(documents) ? documents : [documents];
         let isFirstPage = true;
 
-        invoiceList.forEach((invoice) => {
+        docList.forEach((document) => {
+            // Map data dynamically
+            const details = isQuotation ? document.quotationDetails : document.invoiceDetails;
+            const docNumber = isQuotation ? details.quotationNumber : details.invoiceNumber;
+            const docDate = details.date;
+
             copies.forEach((copyType) => {
                 if (!isFirstPage) {
                     doc.addPage();
@@ -68,12 +79,12 @@ const generateSaleInvoicePDF = (invoices, user, options = { original: true }) =>
 
                 const headerBottom = 100;
 
-                // --- 2. TAX INVOICE BAR ---
+                // --- 2. TAX INVOICE / QUOTATION BAR ---
                 doc.rect(startX, headerBottom, width, 18).stroke(blueColor);
-                doc.fillColor(blueColor).fontSize(11).text("TAX INVOICE", startX, headerBottom + 5, { align: "center", width: width, bold: true });
+                doc.fillColor(blueColor).fontSize(11).text(titleLabel, startX, headerBottom + 5, { align: "center", width: width, bold: true });
                 doc.fillColor(blackColor).fontSize(7).text(getCopyLabel(copyType), startX, headerBottom + 5, { align: "right", width: width - 10, bold: true });
 
-                // --- 3. CUSTOMER & INVOICE DETAILS GRID ---
+                // --- 3. CUSTOMER & DOCUMENT DETAILS GRID ---
                 const gridTop = headerBottom + 18;
                 const gridHeight = 90;
                 const colSplit = 250;
@@ -81,7 +92,7 @@ const generateSaleInvoicePDF = (invoices, user, options = { original: true }) =>
                 // Outer Box
                 doc.rect(startX, gridTop, width, gridHeight).stroke(blueColor);
 
-                // Vertical split: Customer (Left) | Invoice Details (Right)
+                // Vertical split: Customer (Left) | Document Details (Right)
                 doc.moveTo(startX + colSplit, gridTop).lineTo(startX + colSplit, gridTop + gridHeight).stroke(blueColor);
 
                 // --- LEFT SIDE: CUSTOMER DETAIL ---
@@ -97,34 +108,36 @@ const generateSaleInvoicePDF = (invoices, user, options = { original: true }) =>
                     doc.text(`: ${value || "-"}`, startX + 65, custY, { width: colSplit - 70 });
                     custY += 10;
                 };
-                drawCustRow("Name", invoice.customerInformation.ms);
-                drawCustRow("Address", invoice.customerInformation.address);
-                drawCustRow("Phone", invoice.customerInformation.phone);
-                drawCustRow("GSTIN", invoice.customerInformation.gstinPan);
-                drawCustRow("Place of Supply", invoice.customerInformation.placeOfSupply);
+                drawCustRow("Name", document.customerInformation.ms);
+                drawCustRow("Address", document.customerInformation.address);
+                drawCustRow("Phone", document.customerInformation.phone);
+                drawCustRow("GSTIN", document.customerInformation.gstinPan);
+                drawCustRow("Place of Supply", document.customerInformation.placeOfSupply);
 
-                // --- RIGHT SIDE: INVOICE DETAILS ---
+                // --- RIGHT SIDE: DOCUMENT DETAILS ---
                 const rightStart = startX + colSplit;
                 const rightWidth = width - colSplit;
                 const rightMid = rightStart + (rightWidth / 2);
 
-                // 1. Top Row: Invoice No | Border | Invoice Date
-                // Vertical Divider between Invoice No and Date
+                // 1. Top Row: No | Border | Date
+                // Vertical Divider between No and Date
                 doc.moveTo(rightMid, gridTop).lineTo(rightMid, gridTop + 20).stroke(blueColor);
                 // Horizontal Divider below Top Row
                 doc.moveTo(rightStart, gridTop + 20).lineTo(startX + width, gridTop + 20).stroke(blueColor);
 
-                // Invoice No (Left Half)
-                doc.fillColor(blackColor).fontSize(9).text("Invoice No.", rightStart + 5, gridTop + 6, { bold: true });
-                doc.fillColor(blackColor).text(invoice.invoiceDetails.invoiceNumber, rightStart + 60, gridTop + 6, { bold: true });
+                // No (Left Half)
+                doc.fillColor(blackColor).fontSize(9).text(numLabel, rightStart + 5, gridTop + 6, { bold: true });
+                doc.fillColor(blackColor).text(docNumber, rightStart + 60, gridTop + 6, { bold: true });
 
-                // Invoice Date (Right Half)
-                doc.fillColor(blackColor).text("Invoice Date", rightMid + 5, gridTop + 6, { bold: true });
-                doc.fillColor(blackColor).text(new Date(invoice.invoiceDetails.date).toLocaleDateString(), rightMid + 65, gridTop + 6, { width: (rightWidth / 2) - 70, align: 'right' });
+                // Date (Right Half)
+                doc.fillColor(blackColor).text(dateLabel, rightMid + 5, gridTop + 6, { bold: true });
+                doc.fillColor(blackColor).text(new Date(docDate).toLocaleDateString(), rightMid + 65, gridTop + 6, { width: (rightWidth / 2) - 70, align: 'right' });
 
-                // 2. Bottom Row: Due Date
-                doc.fillColor(blackColor).text("Due Date", rightStart + 5, gridTop + 26, { bold: true });
-                doc.fillColor(blackColor).text(invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : "-", rightStart + 60, gridTop + 26);
+                // 2. Bottom Row: Due Date (Only for Invoice)
+                if (!isQuotation && !options.hideDueDate) {
+                    doc.fillColor(blackColor).text("Due Date", rightStart + 5, gridTop + 26, { bold: true });
+                    doc.fillColor(blackColor).text(document.dueDate ? new Date(document.dueDate).toLocaleDateString() : "-", rightStart + 60, gridTop + 26);
+                }
 
                 // --- 4. ITEM TABLE ---
                 // BLANK SPACE SECTION
@@ -184,7 +197,7 @@ const generateSaleInvoicePDF = (invoices, user, options = { original: true }) =>
                     doc.moveTo(x, itemY).lineTo(x, itemY + tableBodyHeight).stroke(blueColor);
                 });
 
-                invoice.items.forEach((item, index) => {
+                document.items.forEach((item, index) => {
                     doc.fillColor(blackColor).fontSize(8);
                     doc.text((index + 1).toString(), colStartX[0], itemY + 5, { width: colSr, align: "center" });
                     doc.text(item.productName, colStartX[1] + 5, itemY + 5, { width: colName - 10, bold: true });
@@ -207,9 +220,9 @@ const generateSaleInvoicePDF = (invoices, user, options = { original: true }) =>
                 doc.rect(startX, tableFooterY, width, 15).stroke(blueColor);
                 doc.fillColor(blackColor).fontSize(8).text("Total", startX, tableFooterY + 4, { align: "right", width: colSr + colName, bold: true });
 
-                const totalQtyList = invoice.items.reduce((sum, item) => sum + (item.qty || 0), 0);
+                const totalQtyList = document.items.reduce((sum, item) => sum + (item.qty || 0), 0);
                 doc.fillColor(blackColor).text(totalQtyList.toString(), colStartX[3], tableFooterY + 4, { width: colQty, align: "center", bold: true });
-                doc.text(invoice.totals.grandTotal.toFixed(2), colStartX[5], tableFooterY + 4, { width: colTotal, align: "center", bold: true });
+                doc.text(document.totals.grandTotal.toFixed(2), colStartX[5], tableFooterY + 4, { width: colTotal, align: "center", bold: true });
 
                 // --- 5. TOTALS SECTION ---
                 // Blank Space above Totals
@@ -227,7 +240,7 @@ const generateSaleInvoicePDF = (invoices, user, options = { original: true }) =>
                 // Top: Label
                 doc.fillColor(blackColor).fontSize(9).text("Total in words", startX, lowerSectionY + 4, { width: wordsWidth, align: 'center', bold: true });
                 // Bottom: Value
-                doc.fillColor(blackColor).fontSize(7).text(invoice.totals.totalInWords || "ZERO RUPEES ONLY", startX, lowerSectionY + 19, { width: wordsWidth, align: 'center' });
+                doc.fillColor(blackColor).fontSize(7).text(document.totals.totalInWords || "ZERO RUPEES ONLY", startX, lowerSectionY + 19, { width: wordsWidth, align: 'center' });
 
                 // --- Right Side: Total Amount & E.O.E ---
                 const rX = startX + wordsWidth;
@@ -238,7 +251,7 @@ const generateSaleInvoicePDF = (invoices, user, options = { original: true }) =>
 
                 doc.fillColor(blackColor).fontSize(8).text("Total Amount", rX + 5, lowerSectionY + 4, { bold: true });
                 // Using "Rs." as Helvetica doesn't support ₹ symbol
-                doc.fillColor(blackColor).fontSize(10).text(`Rs. ${invoice.totals.grandTotal.toFixed(2)}`, rX, lowerSectionY + 3, { width: rW - 5, align: "right", bold: true });
+                doc.fillColor(blackColor).fontSize(10).text(`Rs. ${document.totals.grandTotal.toFixed(2)}`, rX, lowerSectionY + 3, { width: rW - 5, align: "right", bold: true });
 
                 // 2. E & O.E. (Bottom Half 15px)
                 doc.fillColor(blackColor).fontSize(6).text("(E & O.E.)", rX, lowerSectionY + 19, { width: rW - 5, align: "right", bold: true });
@@ -253,24 +266,33 @@ const generateSaleInvoicePDF = (invoices, user, options = { original: true }) =>
                 // Vertical Split usually at 250
                 const sigSplit = startX + 250;
 
-                // --- Left Side: Terms (Height: 80) ---
+                // --- Left Side: Terms (Height: 85) ---
                 doc.rect(startX, termsY, (sigSplit - startX), termsHeight).stroke(blueColor);
 
                 // Middle vertical line: Covers Terms, Spacer, and Signature
                 const totalRightHeight = sigSpacerHeight + sigHeight;
                 doc.moveTo(sigSplit, termsY).lineTo(sigSplit, termsY + Math.max(termsHeight, totalRightHeight)).stroke(blueColor);
 
-                // 1. Top Half: User Terms
-                doc.fillColor(blackColor).fontSize(9).text("Terms and Conditions", startX, termsY + 3, { width: 250, align: "center", bold: true });
-                doc.fillColor(blackColor).fontSize(8).text(invoice.termsDetails || "", startX + 5, termsY + 12, { width: (sigSplit - startX) - 10 });
+                if (!options.hideTerms) {
+                    if (isQuotation) {
+                        // For Quotation: ONLY show the 4 fixed lines, no split line, no termsDetails. No "Terms and Conditions" header.
+                        const fixedTerms = "Subject to our home Jurisdiction.\nOur Responsibility Ceases as soon as goods leaves our Premises.\nGoods once sold will not taken back.\nDelivery Ex-Premises.";
+                        doc.fillColor(blackColor).fontSize(8).text(fixedTerms, startX + 5, termsY + 6, { width: (sigSplit - startX) - 10, lineGap: 3 });
+                    } else {
+                        // For Sale Invoice: Keep everything exactly as-is
+                        // 1. Header
+                        doc.fillColor(blackColor).fontSize(9).text("Terms and Conditions", startX, termsY + 3, { width: 250, align: "center", bold: true });
+                        doc.fillColor(blackColor).fontSize(8).text(document.termsDetails || "", startX + 5, termsY + 12, { width: (sigSplit - startX) - 10 });
 
-                // Horizontal Separator inside Left Box
-                const splitY = termsY + 15;
-                doc.moveTo(startX, splitY).lineTo(sigSplit, splitY).stroke(blueColor);
+                        // Horizontal Separator inside Left Box
+                        const splitY = termsY + 15;
+                        doc.moveTo(startX, splitY).lineTo(sigSplit, splitY).stroke(blueColor);
 
-                // 2. Bottom Half: Jurisdiction
-                const mandatoryTerms = "Subject to our Home Jurisdiction.\nOur Responsibility Ceases as soon as goods leaves our Premises.\nGoods once sold will not taken back.\nDelivery Ex-Premises.";
-                doc.fillColor(blackColor).fontSize(7).text(mandatoryTerms, startX + 5, splitY + 2, { width: (sigSplit - startX) - 10, lineGap: 1 });
+                        // Bottom Half: Jurisdiction
+                        const mandatoryTerms = "Subject to our Home Jurisdiction.\nOur Responsibility Ceases as soon as goods leaves our Premises.\nGoods once sold will not taken back.\nDelivery Ex-Premises.";
+                        doc.fillColor(blackColor).fontSize(7).text(mandatoryTerms, startX + 5, splitY + 2, { width: (sigSplit - startX) - 10, lineGap: 1 });
+                    }
+                }
 
                 // --- Right Side ---
                 // 1. Spacer Box (Top of Right Side)

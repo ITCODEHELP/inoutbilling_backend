@@ -41,22 +41,22 @@ const sendMsg91Otp = async (fullMobile, otp) => {
         data: payload
     };
 
-    console.log('----------------------------------------------------');
-    console.log('[MSG91 DEBUG] Target:', fullMobile);
-    console.log('[MSG91 DEBUG] Payload:', JSON.stringify(payload, null, 2));
-    console.log('----------------------------------------------------');
+    // console.log('----------------------------------------------------');
+    // console.log('[MSG91 DEBUG] Target:', fullMobile);
+    // console.log('[MSG91 DEBUG] Payload:', JSON.stringify(payload, null, 2));
+    // console.log('----------------------------------------------------');
 
     try {
         const response = await axios(axiosOptions);
         if (response.data?.type !== 'success') {
             throw new Error(response.data?.message);
         }
-        console.log('[MSG91] OTP sent success response:', response.data);
+        // console.log('[MSG91] OTP sent success response:', response.data);
         return { success: true };
     } catch (err) {
-        console.error('[MSG91] Request Failed:', err.message);
+        // console.error('[MSG91] Request Failed:', err.message);
         if (err.response) {
-            console.error('[MSG91] Response Data:', err.response.data);
+            // console.error('[MSG91] Response Data:', err.response.data);
         }
         return { success: false, error: err.response?.data?.message || err.message };
     }
@@ -73,7 +73,7 @@ const sendOtp = async (req, res) => {
         }
 
         const fullMobile = `91${mobile}`;
-        console.log(`[Auth] SendOtp → ${fullMobile}`);
+        // console.log(`[Auth] SendOtp → ${fullMobile}`);
 
         // Rate limit: Max 6 OTPs/24h (use lean() for speed)
         const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -107,7 +107,7 @@ const sendOtp = async (req, res) => {
         return res.status(200).json({ message: 'OTP sent successfully' });
 
     } catch (err) {
-        console.error('[sendOtp] Error:', err);
+        // console.error('[sendOtp] Error:', err);
         if (err.name === 'ValidationError') {
             return res.status(400).json({
                 message: 'OTP storage failed',
@@ -152,7 +152,7 @@ const verifyOtp = async (req, res) => {
 
         if (user) {
             // LOGIN
-            console.log(`[Auth] Login: User Found (${user._id})`);
+            // console.log(`[Auth] Login: User Found (${user._id})`);
             const token = generateToken(user._id);
             await recordLogin(req, user);
             await OTP.deleteOne({ _id: otpRecord._id }); // Cleanup
@@ -168,7 +168,7 @@ const verifyOtp = async (req, res) => {
             });
         } else {
             // SIGNUP
-            console.log(`[Auth] Signup: Creating New User`);
+            // console.log(`[Auth] Signup: Creating New User`);
             const newUserId = generateUserId();
             user = await User.create({
                 phone: fullMobile, // Full in DB
@@ -193,7 +193,7 @@ const verifyOtp = async (req, res) => {
         }
 
     } catch (error) {
-        console.error('Verify OTP Error:', error);
+        // console.error('Verify OTP Error:', error);
         if (error.name === 'ValidationError') {
             return res.status(400).json({
                 message: 'User creation failed',
@@ -234,7 +234,7 @@ const loginUserId = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('[loginUserId] Error:', error);
+        // console.error('[loginUserId] Error:', error);
         res.status(500).json({ message: 'Server error', error: error.message });
     }
 };
@@ -268,7 +268,7 @@ const forgotPassword = async (req, res) => {
         res.status(200).json({ message: 'Password reset link sent to your email.' });
 
     } catch (error) {
-        console.error('[forgotPassword] Error:', error);
+        // console.error('[forgotPassword] Error:', error);
         res.status(500).json({ message: 'Server error', error: error.message });
     }
 };
@@ -294,7 +294,7 @@ const resendOtp = async (req, res) => {
         // Reuse sendOtp (handles rest)
         return sendOtp(req, res);
     } catch (err) {
-        console.error('[resendOtp] Error:', err);
+        // console.error('[resendOtp] Error:', err);
         res.status(500).json({ message: 'Server error', error: err.message });
     }
 };

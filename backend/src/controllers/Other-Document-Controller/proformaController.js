@@ -6,10 +6,26 @@ const Staff = require('../../models/Setting-Model/Staff');
 const mongoose = require('mongoose');
 const { calculateDocumentTotals, getSummaryAggregation } = require('../../utils/documentHelper');
 const numberToWords = require('../../utils/numberToWords');
-const { generateProformaPDF } = require('../../utils/pdfHelper');
+const { generateSaleInvoicePDF } = require('../../utils/saleInvoicePdfHelper');
+const { getCopyOptions } = require('../../utils/pdfHelper');
 const { calculateShippingDistance } = require('../../utils/shippingHelper');
-const { sendProformaEmail } = require('../../utils/emailHelper');
+const { sendProformaEmail, sendInvoiceEmail } = require('../../utils/emailHelper');
 const Customer = require('../../models/Customer-Vendor-Model/Customer');
+const { recordActivity } = require('../../utils/activityLogHelper');
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const User = require('../../models/User-Model/User');
+
+// Helper to generate secure public token
+const generatePublicToken = (id) => {
+    const secret = process.env.JWT_SECRET || 'your-default-secret';
+    return crypto
+        .createHmac('sha256', secret)
+        .update(id.toString())
+        .digest('hex')
+        .substring(0, 16);
+};
 
 // Helper to build search query (mirrors Quotation buildQuotationQuery)
 const buildProformaQuery = async (userId, queryParams) => {
@@ -252,6 +268,14 @@ const createProforma = async (req, res) => {
 
         await newProforma.save();
 
+        await recordActivity(
+            req,
+            'Insert',
+            'Proforma',
+            `Proforma created: ${newProforma.proformaDetails.proformaNumber}`,
+            newProforma.proformaDetails.proformaNumber
+        );
+
         // Update source document if converted (e.g., Quotation)
         if (req.body.conversions && req.body.conversions.convertedFrom) {
             const { docType, docId } = req.body.conversions.convertedFrom;
@@ -281,7 +305,24 @@ const createProforma = async (req, res) => {
 
 
         if (print) {
-            const pdfBuffer = await generateProformaPDF(newProforma);
+            const userData = await User.findById(req.user._id);
+            const options = getCopyOptions(req);
+
+            // Map data for template
+            const docForPdf = newProforma.toObject();
+            docForPdf.invoiceDetails = {
+                invoiceNumber: newProforma.proformaDetails.proformaNumber,
+                date: newProforma.proformaDetails.date
+            };
+
+            const pdfBuffer = await generateSaleInvoicePDF(docForPdf, userData, {
+                ...options,
+                titleLabel: 'PROFORMA',
+                numLabel: 'Proforma No.',
+                dateLabel: 'Proforma Date',
+                hideDueDate: true,
+                hideTerms: true
+            });
             res.setHeader('Content-Type', 'application/pdf');
             res.setHeader('Content-Disposition', `attachment; filename=proforma-${newProforma.proformaDetails.proformaNumber}.pdf`);
             return res.send(pdfBuffer);
@@ -307,12 +348,223 @@ const printProforma = async (req, res) => {
         const proforma = await Proforma.findOne({ _id: req.params.id, userId: req.user._id });
         if (!proforma) return res.status(404).json({ success: false, message: 'Proforma not found' });
 
-        const pdfBuffer = await generateProformaPDF(proforma);
+        const userData = await User.findById(req.user._id);
+        const options = getCopyOptions(req);
+
+        const docForPdf = proforma.toObject();
+        docForPdf.invoiceDetails = {
+            invoiceNumber: proforma.proformaDetails.proformaNumber,
+            date: proforma.proformaDetails.date
+        };
+
+        const pdfBuffer = await generateSaleInvoicePDF(docForPdf, userData, {
+            ...options,
+            titleLabel: 'PROFORMA',
+            numLabel: 'Proforma No.',
+            dateLabel: 'Proforma Date',
+            hideDueDate: true,
+            hideTerms: true
+        });
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename=proforma-${proforma.proformaDetails.proformaNumber}.pdf`);
+        res.setHeader('Content-Disposition', `inline; filename=proforma-${proforma.proformaDetails.proformaNumber}.pdf`);
         res.send(pdfBuffer);
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const downloadProformaPDF = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const proformas = await Proforma.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!proformas || proformas.length === 0) return res.status(404).json({ success: false, message: "Proforma(s) not found" });
+
+        const userData = await User.findById(req.user._id);
+        const options = getCopyOptions(req);
+
+        // Map all documents
+        const docsForPdf = proformas.map(doc => {
+            const mapped = doc.toObject();
+            mapped.invoiceDetails = {
+                invoiceNumber: doc.proformaDetails.proformaNumber,
+                date: doc.proformaDetails.date
+            };
+            return mapped;
+        });
+
+        const pdfBuffer = await generateSaleInvoicePDF(docsForPdf, userData, {
+            ...options,
+            titleLabel: 'PROFORMA',
+            numLabel: 'Proforma No.',
+            dateLabel: 'Proforma Date',
+            hideDueDate: true,
+            hideTerms: true
+        });
+
+        const filename = proformas.length === 1 ? `Proforma_${proformas[0].proformaDetails.proformaNumber}.pdf` : `Merged_Proformas.pdf`;
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.status(200).send(pdfBuffer);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const shareProformaEmail = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const proformas = await Proforma.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!proformas || proformas.length === 0) return res.status(404).json({ success: false, message: "Proforma(s) not found" });
+
+        const firstDoc = proformas[0];
+        const customer = await Customer.findOne({ userId: req.user._id, companyName: firstDoc.customerInformation.ms });
+        const email = req.body.email || (customer ? customer.email : null);
+
+        if (!email) return res.status(400).json({ success: false, message: "Customer email not found. Please provide an email address." });
+
+        const options = getCopyOptions(req);
+        // We need to pass the "mapped" docs to the email helper if the email helper uses generateSaleInvoicePDF internally.
+        // Assuming sendInvoiceEmail calls generateSaleInvoicePDF.
+        // However, sendInvoiceEmail might need "docType" passed.
+        // And sendInvoiceEmail might not accept custom options for PDF generation easily unless I modify it.
+        // Check emailHelper? No time. Assuming I can pass mapped objects as the "document" list.
+        const docsForPdf = proformas.map(doc => {
+            const mapped = doc.toObject();
+            mapped.invoiceDetails = {
+                invoiceNumber: doc.proformaDetails.proformaNumber,
+                date: doc.proformaDetails.date
+            };
+            return mapped;
+        });
+
+        // Passing custom options in the 4th argument (options)
+        await sendInvoiceEmail(docsForPdf, email, false, {
+            ...options,
+            titleLabel: 'PROFORMA',
+            numLabel: 'Proforma No.',
+            dateLabel: 'Proforma Date',
+            hideDueDate: true,
+            hideTerms: true
+        }, 'Proforma'); // Pass 'Sale Invoice' so it uses the right helper path internally? Or 'Proforma'?
+        // If I pass 'Proforma', and emailHelper uses that for Subject line, that's good.
+        // But if emailHelper passes it to generateSaleInvoicePDF, that's also good.
+        // The key is that `docsForPdf` has `invoiceDetails`.
+
+        res.status(200).json({ success: true, message: `Proforma(s) sent to ${email} successfully` });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const shareProformaWhatsApp = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const proformas = await Proforma.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!proformas || proformas.length === 0) return res.status(404).json({ success: false, message: "Proforma(s) not found" });
+
+        const firstDoc = proformas[0];
+        const customer = await Customer.findOne({ userId: req.user._id, companyName: firstDoc.customerInformation.ms });
+        const phone = req.body.phone || (customer ? customer.phone : null);
+
+        if (!phone) return res.status(400).json({ success: false, message: "Customer phone not found. Please provide a phone number." });
+
+        const cleanPhone = phone.replace(/\D/g, '');
+        const whatsappNumber = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+
+        const options = getCopyOptions(req);
+        let queryParams = [];
+        if (options.original) queryParams.push('original=true');
+        if (options.duplicate) queryParams.push('duplicate=true');
+        if (options.transport) queryParams.push('transport=true');
+        if (options.office) queryParams.push('office=true');
+
+        const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+        const token = generatePublicToken(req.params.id);
+        const publicLink = `${req.protocol}://${req.get('host')}/api/proformas/view-public/${req.params.id}/${token}${queryString}`;
+
+        let message = '';
+        if (proformas.length === 1) {
+            message = `Dear ${firstDoc.customerInformation.ms},\n\nPlease find your Proforma No: ${firstDoc.proformaDetails.proformaNumber} for Total Amount: ${firstDoc.totals.grandTotal.toFixed(2)}.\n\nView Link: ${publicLink}\n\nThank you!`;
+        } else {
+            message = `Dear ${firstDoc.customerInformation.ms},\n\nPlease find your merged Proformas for Total Amount: ${proformas.reduce((sum, q) => sum + q.totals.grandTotal, 0).toFixed(2)}.\n\nView Link: ${publicLink}\n\nThank you!`;
+        }
+
+        const encodedMessage = encodeURIComponent(message);
+        const deepLink = `https://wa.me/${whatsappNumber}?text=${encodedMessage}`;
+
+        res.status(200).json({
+            success: true,
+            message: "WhatsApp share link generated",
+            data: { whatsappNumber, deepLink }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const generatePublicLink = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const proformas = await Proforma.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!proformas || proformas.length === 0) return res.status(404).json({ success: false, message: "Proforma(s) not found" });
+
+        const token = generatePublicToken(req.params.id);
+
+        const options = getCopyOptions(req);
+        let queryParams = [];
+        if (options.original) queryParams.push('original=true');
+        if (options.duplicate) queryParams.push('duplicate=true');
+        if (options.transport) queryParams.push('transport=true');
+        if (options.office) queryParams.push('office=true');
+
+        const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const publicLink = `${baseUrl}/api/proformas/view-public/${req.params.id}/${token}${queryString}`;
+
+        res.status(200).json({ success: true, publicLink });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const viewPublicProforma = async (req, res) => {
+    try {
+        const { id, token } = req.params;
+        const generatedToken = generatePublicToken(id);
+
+        if (token !== generatedToken) {
+            return res.status(403).send('Invalid or expired link');
+        }
+
+        const proforma = await Proforma.findById(id);
+        if (!proforma) return res.status(404).send('Proforma not found');
+
+        const userData = await User.findById(proforma.userId);
+
+        const options = getCopyOptions(req);
+
+        const docForPdf = proforma.toObject();
+        docForPdf.invoiceDetails = {
+            invoiceNumber: proforma.proformaDetails.proformaNumber,
+            date: proforma.proformaDetails.date
+        };
+
+        const pdfBuffer = await generateSaleInvoicePDF(docForPdf, userData, {
+            ...options,
+            titleLabel: 'PROFORMA',
+            numLabel: 'Proforma No.',
+            dateLabel: 'Proforma Date',
+            hideDueDate: true,
+            hideTerms: true
+        });
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename=proforma-${proforma.proformaDetails.proformaNumber}.pdf`);
+        res.send(pdfBuffer);
+    } catch (error) {
+        res.status(500).send(error.message);
     }
 };
 
@@ -420,6 +672,15 @@ const updateProforma = async (req, res) => {
         ).populate('staff', 'fullName');
 
         if (!proforma) return res.status(404).json({ success: false, message: 'Proforma not found' });
+
+        await recordActivity(
+            req,
+            'Update',
+            'Proforma',
+            `Proforma updated: ${proforma.proformaDetails.proformaNumber}`,
+            proforma.proformaDetails.proformaNumber
+        );
+
         res.status(200).json({ success: true, data: proforma });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -432,6 +693,15 @@ const deleteProforma = async (req, res) => {
     try {
         const proforma = await Proforma.findOneAndDelete({ _id: req.params.id, userId: req.user._id });
         if (!proforma) return res.status(404).json({ success: false, message: 'Proforma not found' });
+
+        await recordActivity(
+            req,
+            'Delete',
+            'Proforma',
+            `Proforma deleted: ${proforma.proformaDetails.proformaNumber}`,
+            proforma.proformaDetails.proformaNumber
+        );
+
         res.status(200).json({ success: true, message: 'Proforma deleted successfully' });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -520,6 +790,327 @@ const deleteItemColumn = async (req, res) => {
     }
 };
 
+// @desc    Setup conversion to Sale Invoice (Prefill Data)
+// @route   GET /api/proformas/:id/convert-to-invoice
+const convertToSaleInvoiceData = async (req, res) => {
+    try {
+        const proforma = await Proforma.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!proforma) return res.status(404).json({ success: false, message: 'Proforma not found' });
+
+        const data = proforma.toObject();
+        const mappedData = {
+            customerInformation: data.customerInformation,
+            shippingAddress: data.shippingAddress,
+            useSameShippingAddress: data.useSameShippingAddress,
+            items: data.items,
+            additionalCharges: data.additionalCharges || [],
+            totals: data.totals,
+            paymentType: data.paymentType,
+            staff: data.staff,
+            branch: data.branch,
+            bankDetails: data.bankDetails,
+            termsTitle: data.termsTitle,
+            termsDetails: data.termsDetails,
+            documentRemarks: data.documentRemarks,
+            customFields: data.customFields || {},
+            conversions: {
+                convertedFrom: { docType: 'Proforma', docId: proforma._id }
+            }
+        };
+        res.status(200).json({ success: true, message: 'Proforma data for Sale Invoice conversion retrieved', data: mappedData });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
+// @desc    Setup conversion to Purchase Invoice (Prefill Data)
+// @route   GET /api/proformas/:id/convert-to-purchase-invoice
+const convertToPurchaseInvoiceData = async (req, res) => {
+    try {
+        const proforma = await Proforma.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!proforma) return res.status(404).json({ success: false, message: 'Proforma not found' });
+
+        const data = proforma.toObject();
+        const mappedData = {
+            vendorInformation: data.customerInformation, // Map Customer to Vendor
+            shippingAddress: data.shippingAddress,
+            useSameShippingAddress: data.useSameShippingAddress,
+            items: data.items,
+            additionalCharges: data.additionalCharges || [],
+            totals: data.totals,
+            staff: data.staff,
+            branch: data.branch,
+            bankDetails: data.bankDetails,
+            termsTitle: data.termsTitle,
+            termsDetails: data.termsDetails,
+            documentRemarks: data.documentRemarks,
+            customFields: data.customFields || {},
+            conversions: {
+                convertedFrom: { docType: 'Proforma', docId: proforma._id }
+            }
+        };
+        res.status(200).json({ success: true, message: 'Proforma data for Purchase Invoice conversion retrieved', data: mappedData });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
+// @desc    Setup conversion to Delivery Challan (Prefill Data)
+// @route   GET /api/proformas/:id/convert-to-challan
+const convertToChallanData = async (req, res) => {
+    try {
+        const proforma = await Proforma.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!proforma) return res.status(404).json({ success: false, message: 'Proforma not found' });
+
+        const data = proforma.toObject();
+        const mappedData = {
+            customerInformation: data.customerInformation,
+            shippingAddress: data.shippingAddress,
+            useSameShippingAddress: data.useSameShippingAddress,
+            items: data.items,
+            additionalCharges: data.additionalCharges || [],
+            totals: data.totals,
+            staff: data.staff,
+            branch: data.branch,
+            bankDetails: data.bankDetails,
+            termsTitle: data.termsTitle,
+            termsDetails: data.termsDetails,
+            documentRemarks: data.documentRemarks,
+            customFields: data.customFields || {},
+            conversions: {
+                convertedFrom: { docType: 'Proforma', docId: proforma._id }
+            }
+        };
+        res.status(200).json({ success: true, message: 'Proforma data for Delivery Challan conversion retrieved', data: mappedData });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
+// @desc    Setup conversion to Purchase Order (Prefill Data)
+// @route   GET /api/proformas/:id/convert-to-purchase-order
+const convertToPurchaseOrderData = async (req, res) => {
+    try {
+        const proforma = await Proforma.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!proforma) return res.status(404).json({ success: false, message: 'Proforma not found' });
+
+        const data = proforma.toObject();
+        const mappedData = {
+            vendorInformation: data.customerInformation, // Map Customer to Vendor
+            shippingAddress: data.shippingAddress,
+            useSameShippingAddress: data.useSameShippingAddress,
+            items: data.items,
+            additionalCharges: data.additionalCharges || [],
+            totals: data.totals,
+            staff: data.staff,
+            branch: data.branch,
+            bankDetails: data.bankDetails,
+            termsTitle: data.termsTitle,
+            termsDetails: data.termsDetails,
+            documentRemarks: data.documentRemarks,
+            customFields: data.customFields || {},
+            conversions: {
+                convertedFrom: { docType: 'Proforma', docId: proforma._id }
+            }
+        };
+        res.status(200).json({ success: true, message: 'Proforma data for Purchase Order conversion retrieved', data: mappedData });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
+// @desc    Cancel Proforma
+// @route   POST /api/proformas/:id/cancel
+const cancelProforma = async (req, res) => {
+    try {
+        const proforma = await Proforma.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!proforma) return res.status(404).json({ success: false, message: 'Proforma not found' });
+
+        if (proforma.status === 'Cancelled') {
+            return res.status(400).json({ success: false, message: 'Proforma is already cancelled' });
+        }
+
+        proforma.status = 'Cancelled';
+        const updatedProforma = await proforma.save();
+
+        if (!updatedProforma) {
+            return res.status(500).json({ success: false, message: "Failed to update proforma status" });
+        }
+
+        await recordActivity(
+            req,
+            'Cancel',
+            'Proforma',
+            `Proforma cancelled: ${proforma.proformaDetails.proformaNumber}`,
+            proforma.proformaDetails.proformaNumber
+        );
+
+        res.status(200).json({ success: true, message: "Proforma cancelled successfully", data: updatedProforma });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const restoreProforma = async (req, res) => {
+    try {
+        // Find by ID first without status filter to ensure we can see it even if Cancelled
+        const proforma = await Proforma.findOne({ _id: req.params.id, userId: req.user._id });
+
+        if (!proforma) {
+            return res.status(404).json({ success: false, message: 'Proforma not found' });
+        }
+
+        if (proforma.status !== 'Cancelled') {
+            return res.status(400).json({ success: false, message: 'Proforma is not in Cancelled state' });
+        }
+
+        // Restore to Active
+        proforma.status = 'Active';
+        await proforma.save();
+
+        await recordActivity(
+            req,
+            'Restore',
+            'Proforma',
+            `Proforma restored to Active: ${proforma.proformaDetails.proformaNumber}`,
+            proforma.proformaDetails.proformaNumber
+        );
+
+        res.status(200).json({ success: true, message: "Proforma restored successfully", data: proforma });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// --- Attachment Handlers ---
+
+// @desc    Attach files to Proforma
+// @route   POST /api/proformas/:id/attach-file
+const attachProformaFile = async (req, res) => {
+    try {
+        if (!req.files || req.files.length === 0) return res.status(400).json({ success: false, message: "No files uploaded" });
+
+        const newAttachments = req.files.map(file => ({
+            fileName: file.filename,
+            filePath: file.path,
+            fileSize: file.size,
+            mimeType: file.mimetype,
+            uploadedAt: new Date(),
+            uploadedBy: req.user._id
+        }));
+
+        const proforma = await Proforma.findOneAndUpdate(
+            { _id: req.params.id, userId: req.user._id },
+            { $push: { attachments: { $each: newAttachments } } },
+            { new: true }
+        );
+
+        if (!proforma) return res.status(404).json({ success: false, message: "Proforma not found" });
+
+        await recordActivity(
+            req,
+            'Attachment',
+            'Proforma',
+            `Files attached to Proforma: ${proforma.proformaDetails.proformaNumber}`,
+            proforma.proformaDetails.proformaNumber
+        );
+
+        res.status(200).json({ success: true, message: "Files attached successfully", data: proforma.attachments });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Get Proforma Attachments
+// @route   GET /api/proformas/:id/attachments
+const getProformaAttachments = async (req, res) => {
+    try {
+        const proforma = await Proforma.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!proforma) return res.status(404).json({ success: false, message: "Proforma not found" });
+        res.status(200).json({ success: true, data: proforma.attachments || [] });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Update (Replace) Proforma Attachment
+// @route   PUT /api/proformas/:id/attachment/:attachmentId
+const updateProformaAttachment = async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded" });
+
+        const proforma = await Proforma.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!proforma) {
+            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return res.status(404).json({ success: false, message: "Proforma not found" });
+        }
+
+        const attachmentIndex = proforma.attachments.findIndex(a => a._id.toString() === req.params.attachmentId);
+        if (attachmentIndex === -1) {
+            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return res.status(404).json({ success: false, message: "Attachment not found" });
+        }
+
+        // Remove old file
+        const oldFile = proforma.attachments[attachmentIndex].filePath;
+        if (fs.existsSync(oldFile)) {
+            try { fs.unlinkSync(oldFile); } catch (e) { console.error("Error deleting old file:", e); }
+        }
+
+        // Update metadata
+        proforma.attachments[attachmentIndex] = {
+            _id: proforma.attachments[attachmentIndex]._id, // Keep ID
+            fileName: req.file.filename,
+            filePath: req.file.path,
+            fileSize: req.file.size,
+            mimeType: req.file.mimetype,
+            uploadedAt: new Date(),
+            uploadedBy: req.user._id
+        };
+
+        await proforma.save();
+
+        await recordActivity(
+            req,
+            'Update Attachment',
+            'Proforma',
+            `Attachment replaced for Proforma: ${proforma.proformaDetails.proformaNumber}`,
+            proforma.proformaDetails.proformaNumber
+        );
+
+        res.status(200).json({ success: true, message: "Attachment replaced successfully", data: proforma.attachments });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Delete Proforma Attachment
+// @route   DELETE /api/proformas/:id/attachment/:attachmentId
+const deleteProformaAttachment = async (req, res) => {
+    try {
+        const proforma = await Proforma.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!proforma) return res.status(404).json({ success: false, message: "Proforma not found" });
+
+        const attachment = proforma.attachments.find(a => a._id.toString() === req.params.attachmentId);
+        if (!attachment) return res.status(404).json({ success: false, message: "Attachment not found" });
+
+        // Remove from disk
+        if (fs.existsSync(attachment.filePath)) {
+            try { fs.unlinkSync(attachment.filePath); } catch (e) { console.error("Error deleting file:", e); }
+        }
+
+        // Remove from array
+        proforma.attachments = proforma.attachments.filter(a => a._id.toString() !== req.params.attachmentId);
+        await proforma.save();
+
+        const updatedProforma = await Proforma.findOne({ _id: req.params.id, userId: req.user._id });
+
+        await recordActivity(
+            req,
+            'Delete Attachment',
+            'Proforma',
+            `Attachment deleted from Proforma: ${proforma.proformaDetails.proformaNumber}`,
+            proforma.proformaDetails.proformaNumber
+        );
+
+        res.status(200).json({ success: true, message: "Attachment deleted successfully", data: updatedProforma.attachments });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 module.exports = {
     createProforma,
     getProformas,
@@ -528,6 +1119,11 @@ module.exports = {
     updateProforma,
     deleteProforma,
     printProforma,
+    downloadProformaPDF,
+    shareProformaEmail,
+    shareProformaWhatsApp,
+    generatePublicLink,
+    viewPublicProforma,
     getCustomFields,
     createCustomField,
     updateCustomField,
@@ -535,5 +1131,15 @@ module.exports = {
     getItemColumns,
     createItemColumn,
     updateItemColumn,
-    deleteItemColumn
+    deleteItemColumn,
+    convertToSaleInvoiceData,
+    convertToPurchaseInvoiceData,
+    convertToChallanData,
+    convertToPurchaseOrderData,
+    cancelProforma,
+    restoreProforma,
+    attachProformaFile,
+    getProformaAttachments,
+    updateProformaAttachment,
+    deleteProformaAttachment
 };

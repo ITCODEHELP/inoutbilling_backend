@@ -5,11 +5,24 @@ const Staff = require('../../models/Setting-Model/Staff');
 const mongoose = require('mongoose');
 const { calculateDocumentTotals, getSummaryAggregation } = require('../../utils/documentHelper');
 const numberToWords = require('../../utils/numberToWords');
-const { generateQuotationPDF } = require('../../utils/pdfHelper');
-const { calculateShippingDistance } = require('../../utils/shippingHelper');
-const { recordActivity } = require('../../utils/activityLogHelper');
+const { generateSaleInvoicePDF } = require('../../utils/saleInvoicePdfHelper');
+const { getCopyOptions } = require('../../utils/pdfHelper');
+const { sendInvoiceEmail } = require('../../utils/emailHelper');
+const User = require('../../models/User-Model/User');
+const Customer = require('../../models/Customer-Vendor-Model/Customer');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+
+// Helper to generate secure public token
+const generatePublicToken = (id) => {
+    const secret = process.env.JWT_SECRET || 'your-default-secret';
+    return crypto
+        .createHmac('sha256', secret)
+        .update(id.toString())
+        .digest('hex')
+        .substring(0, 16);
+};
 
 // Helper to build search query (mirrors DailyExpense buildExpenseQuery)
 const buildQuotationQuery = async (userId, queryParams) => {
@@ -254,7 +267,9 @@ const createQuotation = async (req, res) => {
         await newQuotation.save();
 
         if (print) {
-            const pdfBuffer = await generateQuotationPDF(newQuotation);
+            const userData = await User.findById(req.user._id);
+            const options = getCopyOptions(req);
+            const pdfBuffer = await generateSaleInvoicePDF(newQuotation, userData, options, 'Quotation');
             res.setHeader('Content-Type', 'application/pdf');
             res.setHeader('Content-Disposition', `attachment; filename=quotation-${newQuotation.quotationDetails.quotationNumber}.pdf`);
             return res.send(pdfBuffer);
@@ -280,10 +295,101 @@ const printQuotation = async (req, res) => {
         const quotation = await Quotation.findOne({ _id: req.params.id, userId: req.user._id });
         if (!quotation) return res.status(404).json({ success: false, message: 'Quotation not found' });
 
-        const pdfBuffer = await generateQuotationPDF(quotation);
+        const userData = await User.findById(req.user._id);
+        const options = getCopyOptions(req);
+        const pdfBuffer = await generateSaleInvoicePDF(quotation, userData, options, 'Quotation');
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename=quotation-${quotation.quotationDetails.quotationNumber}.pdf`);
+        res.setHeader('Content-Disposition', `inline; filename=quotation-${quotation.quotationDetails.quotationNumber}.pdf`);
         res.send(pdfBuffer);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const downloadQuotationPDF = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const quotations = await Quotation.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!quotations || quotations.length === 0) return res.status(404).json({ success: false, message: "Quotation(s) not found" });
+
+        const userData = await User.findById(req.user._id);
+        const options = getCopyOptions(req);
+        const pdfBuffer = await generateSaleInvoicePDF(quotations, userData, options, 'Quotation');
+
+        const filename = quotations.length === 1 ? `Quotation_${quotations[0].quotationDetails.quotationNumber}.pdf` : `Merged_Quotations.pdf`;
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.status(200).send(pdfBuffer);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const shareQuotationEmail = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const quotations = await Quotation.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!quotations || quotations.length === 0) return res.status(404).json({ success: false, message: "Quotation(s) not found" });
+
+        const firstDoc = quotations[0];
+        const customer = await Customer.findOne({ userId: req.user._id, companyName: firstDoc.customerInformation.ms });
+        const email = req.body.email || (customer ? customer.email : null);
+
+        if (!email) return res.status(400).json({ success: false, message: "Customer email not found. Please provide an email address." });
+
+        const options = getCopyOptions(req);
+        // Use generic email sender if possible, or adapt sendInvoiceEmail
+        // Actually, sendInvoiceEmail might need to be multi-purpose
+        await sendInvoiceEmail(quotations, email, false, options, 'Quotation');
+        res.status(200).json({ success: true, message: `Quotation(s) sent to ${email} successfully` });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const shareQuotationWhatsApp = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const quotations = await Quotation.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!quotations || quotations.length === 0) return res.status(404).json({ success: false, message: "Quotation(s) not found" });
+
+        const firstDoc = quotations[0];
+        const customer = await Customer.findOne({ userId: req.user._id, companyName: firstDoc.customerInformation.ms });
+        const phone = req.body.phone || (customer ? customer.phone : null);
+
+        if (!phone) return res.status(400).json({ success: false, message: "Customer phone not found. Please provide a phone number." });
+
+        const cleanPhone = phone.replace(/\D/g, '');
+        const whatsappNumber = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+
+        const options = getCopyOptions(req);
+        let queryParams = [];
+        if (options.original) queryParams.push('original=true');
+        if (options.duplicate) queryParams.push('duplicate=true');
+        if (options.transport) queryParams.push('transport=true');
+        if (options.office) queryParams.push('office=true');
+
+        const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+        const token = generatePublicToken(req.params.id);
+        // Assuming there is a public view for Quotations similar to Sale Invoice
+        const publicLink = `${req.protocol}://${req.get('host')}/api/quotations/view-public/${req.params.id}/${token}${queryString}`;
+
+        let message = '';
+        if (quotations.length === 1) {
+            message = `Dear ${firstDoc.customerInformation.ms},\n\nPlease find your Quotation No: ${firstDoc.quotationDetails.quotationNumber} for Total Amount: ${firstDoc.totals.grandTotal.toFixed(2)}.\n\nView Link: ${publicLink}\n\nThank you!`;
+        } else {
+            message = `Dear ${firstDoc.customerInformation.ms},\n\nPlease find your merged Quotations for Total Amount: ${quotations.reduce((sum, q) => sum + q.totals.grandTotal, 0).toFixed(2)}.\n\nView Link: ${publicLink}\n\nThank you!`;
+        }
+
+        const encodedMessage = encodeURIComponent(message);
+        const deepLink = `https://wa.me/${whatsappNumber}?text=${encodedMessage}`;
+
+        res.status(200).json({
+            success: true,
+            message: "WhatsApp share link generated",
+            data: { whatsappNumber, deepLink }
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -815,6 +921,8 @@ const deleteQuotationAttachment = async (req, res) => {
         quotation.attachments = quotation.attachments.filter(a => a._id.toString() !== req.params.attachmentId);
         await quotation.save();
 
+        const updatedQuotation = await Quotation.findOne({ _id: req.params.id, userId: req.user._id });
+
         await recordActivity(
             req,
             'Delete Attachment',
@@ -823,9 +931,61 @@ const deleteQuotationAttachment = async (req, res) => {
             quotation.quotationDetails.quotationNumber
         );
 
-        res.status(200).json({ success: true, message: "Attachment deleted successfully", data: quotation.attachments });
+        res.status(200).json({ success: true, message: "Attachment deleted successfully", data: updatedQuotation.attachments });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const generatePublicLink = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const quotations = await Quotation.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!quotations || quotations.length === 0) return res.status(404).json({ success: false, message: "Quotation(s) not found" });
+
+        const token = generatePublicToken(req.params.id);
+
+        const options = getCopyOptions(req);
+        let queryParams = [];
+        if (options.original) queryParams.push('original=true');
+        if (options.duplicate) queryParams.push('duplicate=true');
+        if (options.transport) queryParams.push('transport=true');
+        if (options.office) queryParams.push('office=true');
+
+        const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const publicLink = `${baseUrl}/api/quotations/view-public/${req.params.id}/${token}${queryString}`;
+
+        res.status(200).json({ success: true, publicLink });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const viewQuotationPublic = async (req, res) => {
+    try {
+        const { id, token } = req.params;
+
+        const expectedToken = generatePublicToken(id);
+
+        if (token !== expectedToken) {
+            return res.status(401).send("Invalid or expired link");
+        }
+
+        const ids = id.split(',');
+        const quotations = await Quotation.find({ _id: { $in: ids } });
+        if (!quotations || quotations.length === 0) return res.status(404).send("Quotation(s) not found");
+
+        const userData = await User.findById(quotations[0].userId);
+        const options = getCopyOptions(req);
+        const pdfBuffer = await generateSaleInvoicePDF(quotations, userData || {}, options, 'Quotation');
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'inline; filename="Quotation.pdf"');
+        res.status(200).send(pdfBuffer);
+    } catch (error) {
+        res.status(500).send("Error rendering quotation");
     }
 };
 
@@ -837,6 +997,9 @@ module.exports = {
     updateQuotation,
     deleteQuotation,
     printQuotation,
+    downloadQuotationPDF,
+    shareQuotationEmail,
+    shareQuotationWhatsApp,
     convertToSaleInvoiceData,
     convertToPurchaseInvoiceData,
     convertToProformaData,
@@ -853,5 +1016,7 @@ module.exports = {
     attachQuotationFile,
     getQuotationAttachments,
     updateQuotationAttachment,
-    deleteQuotationAttachment
+    deleteQuotationAttachment,
+    generatePublicLink,
+    viewQuotationPublic
 };

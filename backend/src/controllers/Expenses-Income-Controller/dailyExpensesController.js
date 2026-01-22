@@ -755,7 +755,7 @@ const deleteAttachment = async (req, res) => {
             await expense.save();
         }
 
-        res.status(200).json({ success: true, message: 'Attachment deleted successfully' });
+        res.status(200).json({ success: true, message: 'Attachment deleted successfully', data: expense.attachment });
     } catch (error) {
         console.error('Delete Attachment Error:', error);
         res.status(500).json({ success: false, message: 'Server Error' });
