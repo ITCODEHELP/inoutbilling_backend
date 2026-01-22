@@ -15,9 +15,28 @@ const {
     getItemColumns,
     createItemColumn,
     updateItemColumn,
-    deleteItemColumn
+    deleteItemColumn,
+    convertToSaleInvoiceData,
+    convertToPurchaseInvoiceData,
+    convertToChallanData,
+    convertToPurchaseOrderData,
+    cancelProforma,
+    restoreProforma,
+    attachProformaFile,
+    getProformaAttachments,
+    updateProformaAttachment,
+    deleteProformaAttachment,
+    downloadProformaPDF,
+    shareProformaEmail,
+    shareProformaWhatsApp,
+    generatePublicLink,
+    viewPublicProforma
 } = require('../../controllers/Other-Document-Controller/proformaController');
 const { protect } = require('../../middlewares/authMiddleware');
+const proformaAttachment = require('../../middlewares/proformaAttachmentMiddleware');
+
+// Public View Route (Unprotected)
+router.get('/view-public/:id/:token', viewPublicProforma);
 
 router.use(protect);
 
@@ -52,5 +71,25 @@ router.route('/:id')
     .delete(deleteProforma);
 
 router.get('/:id/print', printProforma);
+router.get('/:id/download-pdf', downloadProformaPDF);
+router.post('/:id/share-email', shareProformaEmail);
+router.post('/:id/share-whatsapp', shareProformaWhatsApp);
+router.get('/:id/public-link', generatePublicLink);
+
+// Conversion Routes
+router.get('/:id/convert-to-invoice', convertToSaleInvoiceData);
+router.get('/:id/convert-to-purchase-invoice', convertToPurchaseInvoiceData);
+router.get('/:id/convert-to-challan', convertToChallanData);
+router.get('/:id/convert-to-purchase-order', convertToPurchaseOrderData);
+
+// Actions
+router.post('/:id/cancel', cancelProforma);
+router.post('/:id/restore', restoreProforma);
+
+// Attachments
+router.post('/:id/attach-file', proformaAttachment.array('attachments', 10), attachProformaFile);
+router.get('/:id/attachments', getProformaAttachments);
+router.put('/:id/attachment/:attachmentId', proformaAttachment.single('attachment'), updateProformaAttachment);
+router.delete('/:id/attachment/:attachmentId', deleteProformaAttachment);
 
 module.exports = router;

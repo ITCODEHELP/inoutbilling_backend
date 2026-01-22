@@ -33,7 +33,7 @@ const parseUserAgent = (ua) => {
 const recordLogin = async (req, user) => {
     try {
         // Your logging logic (e.g., audit log, analytics)
-        console.log(`[Security] Login recorded for user ${user.userId} from IP ${req.ip}`);
+        // console.log(`[Security] Login recorded for user ${user.userId} from IP ${req.ip}`);
 
         // Example: Save to DB (adapt to your AuditLog model)
         // await AuditLog.create({
@@ -46,7 +46,7 @@ const recordLogin = async (req, user) => {
         // No next()—just return
         return { success: true };
     } catch (err) {
-        console.error('[recordLogin] Failed:', err);
+        // console.error('[recordLogin] Failed:', err);
         // Don't throw—logins shouldn't fail on audit
         return { success: false, error: err.message };
     }

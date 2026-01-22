@@ -8,6 +8,9 @@ const {
     updateQuotation,
     deleteQuotation,
     printQuotation,
+    downloadQuotationPDF,
+    shareQuotationEmail,
+    shareQuotationWhatsApp,
     getCustomFields,
     createCustomField,
     updateCustomField,
@@ -24,10 +27,14 @@ const {
     attachQuotationFile,
     getQuotationAttachments,
     updateQuotationAttachment,
-    deleteQuotationAttachment
+    deleteQuotationAttachment,
+    generatePublicLink,
+    viewQuotationPublic
 } = require('../../controllers/Other-Document-Controller/quotationController');
 const { protect } = require('../../middlewares/authMiddleware');
 const quotationAttachment = require('../../middlewares/quotationAttachmentMiddleware');
+
+router.get('/view-public/:id/:token', viewQuotationPublic); // Public route
 
 router.use(protect);
 
@@ -62,6 +69,10 @@ router.route('/:id')
     .delete(deleteQuotation);
 
 router.get('/:id/print', printQuotation);
+router.get('/:id/download-pdf', downloadQuotationPDF);
+router.post('/:id/share-email', shareQuotationEmail);
+router.post('/:id/share-whatsapp', shareQuotationWhatsApp);
+router.get('/:id/public-link', generatePublicLink);
 router.get('/:id/convert-to-invoice', convertToSaleInvoiceData);
 router.get('/:id/convert-to-purchase-invoice', convertToPurchaseInvoiceData);
 router.get('/:id/convert-to-proforma', convertToProformaData);
