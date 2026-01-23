@@ -328,19 +328,40 @@ const downloadQuotationPDF = async (req, res) => {
 
 const shareQuotationEmail = async (req, res) => {
     try {
-        const ids = req.params.id.split(',');
+        const { sendInvoiceEmail } = require('../../utils/emailHelper');
+        // Filter out invalid IDs and clean them
+        const ids = req.params.id.split(',').map(id => id.trim()).filter(id => mongoose.Types.ObjectId.isValid(id));
+
+        if (ids.length === 0) {
+            return res.status(400).json({ success: false, message: "Invalid Quotation ID(s) provided" });
+        }
+
         const quotations = await Quotation.find({ _id: { $in: ids }, userId: req.user._id });
-        if (!quotations || quotations.length === 0) return res.status(404).json({ success: false, message: "Quotation(s) not found" });
+
+        // Return clear error if any ID is missing
+        if (quotations.length !== ids.length) {
+            const foundIds = quotations.map(q => q._id.toString());
+            const missingIds = ids.filter(id => !foundIds.includes(id));
+            return res.status(404).json({
+                success: false,
+                message: "Some Quotation(s) were not found",
+                missingIds
+            });
+        }
 
         const firstDoc = quotations[0];
-        const customer = await Customer.findOne({ userId: req.user._id, companyName: firstDoc.customerInformation.ms });
-        const email = req.body.email || (customer ? customer.email : null);
+        if (!firstDoc?.customerInformation?.ms) {
+            return res.status(400).json({ success: false, message: "Quotation data is incomplete" });
+        }
 
-        if (!email) return res.status(400).json({ success: false, message: "Customer email not found. Please provide an email address." });
+        const customer = await Customer.findOne({ userId: req.user._id, companyName: firstDoc.customerInformation.ms });
+        const email = req.body.email || customer?.email;
+
+        if (!email) {
+            return res.status(400).json({ success: false, message: "Customer email not found. Please provide an email address." });
+        }
 
         const options = getCopyOptions(req);
-        // Use generic email sender if possible, or adapt sendInvoiceEmail
-        // Actually, sendInvoiceEmail might need to be multi-purpose
         await sendInvoiceEmail(quotations, email, false, options, 'Quotation');
         res.status(200).json({ success: true, message: `Quotation(s) sent to ${email} successfully` });
     } catch (error) {

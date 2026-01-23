@@ -26,25 +26,42 @@ const sendInvoiceEmail = async (invoices, email, isPurchase = false, options = {
 
         const transporter = nodemailer.createTransport({
             host: process.env.SMTP_HOST,
-            port: process.env.SMTP_PORT,
-            secure: process.env.SMTP_PORT == 465,
+            port: Number(process.env.SMTP_PORT),
+            secure: Number(process.env.SMTP_PORT) === 465,
             auth: {
                 user: process.env.SMTP_USER,
                 pass: process.env.SMTP_PASS,
             },
+            // Hostinger specific and debug settings
+            tls: {
+                rejectUnauthorized: false,
+                minVersion: 'TLSv1.2'
+            },
+            debug: false, // Disable debug logging for production
+            logger: false  // Disable console logging
         });
 
         const isQuotation = docType === 'Quotation';
         const isProforma = docType === 'Proforma';
-        const invoiceType = isQuotation ? 'Quotation' : (isProforma ? 'Proforma Invoice' : (isPurchase ? 'Purchase Invoice' : 'Tax Invoice'));
+        const isDeliveryChallan = docType === 'Delivery Challan';
+        const invoiceType = isDeliveryChallan ? 'Delivery Challan' : (isQuotation ? 'Quotation' : (isProforma ? 'Proforma Invoice' : (isPurchase ? 'Purchase Invoice' : 'Tax Invoice')));
         const senderLabel = isPurchase ? 'Vendor' : 'Customer';
 
         const firstDoc = items[0];
-        const details = isQuotation ? firstDoc.quotationDetails : firstDoc.invoiceDetails;
-        const invoiceNo = items.length === 1 ? (isQuotation ? details.quotationNumber : details.invoiceNumber) : 'Multiple';
+        let details, invoiceNo;
+        if (isDeliveryChallan) {
+            details = firstDoc.deliveryChallanDetails;
+            invoiceNo = items.length === 1 ? details?.challanNumber : 'Multiple';
+        } else if (isQuotation) {
+            details = firstDoc.quotationDetails;
+            invoiceNo = items.length === 1 ? details?.quotationNumber : 'Multiple';
+        } else {
+            details = firstDoc.invoiceDetails;
+            invoiceNo = items.length === 1 ? details?.invoiceNumber : 'Multiple';
+        }
 
         const mailOptions = {
-            from: `${process.env.FROM_NAME} <${process.env.FROM_EMAIL}>`,
+            from: `"${process.env.FROM_NAME}" <${process.env.FROM_EMAIL}>`,
             to: email,
             subject: `${invoiceType} ${invoiceNo} from Inout Billing`,
             text: `Dear ${senderLabel},\n\nPlease find attached the ${invoiceType.toLowerCase()} ${invoiceNo}.\n\nThank you!`,
@@ -55,17 +72,24 @@ const sendInvoiceEmail = async (invoices, email, isPurchase = false, options = {
             `,
             attachments: [
                 {
-                    filename: items.length === 1 ? `${invoiceType.replace(' ', '_')}_${invoiceNo}.pdf` : `Merged_${invoiceType.replace(' ', '_')}s.pdf`,
+                    filename: items.length === 1 ? `${invoiceType.replace(/ /g, '_')}_${invoiceNo}.pdf` : `Merged_${invoiceType.replace(/ /g, '_')}s.pdf`,
                     content: pdfBuffer,
                     contentType: 'application/pdf'
                 }
             ]
         };
 
-        const info = await transporter.sendMail(mailOptions);
-        return { success: true, messageId: info.messageId };
+        try {
+            const info = await transporter.sendMail(mailOptions);
+            return { success: true, messageId: info.messageId };
+        } catch (mailError) {
+            if (mailError.code === 'EAUTH') {
+                throw new Error('SMTP Authentication Failed: Please check your SMTP_USER and SMTP_PASS in .env');
+            }
+            throw mailError;
+        }
     } catch (error) {
-        console.error('Error sending email with PDF:', error);
+        console.error('Email Dispatch Error:', error.message);
         throw error;
     }
 };

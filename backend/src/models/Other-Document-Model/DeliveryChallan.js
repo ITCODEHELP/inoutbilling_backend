@@ -109,10 +109,26 @@ const deliveryChallanSchema = new mongoose.Schema({
         ref: 'Staff',
         default: null
     },
+    // Attachments
+    attachments: [{
+        fileName: { type: String },
+        filePath: { type: String },
+        fileSize: { type: Number },
+        mimeType: { type: String },
+        uploadedAt: { type: Date, default: Date.now }
+    }],
+    status: {
+        type: String,
+        enum: ['DRAFT', 'COMPLETED', 'CANCELLED'],
+        default: 'COMPLETED'
+    },
+    cancelledAt: { type: Date },
+    cancelledBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     bankDetails: { type: String },
     termsTitle: { type: String },
     termsDetails: { type: String },
     documentRemarks: { type: String },
+    note: { type: String },
     customFields: {
         type: Map,
         of: mongoose.Schema.Types.Mixed,

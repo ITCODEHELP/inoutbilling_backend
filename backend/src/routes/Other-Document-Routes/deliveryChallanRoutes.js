@@ -16,9 +16,26 @@ const {
     getItemColumns,
     createItemColumn,
     updateItemColumn,
-    deleteItemColumn
+    deleteItemColumn,
+    updateDeliveryChallanNote,
+    generateLabel,
+    convertToSaleInvoice,
+    convertToSaleInvoiceData,
+    cancelDeliveryChallan,
+    restoreDeliveryChallan,
+    uploadAttachment,
+    getAttachments,
+    deleteAttachment,
+    downloadDeliveryChallansPDF,
+    shareDeliveryChallanEmail,
+    shareDeliveryChallanWhatsApp,
+    generatePublicLink,
+    viewDeliveryChallanPublic
 } = require('../../controllers/Other-Document-Controller/deliveryChallanController');
+const upload = require('../../middlewares/entityDocumentUploadMiddleware');
 const { protect } = require('../../middlewares/authMiddleware');
+
+router.get('/view-public/:id/:token', viewDeliveryChallanPublic);
 
 router.use(protect);
 
@@ -52,6 +69,25 @@ router.route('/:id')
     .get(getDeliveryChallanById)
     .put(updateDeliveryChallan)
     .delete(deleteDeliveryChallan);
+
+router.patch('/:id/note', updateDeliveryChallanNote);
+
+router.get('/:id/label', generateLabel);
+
+router.post('/:id/convert-to-sale-invoice', convertToSaleInvoice);
+router.get('/:id/convert-to-invoice', convertToSaleInvoiceData);
+
+router.put('/:id/cancel', cancelDeliveryChallan);
+router.put('/:id/restore', restoreDeliveryChallan);
+
+router.post('/:id/attachments', upload.single('attachment'), uploadAttachment);
+router.get('/:id/attachments', getAttachments);
+router.delete('/:id/attachments/:attachmentId', deleteAttachment);
+
+router.get('/download/:id', downloadDeliveryChallansPDF);
+router.post('/share-email/:id', shareDeliveryChallanEmail);
+router.post('/share-whatsapp/:id', shareDeliveryChallanWhatsApp);
+router.get('/:id/public-link', generatePublicLink);
 
 router.get('/:id/print', printDeliveryChallan);
 

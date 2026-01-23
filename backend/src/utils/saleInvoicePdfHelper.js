@@ -22,9 +22,11 @@ const generateSaleInvoicePDF = (documents, user, options = { original: true }, d
         const lightBlueColor = "#E8F3FD";
 
         const isQuotation = docType === 'Quotation';
-        const titleLabel = options.titleLabel || (isQuotation ? "QUOTATION" : "TAX INVOICE");
-        const numLabel = options.numLabel || (isQuotation ? "Quotation No." : "Invoice No.");
-        const dateLabel = options.dateLabel || (isQuotation ? "Quotation Date" : "Invoice Date");
+        const isDeliveryChallan = docType === 'Delivery Challan';
+
+        const titleLabel = options.titleLabel || (isDeliveryChallan ? "DELIVERY CHALLAN" : (isQuotation ? "QUOTATION" : "TAX INVOICE"));
+        const numLabel = options.numLabel || (isDeliveryChallan ? "Challan No." : (isQuotation ? "Quotation No." : "Invoice No."));
+        const dateLabel = options.dateLabel || (isDeliveryChallan ? "Challan Date" : (isQuotation ? "Quotation Date" : "Invoice Date"));
 
         // Determine copies to render
         const copies = [];
@@ -51,8 +53,17 @@ const generateSaleInvoicePDF = (documents, user, options = { original: true }, d
 
         docList.forEach((document) => {
             // Map data dynamically
-            const details = isQuotation ? document.quotationDetails : document.invoiceDetails;
-            const docNumber = isQuotation ? details.quotationNumber : details.invoiceNumber;
+            let details, docNumber;
+            if (isDeliveryChallan) {
+                details = document.deliveryChallanDetails;
+                docNumber = details.challanNumber;
+            } else if (isQuotation) {
+                details = document.quotationDetails;
+                docNumber = details.quotationNumber;
+            } else {
+                details = document.invoiceDetails;
+                docNumber = details.invoiceNumber;
+            }
             const docDate = details.date;
 
             copies.forEach((copyType) => {
@@ -274,8 +285,8 @@ const generateSaleInvoicePDF = (documents, user, options = { original: true }, d
                 doc.moveTo(sigSplit, termsY).lineTo(sigSplit, termsY + Math.max(termsHeight, totalRightHeight)).stroke(blueColor);
 
                 if (!options.hideTerms) {
-                    if (isQuotation) {
-                        // For Quotation: ONLY show the 4 fixed lines, no split line, no termsDetails. No "Terms and Conditions" header.
+                    if (isQuotation || isDeliveryChallan) {
+                        // For Quotation/Challan: ONLY show the 4 fixed lines, no split line, no termsDetails. No "Terms and Conditions" header.
                         const fixedTerms = "Subject to our home Jurisdiction.\nOur Responsibility Ceases as soon as goods leaves our Premises.\nGoods once sold will not taken back.\nDelivery Ex-Premises.";
                         doc.fillColor(blackColor).fontSize(8).text(fixedTerms, startX + 5, termsY + 6, { width: (sigSplit - startX) - 10, lineGap: 3 });
                     } else {

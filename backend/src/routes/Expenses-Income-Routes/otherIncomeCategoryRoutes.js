@@ -4,7 +4,8 @@ const {
     getCategories,
     createCategory,
     updateCategory,
-    deleteCategory
+    deleteCategory,
+    toggleCategoryStatus
 } = require('../../controllers/Expenses-Income-Controller/otherIncomeCategoryController');
 const { protect } = require('../../middlewares/authMiddleware');
 
@@ -15,5 +16,7 @@ router.route('/')
 router.route('/:id')
     .put(protect, updateCategory)
     .delete(protect, deleteCategory);
+
+router.patch('/:id/toggle-status', protect, toggleCategoryStatus);
 
 module.exports = router;

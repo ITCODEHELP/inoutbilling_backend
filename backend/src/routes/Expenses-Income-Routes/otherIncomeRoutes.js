@@ -6,7 +6,15 @@ const {
     getIncomeSummary,
     printIncome,
     importIncomes,
-    downloadImportSample
+    downloadImportSample,
+    getIncome,
+    updateIncome,
+    deleteIncome,
+    downloadIncomePDF,
+    shareIncomeEmail,
+    shareIncomeWhatsApp,
+    generatePublicLink,
+    viewIncomePublic
 } = require('../../controllers/Expenses-Income-Controller/otherIncomeController');
 const {
     getCustomFields,
@@ -46,6 +54,16 @@ router.post('/', protect, createIncome);
 router.get('/', protect, getIncomes);
 router.get('/summary', protect, getIncomeSummary);
 router.post('/import', protect, memoryUpload.single('file'), importIncomes);
+router.route('/:id')
+    .get(protect, getIncome)
+    .put(protect, updateIncome)
+    .delete(protect, deleteIncome);
+
 router.get('/:id/print', protect, printIncome);
+router.get('/:id/download-pdf', protect, downloadIncomePDF);
+router.post('/:id/share-email', protect, shareIncomeEmail);
+router.post('/:id/share-whatsapp', protect, shareIncomeWhatsApp);
+router.get('/:id/public-link', protect, generatePublicLink);
+router.get('/view-public/:id/:token', viewIncomePublic);
 
 module.exports = router;
