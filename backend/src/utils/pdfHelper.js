@@ -501,16 +501,13 @@ const generateLedgerPDF = (data) => {
     });
 };
 
-/**
- * Extract copy options from request (query or body).
- * @param {Object} req - Express request object.
- * @returns {Object} { original, duplicate, transport, office }
- */
 const getCopyOptions = (req) => {
-    const source = (req.method === 'GET') ? req.query : req.body;
+    // Check both query and body to handle GET params in POST requests
+    const source = { ...req.query, ...req.body };
     const { original, duplicate, transport, office } = source;
 
     // Default to true for original if it's the only one and it's undefined
+    // For boolean strings from query and booleans from body
     const isOriginal = original === undefined ? true : (original === 'true' || original === true);
 
     return {
