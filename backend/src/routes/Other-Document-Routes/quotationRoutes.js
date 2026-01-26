@@ -29,7 +29,8 @@ const {
     updateQuotationAttachment,
     deleteQuotationAttachment,
     generatePublicLink,
-    viewQuotationPublic
+    viewQuotationPublic,
+    getDuplicateQuotationData
 } = require('../../controllers/Other-Document-Controller/quotationController');
 const { protect } = require('../../middlewares/authMiddleware');
 const quotationAttachment = require('../../middlewares/quotationAttachmentMiddleware');
@@ -78,6 +79,7 @@ router.get('/:id/convert-to-purchase-invoice', convertToPurchaseInvoiceData);
 router.get('/:id/convert-to-proforma', convertToProformaData);
 router.get('/:id/convert-to-challan', convertToChallanData);
 router.get('/:id/convert-to-purchase-order', convertToPurchaseOrderData);
+router.get('/:id/duplicate', getDuplicateQuotationData);
 
 // Attachment Routes
 router.post('/:id/attach-file', protect, quotationAttachment.array('attachments', 10), attachQuotationFile);

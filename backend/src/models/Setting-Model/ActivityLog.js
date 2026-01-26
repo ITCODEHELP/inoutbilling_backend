@@ -17,7 +17,11 @@ const ACTIVITY_ACTIONS = [
     'Convert',
     'Share Email',
     'Share WhatsApp',
-    'Share SMS'
+    'Share SMS',
+    'Restore',
+    'Attachment',
+    'Update Attachment',
+    'Delete Attachment'
 ];
 
 const activityLogSchema = new mongoose.Schema({

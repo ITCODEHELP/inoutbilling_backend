@@ -23,10 +23,11 @@ const generateSaleInvoicePDF = (documents, user, options = { original: true }, d
 
         const isQuotation = docType === 'Quotation';
         const isDeliveryChallan = docType === 'Delivery Challan';
+        const isPurchaseOrder = options.isPurchaseOrder === true;
 
-        const titleLabel = options.titleLabel || (isDeliveryChallan ? "DELIVERY CHALLAN" : (isQuotation ? "QUOTATION" : "TAX INVOICE"));
-        const numLabel = options.numLabel || (isDeliveryChallan ? "Challan No." : (isQuotation ? "Quotation No." : "Invoice No."));
-        const dateLabel = options.dateLabel || (isDeliveryChallan ? "Challan Date" : (isQuotation ? "Quotation Date" : "Invoice Date"));
+        const titleLabel = options.titleLabel || (isPurchaseOrder ? "PURCHASE ORDER" : (isDeliveryChallan ? "DELIVERY CHALLAN" : (isQuotation ? "QUOTATION" : "TAX INVOICE")));
+        const numLabel = options.numLabel || (isPurchaseOrder ? "PO No." : (isDeliveryChallan ? "Challan No." : (isQuotation ? "Quotation No." : "Invoice No.")));
+        const dateLabel = options.dateLabel || (isPurchaseOrder ? "PO Date" : (isDeliveryChallan ? "Challan Date" : (isQuotation ? "Quotation Date" : "Invoice Date")));
 
         // Determine copies to render
         const copies = [];
@@ -285,10 +286,14 @@ const generateSaleInvoicePDF = (documents, user, options = { original: true }, d
                 doc.moveTo(sigSplit, termsY).lineTo(sigSplit, termsY + Math.max(termsHeight, totalRightHeight)).stroke(blueColor);
 
                 if (!options.hideTerms) {
-                    if (isQuotation || isDeliveryChallan) {
-                        // For Quotation/Challan: ONLY show the 4 fixed lines, no split line, no termsDetails. No "Terms and Conditions" header.
+                    if (isQuotation || isDeliveryChallan || isPurchaseOrder) {
+                        // For Quotation/Challan/PO: logic to show/hide fixed lines
                         const fixedTerms = "Subject to our home Jurisdiction.\nOur Responsibility Ceases as soon as goods leaves our Premises.\nGoods once sold will not taken back.\nDelivery Ex-Premises.";
-                        doc.fillColor(blackColor).fontSize(8).text(fixedTerms, startX + 5, termsY + 6, { width: (sigSplit - startX) - 10, lineGap: 3 });
+
+                        // ONLY show for Quotation and Delivery Challan, NOT for Purchase Order
+                        if (!isPurchaseOrder) {
+                            doc.fillColor(blackColor).fontSize(8).text(fixedTerms, startX + 5, termsY + 6, { width: (sigSplit - startX) - 10, lineGap: 3 });
+                        }
                     } else {
                         // For Sale Invoice: Keep everything exactly as-is
                         // 1. Header

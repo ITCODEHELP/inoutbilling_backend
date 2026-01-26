@@ -4,10 +4,31 @@ const PurchaseOrderItemColumn = require('../../models/Other-Document-Model/Purch
 const Staff = require('../../models/Setting-Model/Staff');
 const Vendor = require('../../models/Customer-Vendor-Model/Vendor');
 const Quotation = require('../../models/Other-Document-Model/Quotation');
+const PurchaseInvoice = require('../../models/Purchase-Invoice-Model/PurchaseInvoice');
+const DeliveryChallan = require('../../models/Other-Document-Model/DeliveryChallan');
 const mongoose = require('mongoose');
 const { calculateDocumentTotals, getSummaryAggregation } = require('../../utils/documentHelper');
 const numberToWords = require('../../utils/numberToWords');
 const { calculateShippingDistance } = require('../../utils/shippingHelper');
+const User = require('../../models/User-Model/User');
+const { generatePurchaseOrderLabelPDF } = require('../../utils/purchaseOrderLabelHelper');
+const { recordActivity } = require('../../utils/activityLogHelper');
+const { generateSaleInvoicePDF } = require('../../utils/saleInvoicePdfHelper');
+const { getCopyOptions } = require('../../utils/pdfHelper');
+const { sendInvoiceEmail } = require('../../utils/emailHelper');
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+
+// Helper to generate secure public token
+const generatePublicToken = (id) => {
+    const secret = process.env.JWT_SECRET || 'your-default-secret';
+    return crypto
+        .createHmac('sha256', secret)
+        .update(id.toString())
+        .digest('hex')
+        .substring(0, 16);
+};
 
 // Helper to build search query
 const buildPurchaseOrderQuery = async (userId, queryParams) => {
@@ -443,6 +464,672 @@ const deletePurchaseOrder = async (req, res) => {
     }
 };
 
+// @desc    Update Purchase Order Status
+// @route   PATCH /api/purchase-orders/:id/status
+const updatePurchaseOrderStatus = async (req, res) => {
+    try {
+        const { status } = req.body;
+        if (!status) return res.status(400).json({ success: false, message: 'Status is required' });
+
+        const validStatuses = ['New', 'Pending', 'In-Work', 'Completed'];
+        if (!validStatuses.includes(status)) {
+            return res.status(400).json({ success: false, message: 'Invalid status' });
+        }
+
+        const po = await PurchaseOrder.findOneAndUpdate(
+            { _id: req.params.id, userId: req.user._id },
+            { status },
+            { new: true, runValidators: true }
+        );
+
+        if (!po) return res.status(404).json({ success: false, message: 'Purchase Order not found' });
+
+        res.status(200).json({ success: true, data: { status: po.status } });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Get Remaining Quantity for Purchase Order items
+// @route   GET /api/purchase-orders/:id/remaining-quantity
+// @desc    Print Purchase Order
+// @route   GET /api/purchase-orders/:id/print
+const printPurchaseOrder = async (req, res) => {
+    try {
+        const po = await PurchaseOrder.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!po) return res.status(404).json({ success: false, message: 'Purchase Order not found' });
+
+        const userData = await User.findById(req.user._id);
+        const options = getCopyOptions(req);
+        options.isPurchaseOrder = true;
+
+        // Map PO to Challan template structure
+        const mappedPO = po.toObject();
+        mappedPO.deliveryChallanDetails = {
+            challanNumber: po.purchaseOrderDetails.poNumber,
+            date: po.purchaseOrderDetails.date
+        };
+        mappedPO.customerInformation = po.vendorInformation;
+
+        const pdfBuffer = await generateSaleInvoicePDF(mappedPO, userData, options, 'Delivery Challan');
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename=purchase-order-${po.purchaseOrderDetails.poNumber}.pdf`);
+        res.send(pdfBuffer);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Download Purchase Order PDF (Supports merged)
+// @route   GET /api/purchase-orders/:id/download-pdf
+const downloadPurchaseOrderPDF = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const pos = await PurchaseOrder.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!pos || pos.length === 0) return res.status(404).json({ success: false, message: "Purchase Order(s) not found" });
+
+        const userData = await User.findById(req.user._id);
+        const options = getCopyOptions(req);
+        options.isPurchaseOrder = true;
+
+        // Map POs to Challan template structure
+        const mappedPOs = pos.map(po => {
+            const mapped = po.toObject();
+            mapped.deliveryChallanDetails = {
+                challanNumber: po.purchaseOrderDetails.poNumber,
+                date: po.purchaseOrderDetails.date
+            };
+            mapped.customerInformation = po.vendorInformation;
+            return mapped;
+        });
+
+        const pdfBuffer = await generateSaleInvoicePDF(mappedPOs, userData, options, 'Delivery Challan');
+
+        const filename = pos.length === 1 ? `PurchaseOrder_${pos[0].purchaseOrderDetails.poNumber}.pdf` : `Merged_PurchaseOrders.pdf`;
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.status(200).send(pdfBuffer);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Share Purchase Order via Email
+// @route   POST /api/purchase-orders/:id/share-email
+const sharePurchaseOrderEmail = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',').map(id => id.trim()).filter(id => mongoose.Types.ObjectId.isValid(id));
+        if (ids.length === 0) return res.status(400).json({ success: false, message: "Invalid ID(s) provided" });
+
+        const pos = await PurchaseOrder.find({ _id: { $in: ids }, userId: req.user._id });
+        if (pos.length !== ids.length) return res.status(404).json({ success: false, message: "Some Purchase Order(s) not found" });
+
+        const firstDoc = pos[0];
+        const vendor = await Vendor.findOne({ userId: req.user._id, companyName: firstDoc.vendorInformation.ms });
+        const email = req.body.email || vendor?.email;
+
+        if (!email) return res.status(400).json({ success: false, message: "Vendor email not found. Please provide an email address." });
+
+        const options = getCopyOptions(req);
+
+        // Map POs to Challan template structure for email attachment
+        const mappedPOs = pos.map(po => {
+            const mapped = po.toObject();
+            mapped.deliveryChallanDetails = {
+                challanNumber: po.purchaseOrderDetails.poNumber,
+                date: po.purchaseOrderDetails.date
+            };
+            mapped.customerInformation = po.vendorInformation;
+            return mapped;
+        });
+
+        // Use sendInvoiceEmail with 'Delivery Challan' type
+        await sendInvoiceEmail(mappedPOs, email, false, options, 'Delivery Challan');
+        res.status(200).json({ success: true, message: `Purchase Order(s) sent to ${email} successfully` });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Share Purchase Order via WhatsApp
+// @route   POST /api/purchase-orders/:id/share-whatsapp
+const sharePurchaseOrderWhatsApp = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const pos = await PurchaseOrder.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!pos || pos.length === 0) return res.status(404).json({ success: false, message: "Purchase Order(s) not found" });
+
+        const firstDoc = pos[0];
+        const vendor = await Vendor.findOne({ userId: req.user._id, companyName: firstDoc.vendorInformation.ms });
+        const phone = req.body.phone || vendor?.phone;
+
+        if (!phone) return res.status(400).json({ success: false, message: "Vendor phone not found. Please provide a phone number." });
+
+        const cleanPhone = phone.replace(/\D/g, '');
+        const whatsappNumber = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+
+        const options = getCopyOptions(req);
+        let queryParams = [];
+        if (options.original) queryParams.push('original=true');
+        if (options.duplicate) queryParams.push('duplicate=true');
+        if (options.transport) queryParams.push('transport=true');
+        if (options.office) queryParams.push('office=true');
+
+        const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+        const token = generatePublicToken(req.params.id);
+        const publicLink = `${req.protocol}://${req.get('host')}/api/purchase-orders/view-public/${req.params.id}/${token}${queryString}`;
+
+        let message = '';
+        if (pos.length === 1) {
+            message = `Dear ${firstDoc.vendorInformation.ms},\n\nPlease find your Purchase Order No: ${firstDoc.purchaseOrderDetails.poNumber} for Total Amount: ${firstDoc.totals.grandTotal.toFixed(2)}.\n\nView Link: ${publicLink}\n\nThank you!`;
+        } else {
+            message = `Dear ${firstDoc.vendorInformation.ms},\n\nPlease find your merged Purchase Orders for Total Amount: ${pos.reduce((sum, q) => sum + q.totals.grandTotal, 0).toFixed(2)}.\n\nView Link: ${publicLink}\n\nThank you!`;
+        }
+
+        const encodedMessage = encodeURIComponent(message);
+        const deepLink = `https://wa.me/${whatsappNumber}?text=${encodedMessage}`;
+
+        res.status(200).json({
+            success: true,
+            message: "WhatsApp share link generated",
+            data: { whatsappNumber, deepLink }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Generate Public Link
+// @route   GET /api/purchase-orders/:id/public-link
+const generatePublicLink = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const pos = await PurchaseOrder.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!pos || pos.length === 0) return res.status(404).json({ success: false, message: "Purchase Order(s) not found" });
+
+        const token = generatePublicToken(req.params.id);
+        const options = getCopyOptions(req);
+        let queryParams = [];
+        if (options.original) queryParams.push('original=true');
+        if (options.duplicate) queryParams.push('duplicate=true');
+        if (options.transport) queryParams.push('transport=true');
+        if (options.office) queryParams.push('office=true');
+
+        const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const publicLink = `${baseUrl}/api/purchase-orders/view-public/${req.params.id}/${token}${queryString}`;
+
+        res.status(200).json({ success: true, publicLink });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    View Purchase Order Publicly
+// @route   GET /api/purchase-orders/view-public/:id/:token
+const viewPurchaseOrderPublic = async (req, res) => {
+    try {
+        const { id, token } = req.params;
+        const generatedToken = generatePublicToken(id);
+
+        if (token !== generatedToken) {
+            return res.status(403).send('Invalid or expired link');
+        }
+
+        const ids = id.split(',');
+        const pos = await PurchaseOrder.find({ _id: { $in: ids } });
+        if (!pos || pos.length === 0) return res.status(404).send('Purchase Order not found');
+
+        const userData = await User.findById(pos[0].userId);
+        const options = getCopyOptions(req);
+        options.isPurchaseOrder = true;
+
+        // Map POs to Challan template structure
+        const mappedPOs = pos.map(po => {
+            const mapped = po.toObject();
+            mapped.deliveryChallanDetails = {
+                challanNumber: po.purchaseOrderDetails.poNumber,
+                date: po.purchaseOrderDetails.date
+            };
+            mapped.customerInformation = po.vendorInformation;
+            return mapped;
+        });
+
+        const pdfBuffer = await generateSaleInvoicePDF(mappedPOs, userData, options, 'Delivery Challan');
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename=purchase-order.pdf`);
+        res.send(pdfBuffer);
+    } catch (error) {
+        res.status(500).send(error.message);
+    }
+};
+
+const getPurchaseOrderRemainingQty = async (req, res) => {
+    try {
+        const poId = req.params.id;
+        const userId = req.user._id;
+
+        const po = await PurchaseOrder.findOne({ _id: poId, userId });
+        if (!po) return res.status(404).json({ success: false, message: 'Purchase Order not found' });
+
+        // Find all linked documents that consumed quantity
+        // Supporting Purchase Invoice and Delivery Challan as requested
+        const piDocs = await PurchaseInvoice.find({
+            userId,
+            'conversions.convertedFrom.docId': poId,
+            'status': 'Active'
+        });
+
+        const dcDocs = await DeliveryChallan.find({
+            userId,
+            'conversions.convertedFrom.docId': poId,
+            'status': 'COMPLETED'
+        });
+
+        // Map to aggregate consumed quantity by productName
+        const consumedQtyMap = {};
+        const processItems = (items) => {
+            if (!Array.isArray(items)) return;
+            items.forEach(item => {
+                const name = item.productName;
+                const qty = Number(item.qty || 0);
+                if (name) {
+                    consumedQtyMap[name] = (consumedQtyMap[name] || 0) + qty;
+                }
+            });
+        };
+
+        piDocs.forEach(doc => processItems(doc.items));
+        dcDocs.forEach(doc => processItems(doc.items));
+
+        const resultData = [];
+        let totalItemsRemainingCount = 0;
+
+        po.items.forEach(poItem => {
+            const totalQty = Number(poItem.qty || 0);
+            const usedQty = consumedQtyMap[poItem.productName] || 0;
+            const remainingQty = Math.max(0, totalQty - usedQty);
+
+            // Per requirement: If remaining is zero, return empty/null dataset (exclude from list)
+            if (remainingQty > 0) {
+                resultData.push({
+                    productName: poItem.productName,
+                    usedQty,
+                    totalQty,
+                    remainingQty,
+                    displayFormat: `${usedQty}/${totalQty}`
+                });
+                totalItemsRemainingCount++;
+            }
+        });
+
+        // Per requirement: If total remaining quantity is zero, return empty or null dataset
+        if (resultData.length === 0) {
+            return res.status(200).json({
+                success: true,
+                count: 0,
+                data: null
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            count: totalItemsRemainingCount,
+            data: resultData
+        });
+
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Generate Label/Envelope PDF for Purchase Order
+// @route   GET /api/purchase-orders/:id/label
+const generatePOLabel = async (req, res) => {
+    try {
+        const { type = 'SHIPPING', size = 'Medium' } = req.query; // type: SHIPPING | ENVELOPE, size: Small | Medium | Large
+
+        const po = await PurchaseOrder.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!po) return res.status(404).json({ success: false, message: 'Purchase Order not found' });
+
+        const fullUser = await User.findById(req.user._id);
+
+        const pdfBuffer = await generatePurchaseOrderLabelPDF(po, fullUser, type.toUpperCase(), size);
+
+        const filename = `${type}_${po.purchaseOrderDetails.poNumber}.pdf`;
+
+        // Inline disposition allows both print (browser-based printing) and view (preview)
+        if (req.query.action === 'download') {
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        } else {
+            res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+        }
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.send(pdfBuffer);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Setup conversion to Purchase Invoice (Prefill Data)
+// @route   GET /api/purchase-orders/:id/convert-to-purchase-invoice
+const convertPOToPurchaseInvoiceData = async (req, res) => {
+    try {
+        const po = await PurchaseOrder.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!po) return res.status(404).json({ success: false, message: 'Purchase Order not found' });
+
+        const data = po.toObject();
+        const mappedData = {
+            vendorInformation: data.vendorInformation,
+            shippingAddress: data.shippingAddress,
+            useSameShippingAddress: data.useSameShippingAddress,
+            items: data.items.map(item => ({
+                productName: item.productName,
+                productGroup: item.productGroup,
+                itemNote: item.itemNote,
+                hsnSac: item.hsnSac,
+                qty: item.qty,
+                uom: item.uom,
+                price: item.price,
+                discountValue: item.discount, // Purchase Order has 'discount' (percentage usually)
+                discountType: 'Percentage',
+                igst: item.igst,
+                cgst: item.cgst,
+                sgst: item.sgst,
+                taxableValue: item.price * item.qty,
+                total: item.total
+            })),
+            additionalCharges: data.additionalCharges || [],
+            totals: data.totals,
+            staff: data.staff,
+            branch: data.branch,
+            bankDetails: data.bankDetails,
+            termsTitle: data.termsTitle,
+            termsDetails: data.termsDetails,
+            documentRemarks: data.documentRemarks,
+            customFields: data.customFields || {},
+            conversions: {
+                convertedFrom: { docType: 'Purchase Order', docId: po._id }
+            }
+        };
+        res.status(200).json({ success: true, message: 'Purchase Order data for Purchase Invoice conversion retrieved', data: mappedData });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
+// @desc    Setup conversion to Delivery Challan (Prefill Data)
+// @route   GET /api/purchase-orders/:id/convert-to-challan
+const convertPOToChallanData = async (req, res) => {
+    try {
+        const po = await PurchaseOrder.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!po) return res.status(404).json({ success: false, message: 'Purchase Order not found' });
+
+        const data = po.toObject();
+        const mappedData = {
+            customerInformation: data.vendorInformation, // Map Vendor to Customer for Challan
+            shippingAddress: data.shippingAddress,
+            useSameShippingAddress: data.useSameShippingAddress,
+            items: data.items,
+            additionalCharges: data.additionalCharges || [],
+            totals: data.totals,
+            staff: data.staff,
+            branch: data.branch,
+            bankDetails: data.bankDetails,
+            termsTitle: data.termsTitle,
+            termsDetails: data.termsDetails,
+            documentRemarks: data.documentRemarks,
+            customFields: data.customFields || {},
+            conversions: {
+                convertedFrom: { docType: 'Purchase Order', docId: po._id }
+            }
+        };
+        res.status(200).json({ success: true, message: 'Purchase Order data for Delivery Challan conversion retrieved', data: mappedData });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
+// @desc    Get data for duplicating a Purchase Order (Prefill Add Form)
+// @route   GET /api/purchase-orders/:id/duplicate
+const getDuplicatePOData = async (req, res) => {
+    try {
+        const po = await PurchaseOrder.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!po) return res.status(404).json({ success: false, message: 'Purchase Order not found' });
+
+        const data = po.toObject();
+
+        // System fields to exclude
+        delete data._id;
+        delete data.status;
+        delete data.createdAt;
+        delete data.updatedAt;
+        delete data.__v;
+        delete data.userId;
+
+        // Reset document number (will be generated anew)
+        if (data.purchaseOrderDetails) {
+            delete data.purchaseOrderDetails.poNumber;
+        }
+
+        // Linked references to exclude
+        delete data.staff;
+        delete data.branch;
+
+        // Reset sub-document IDs for items and charges
+        if (Array.isArray(data.items)) {
+            data.items = data.items.map(item => {
+                delete item._id;
+                return item;
+            });
+        }
+        if (Array.isArray(data.additionalCharges)) {
+            data.additionalCharges = data.additionalCharges.map(charge => {
+                delete charge._id;
+                return charge;
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Purchase Order data for duplication retrieved',
+            data
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Cancel Purchase Order
+// @route   POST /api/purchase-orders/:id/cancel
+const cancelPurchaseOrder = async (req, res) => {
+    try {
+        const po = await PurchaseOrder.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!po) return res.status(404).json({ success: false, message: 'Purchase Order not found' });
+
+        if (po.status === 'Cancelled') {
+            return res.status(400).json({ success: false, message: 'Purchase Order is already cancelled' });
+        }
+
+        po.status = 'Cancelled';
+        await po.save();
+
+        await recordActivity(
+            req,
+            'Cancel',
+            'Purchase Order',
+            `Purchase Order cancelled: ${po.purchaseOrderDetails.poNumber}`,
+            po.purchaseOrderDetails.poNumber
+        );
+
+        res.status(200).json({ success: true, message: "Purchase Order cancelled successfully", data: po });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Restore Purchase Order
+// @route   POST /api/purchase-orders/:id/restore
+const restorePurchaseOrder = async (req, res) => {
+    try {
+        const po = await PurchaseOrder.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!po) return res.status(404).json({ success: false, message: 'Purchase Order not found' });
+
+        if (po.status !== 'Cancelled') {
+            return res.status(400).json({ success: false, message: 'Purchase Order is not in Cancelled state' });
+        }
+
+        po.status = 'New';
+        await po.save();
+
+        await recordActivity(
+            req,
+            'Restore',
+            'Purchase Order',
+            `Purchase Order restored: ${po.purchaseOrderDetails.poNumber}`,
+            po.purchaseOrderDetails.poNumber
+        );
+
+        res.status(200).json({ success: true, message: "Purchase Order restored successfully", data: po });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// --- Attachment Handlers ---
+
+// @desc    Attach files to Purchase Order
+// @route   POST /api/purchase-orders/:id/attach-file
+const attachPurchaseOrderFile = async (req, res) => {
+    try {
+        if (!req.files || req.files.length === 0) return res.status(400).json({ success: false, message: "No files uploaded" });
+
+        const newAttachments = req.files.map(file => ({
+            fileName: file.filename,
+            filePath: file.path,
+            fileSize: file.size,
+            mimeType: file.mimetype,
+            uploadedAt: new Date(),
+            uploadedBy: req.user._id
+        }));
+
+        const po = await PurchaseOrder.findOneAndUpdate(
+            { _id: req.params.id, userId: req.user._id },
+            { $push: { attachments: { $each: newAttachments } } },
+            { new: true }
+        );
+
+        if (!po) return res.status(404).json({ success: false, message: "Purchase Order not found" });
+
+        await recordActivity(
+            req,
+            'Attachment',
+            'Purchase Order',
+            `Files attached to Purchase Order: ${po.purchaseOrderDetails.poNumber}`,
+            po.purchaseOrderDetails.poNumber
+        );
+
+        res.status(200).json({ success: true, message: "Files attached successfully", data: po.attachments });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Get Purchase Order Attachments
+// @route   GET /api/purchase-orders/:id/attachments
+const getPurchaseOrderAttachments = async (req, res) => {
+    try {
+        const po = await PurchaseOrder.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!po) return res.status(404).json({ success: false, message: "Purchase Order not found" });
+        res.status(200).json({ success: true, data: po.attachments || [] });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Update (Replace) Purchase Order Attachment
+// @route   PUT /api/purchase-orders/:id/attachment/:attachmentId
+const updatePurchaseOrderAttachment = async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded" });
+
+        const po = await PurchaseOrder.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!po) {
+            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return res.status(404).json({ success: false, message: "Purchase Order not found" });
+        }
+
+        const attachmentIndex = po.attachments.findIndex(a => a._id.toString() === req.params.attachmentId);
+        if (attachmentIndex === -1) {
+            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return res.status(404).json({ success: false, message: "Attachment not found" });
+        }
+
+        // Remove old file
+        const oldFile = po.attachments[attachmentIndex].filePath;
+        if (fs.existsSync(oldFile)) {
+            try { fs.unlinkSync(oldFile); } catch (e) { console.error("Error deleting old file:", e); }
+        }
+
+        // Update metadata
+        po.attachments[attachmentIndex] = {
+            _id: po.attachments[attachmentIndex]._id, // Keep ID
+            fileName: req.file.filename,
+            filePath: req.file.path,
+            fileSize: req.file.size,
+            mimeType: req.file.mimetype,
+            uploadedAt: new Date(),
+            uploadedBy: req.user._id
+        };
+
+        await po.save();
+
+        await recordActivity(
+            req,
+            'Update Attachment',
+            'Purchase Order',
+            `Attachment replaced for Purchase Order: ${po.purchaseOrderDetails.poNumber}`,
+            po.purchaseOrderDetails.poNumber
+        );
+
+        res.status(200).json({ success: true, message: "Attachment replaced successfully", data: po.attachments });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Delete Purchase Order Attachment
+// @route   DELETE /api/purchase-orders/:id/attachment/:attachmentId
+const deletePurchaseOrderAttachment = async (req, res) => {
+    try {
+        const po = await PurchaseOrder.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!po) return res.status(404).json({ success: false, message: "Purchase Order not found" });
+
+        const attachment = po.attachments.find(a => a._id.toString() === req.params.attachmentId);
+        if (!attachment) return res.status(404).json({ success: false, message: "Attachment not found" });
+
+        // Remove from disk
+        if (fs.existsSync(attachment.filePath)) {
+            try { fs.unlinkSync(attachment.filePath); } catch (e) { console.error("Error deleting file:", e); }
+        }
+
+        // Remove from array
+        po.attachments = po.attachments.filter(a => a._id.toString() !== req.params.attachmentId);
+        await po.save();
+
+        await recordActivity(
+            req,
+            'Delete Attachment',
+            'Purchase Order',
+            `Attachment deleted from Purchase Order: ${po.purchaseOrderDetails.poNumber}`,
+            po.purchaseOrderDetails.poNumber
+        );
+
+        res.status(200).json({ success: true, message: "Attachment deleted successfully", data: po.attachments });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 // --- Custom Field Handlers ---
 const getCustomFields = async (req, res) => {
     try {
@@ -561,5 +1248,23 @@ module.exports = {
     getItemColumns,
     createItemColumn,
     updateItemColumn,
-    deleteItemColumn
+    deleteItemColumn,
+    updatePurchaseOrderStatus,
+    getPurchaseOrderRemainingQty,
+    generatePOLabel,
+    convertPOToPurchaseInvoiceData,
+    convertPOToChallanData,
+    getDuplicatePOData,
+    cancelPurchaseOrder,
+    restorePurchaseOrder,
+    attachPurchaseOrderFile,
+    getPurchaseOrderAttachments,
+    updatePurchaseOrderAttachment,
+    deletePurchaseOrderAttachment,
+    printPurchaseOrder,
+    downloadPurchaseOrderPDF,
+    sharePurchaseOrderEmail,
+    sharePurchaseOrderWhatsApp,
+    generatePublicLink,
+    viewPurchaseOrderPublic
 };
