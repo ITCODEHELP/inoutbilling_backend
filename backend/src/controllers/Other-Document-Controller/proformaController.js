@@ -881,6 +881,52 @@ const convertToChallanData = async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
+// @desc    Get data for duplicating a Proforma (Prefill Add Form)
+// @route   GET /api/proformas/:id/duplicate
+const getDuplicateProformaData = async (req, res) => {
+    try {
+        const proforma = await Proforma.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!proforma) return res.status(404).json({ success: false, message: 'Proforma not found' });
+
+        const data = proforma.toObject();
+
+        // System fields to exclude
+        delete data._id;
+        delete data.status;
+        delete data.createdAt;
+        delete data.updatedAt;
+        delete data.__v;
+        delete data.userId;
+        delete data.conversions;
+        delete data.attachments;
+
+        // Reset document number
+        if (data.proformaDetails) {
+            delete data.proformaDetails.proformaNumber;
+        }
+
+        // Linked references to exclude
+        delete data.staff;
+        delete data.branch;
+
+        // Reset sub-document IDs
+        if (Array.isArray(data.items)) {
+            data.items = data.items.map(item => {
+                delete item._id;
+                return item;
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Proforma data for duplication retrieved',
+            data
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 // @desc    Setup conversion to Purchase Order (Prefill Data)
 // @route   GET /api/proformas/:id/convert-to-purchase-order
 const convertToPurchaseOrderData = async (req, res) => {
@@ -1141,5 +1187,6 @@ module.exports = {
     attachProformaFile,
     getProformaAttachments,
     updateProformaAttachment,
-    deleteProformaAttachment
+    deleteProformaAttachment,
+    getDuplicateProformaData
 };

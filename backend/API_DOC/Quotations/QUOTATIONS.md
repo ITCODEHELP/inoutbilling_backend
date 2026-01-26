@@ -131,7 +131,11 @@
 
 ### Convert to Purchase Order
 `GET` /api/quotations/:id/convert-to-purchase-order
-- Fetches quotation data mapped for the Purchase Order "Add" form (maps Customer details to Vendor).
+- Description: Returns pre-filled data for the Purchase Order form based on the Quotation.
+
+### Duplicate
+`GET` /api/quotations/:id/duplicate
+- Description: Returns cleaned Quotation data (excluding ID, document number, status, etc.) for pre-filling a new Quotation form.
 
 ## Attachment APIs
 

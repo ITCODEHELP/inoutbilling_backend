@@ -62,6 +62,10 @@
 - Body: `note` (String)
 - Returns the updated delivery challan.
 
+### Duplicate
+`GET` /api/delivery-challans/:id/duplicate
+- Description: Returns cleaned Delivery Challan data (excluding ID, document number, status, etc.) for pre-filling a new Delivery Challan form.
+
 ### Delete
 `DELETE` /api/delivery-challans/:id
 

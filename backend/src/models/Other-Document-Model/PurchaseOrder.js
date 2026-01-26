@@ -26,6 +26,11 @@ const purchaseOrderSchema = new mongoose.Schema({
         ref: 'User',
         required: true
     },
+    status: {
+        type: String,
+        enum: ['New', 'Pending', 'In-Work', 'Completed', 'Cancelled'],
+        default: 'New'
+    },
     // Section 1: Vendor Information
     vendorInformation: {
         ms: { type: String, required: [true, 'ms is required'] },
@@ -104,7 +109,15 @@ const purchaseOrderSchema = new mongoose.Schema({
         type: Map,
         of: mongoose.Schema.Types.Mixed,
         default: {}
-    }
+    },
+    attachments: [{
+        fileName: { type: String },
+        filePath: { type: String },
+        fileSize: { type: Number },
+        mimeType: { type: String },
+        uploadedAt: { type: Date, default: Date.now },
+        uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+    }]
 }, {
     timestamps: true
 });
