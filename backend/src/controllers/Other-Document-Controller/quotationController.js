@@ -10,6 +10,7 @@ const { getCopyOptions } = require('../../utils/pdfHelper');
 const { sendInvoiceEmail } = require('../../utils/emailHelper');
 const User = require('../../models/User-Model/User');
 const Customer = require('../../models/Customer-Vendor-Model/Customer');
+const { calculateShippingDistance } = require('../../utils/shippingHelper');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -205,8 +206,6 @@ const createQuotation = async (req, res) => {
             customFields,
             print
         } = req.body;
-
-        const { calculateShippingDistance } = require('../../utils/shippingHelper');
 
         // Distance Calculation
         let finalShippingAddress = req.body.shippingAddress || {};
@@ -518,7 +517,7 @@ const updateQuotation = async (req, res) => {
 
         const quotation = await Quotation.findOneAndUpdate(
             { _id: req.params.id, userId: req.user._id },
-            req.body,
+            { $set: req.body },
             { new: true, runValidators: true }
         ).populate('staff', 'fullName');
 
