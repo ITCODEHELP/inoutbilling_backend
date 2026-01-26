@@ -26,6 +26,11 @@ const saleOrderSchema = new mongoose.Schema({
         ref: 'User',
         required: true
     },
+    status: {
+        type: String,
+        enum: ['New', 'Pending', 'In-Work', 'Completed', 'Cancelled'],
+        default: 'New'
+    },
     // Section 1: Customer Information
     customerInformation: {
         ms: { type: String, required: [true, 'ms is required'] },
@@ -62,11 +67,6 @@ const saleOrderSchema = new mongoose.Schema({
             type: String,
             enum: ['HAND DELIVERY', 'TRANSPORT/ROAD REGULAR', 'ROAD-OVER DIMENSIONAL', 'RAIL', 'AIR', 'SHIP', 'SHIP-CUM ROAD/RAIL'],
             required: true
-        },
-        status: {
-            type: String,
-            enum: ['NEW', 'PENDING', 'IN_WORK', 'COMPLETED'],
-            default: 'NEW'
         }
     },
     // Section 3: Transport Details
@@ -110,7 +110,15 @@ const saleOrderSchema = new mongoose.Schema({
         type: Map,
         of: mongoose.Schema.Types.Mixed,
         default: {}
-    }
+    },
+    attachments: [{
+        fileName: { type: String },
+        filePath: { type: String },
+        fileSize: { type: Number },
+        mimeType: { type: String },
+        uploadedAt: { type: Date, default: Date.now },
+        uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+    }]
 }, {
     timestamps: true
 });

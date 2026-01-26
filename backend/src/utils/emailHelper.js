@@ -44,7 +44,8 @@ const sendInvoiceEmail = async (invoices, email, isPurchase = false, options = {
         const isQuotation = docType === 'Quotation';
         const isProforma = docType === 'Proforma';
         const isDeliveryChallan = docType === 'Delivery Challan';
-        const invoiceType = isDeliveryChallan ? 'Delivery Challan' : (isQuotation ? 'Quotation' : (isProforma ? 'Proforma Invoice' : (isPurchase ? 'Purchase Invoice' : 'Tax Invoice')));
+        const isSaleOrder = docType === 'Sale Order';
+        const invoiceType = isDeliveryChallan ? 'Delivery Challan' : (isQuotation ? 'Quotation' : (isProforma ? 'Proforma Invoice' : (isPurchase ? 'Purchase Invoice' : (isSaleOrder ? 'Sale Order' : 'Tax Invoice'))));
         const senderLabel = isPurchase ? 'Vendor' : 'Customer';
 
         const firstDoc = items[0];
