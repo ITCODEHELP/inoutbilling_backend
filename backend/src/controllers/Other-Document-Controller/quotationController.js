@@ -819,6 +819,50 @@ const convertToPurchaseOrderData = async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
+// @desc    Get data for duplicating a Quotation (Prefill Add Form)
+// @route   GET /api/quotations/:id/duplicate
+const getDuplicateQuotationData = async (req, res) => {
+    try {
+        const quotation = await Quotation.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!quotation) return res.status(404).json({ success: false, message: 'Quotation not found' });
+
+        const data = quotation.toObject();
+
+        // System fields to exclude
+        delete data._id;
+        delete data.createdAt;
+        delete data.updatedAt;
+        delete data.__v;
+        delete data.userId;
+        delete data.conversions;
+        delete data.attachments;
+
+        // Reset document number
+        if (data.quotationDetails) {
+            delete data.quotationDetails.quotationNumber;
+        }
+
+        // Linked references to exclude (optional, but consistent with PO duplicate)
+        delete data.staff;
+        delete data.branch;
+
+        // Reset sub-document IDs
+        if (Array.isArray(data.items)) {
+            data.items = data.items.map(item => {
+                delete item._id;
+                return item;
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Quotation data for duplication retrieved',
+            data
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
 
 // --- Attachment Handlers ---
 
@@ -1038,5 +1082,6 @@ module.exports = {
     updateQuotationAttachment,
     deleteQuotationAttachment,
     generatePublicLink,
-    viewQuotationPublic
+    viewQuotationPublic,
+    getDuplicateQuotationData
 };

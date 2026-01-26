@@ -30,7 +30,8 @@ const {
     shareProformaEmail,
     shareProformaWhatsApp,
     generatePublicLink,
-    viewPublicProforma
+    viewPublicProforma,
+    getDuplicateProformaData
 } = require('../../controllers/Other-Document-Controller/proformaController');
 const { protect } = require('../../middlewares/authMiddleware');
 const proformaAttachment = require('../../middlewares/proformaAttachmentMiddleware');
@@ -80,6 +81,7 @@ router.get('/:id/public-link', generatePublicLink);
 router.get('/:id/convert-to-invoice', convertToSaleInvoiceData);
 router.get('/:id/convert-to-purchase-invoice', convertToPurchaseInvoiceData);
 router.get('/:id/convert-to-challan', convertToChallanData);
+router.get('/:id/duplicate', getDuplicateProformaData);
 router.get('/:id/convert-to-purchase-order', convertToPurchaseOrderData);
 
 // Actions

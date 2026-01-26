@@ -79,7 +79,11 @@
 
 ### Convert to Delivery Challan
 `GET` /api/proformas/:id/convert-to-challan
-- Fetches proforma data mapped for the Delivery Challan "Add" form.
+- Description: Returns pre-filled data for the Delivery Challan form based on the Proforma Invoice.
+
+### Duplicate
+`GET` /api/proformas/:id/duplicate
+- Description: Returns cleaned Proforma data (excluding ID, document number, status, etc.) for pre-filling a new Proforma Invoice form.
 
 ### Convert to Purchase Order
 `GET` /api/proformas/:id/convert-to-purchase-order

@@ -30,7 +30,8 @@ const {
     shareDeliveryChallanEmail,
     shareDeliveryChallanWhatsApp,
     generatePublicLink,
-    viewDeliveryChallanPublic
+    viewDeliveryChallanPublic,
+    getDuplicateChallanData
 } = require('../../controllers/Other-Document-Controller/deliveryChallanController');
 const upload = require('../../middlewares/entityDocumentUploadMiddleware');
 const { protect } = require('../../middlewares/authMiddleware');
@@ -73,6 +74,7 @@ router.route('/:id')
 router.patch('/:id/note', updateDeliveryChallanNote);
 
 router.get('/:id/label', generateLabel);
+router.get('/:id/duplicate', getDuplicateChallanData);
 
 router.post('/:id/convert-to-sale-invoice', convertToSaleInvoice);
 router.get('/:id/convert-to-invoice', convertToSaleInvoiceData);

@@ -23,10 +23,12 @@ const generateSaleInvoicePDF = (documents, user, options = { original: true }, d
 
         const isQuotation = docType === 'Quotation';
         const isDeliveryChallan = docType === 'Delivery Challan';
+        const isPurchaseOrder = options.isPurchaseOrder === true;
+        const isSaleOrder = docType === 'Sale Order';
 
-        const titleLabel = options.titleLabel || (isDeliveryChallan ? "DELIVERY CHALLAN" : (isQuotation ? "QUOTATION" : "TAX INVOICE"));
-        const numLabel = options.numLabel || (isDeliveryChallan ? "Challan No." : (isQuotation ? "Quotation No." : "Invoice No."));
-        const dateLabel = options.dateLabel || (isDeliveryChallan ? "Challan Date" : (isQuotation ? "Quotation Date" : "Invoice Date"));
+        const titleLabel = options.titleLabel || (isPurchaseOrder ? "PURCHASE ORDER" : (isDeliveryChallan ? "DELIVERY CHALLAN" : (isQuotation ? "QUOTATION" : (isSaleOrder ? "SALE ORDER" : "TAX INVOICE"))));
+        const numLabel = options.numLabel || (isPurchaseOrder ? "PO No." : (isDeliveryChallan ? "Challan No." : (isQuotation ? "Quotation No." : (isSaleOrder ? "Sale Order No." : "Invoice No."))));
+        const dateLabel = options.dateLabel || (isPurchaseOrder ? "PO Date" : (isDeliveryChallan ? "Challan Date" : (isQuotation ? "Quotation Date" : (isSaleOrder ? "Sale Order Date" : "Invoice Date"))));
 
         // Determine copies to render
         const copies = [];
@@ -138,14 +140,16 @@ const generateSaleInvoicePDF = (documents, user, options = { original: true }, d
 
                 // No (Left Half)
                 doc.fillColor(blackColor).fontSize(9).text(numLabel, rightStart + 5, gridTop + 6, { bold: true });
-                doc.fillColor(blackColor).text(docNumber, rightStart + 60, gridTop + 6, { bold: true });
+                // Increased spacing for Sale Order to prevent overlap (60 -> 75)
+                const numXOffset = isSaleOrder ? 75 : 60;
+                doc.fillColor(blackColor).text(docNumber, rightStart + numXOffset, gridTop + 6, { bold: true });
 
                 // Date (Right Half)
                 doc.fillColor(blackColor).text(dateLabel, rightMid + 5, gridTop + 6, { bold: true });
                 doc.fillColor(blackColor).text(new Date(docDate).toLocaleDateString(), rightMid + 65, gridTop + 6, { width: (rightWidth / 2) - 70, align: 'right' });
 
                 // 2. Bottom Row: Due Date (Only for Invoice)
-                if (!isQuotation && !options.hideDueDate) {
+                if (!isQuotation && !isSaleOrder && !options.hideDueDate) {
                     doc.fillColor(blackColor).text("Due Date", rightStart + 5, gridTop + 26, { bold: true });
                     doc.fillColor(blackColor).text(document.dueDate ? new Date(document.dueDate).toLocaleDateString() : "-", rightStart + 60, gridTop + 26);
                 }
@@ -285,22 +289,42 @@ const generateSaleInvoicePDF = (documents, user, options = { original: true }, d
                 doc.moveTo(sigSplit, termsY).lineTo(sigSplit, termsY + Math.max(termsHeight, totalRightHeight)).stroke(blueColor);
 
                 if (!options.hideTerms) {
-                    if (isQuotation || isDeliveryChallan) {
-                        // For Quotation/Challan: ONLY show the 4 fixed lines, no split line, no termsDetails. No "Terms and Conditions" header.
+                    if (isQuotation || isDeliveryChallan || isPurchaseOrder || isSaleOrder) {
+                        // For Quotation/Challan/PO/SaleOrder: logic to show/hide fixed lines
                         const fixedTerms = "Subject to our home Jurisdiction.\nOur Responsibility Ceases as soon as goods leaves our Premises.\nGoods once sold will not taken back.\nDelivery Ex-Premises.";
-                        doc.fillColor(blackColor).fontSize(8).text(fixedTerms, startX + 5, termsY + 6, { width: (sigSplit - startX) - 10, lineGap: 3 });
+
+                        // ONLY show for Quotation, Delivery Challan and Sale Order, NOT for Purchase Order
+                        if (!isPurchaseOrder) {
+                            doc.fillColor(blackColor).fontSize(8).text(fixedTerms, startX + 5, termsY + 6, { width: (sigSplit - startX) - 10, lineGap: 3 });
+                        }
                     } else {
-                        // For Sale Invoice: Keep everything exactly as-is
+                        // For Sale Invoice Only
                         // 1. Header
-                        doc.fillColor(blackColor).fontSize(9).text("Terms and Conditions", startX, termsY + 3, { width: 250, align: "center", bold: true });
-                        doc.fillColor(blackColor).fontSize(8).text(document.termsDetails || "", startX + 5, termsY + 12, { width: (sigSplit - startX) - 10 });
+                        doc.fillColor(blackColor).fontSize(9).text("Terms and Conditions", startX, termsY + 2, { width: 250, align: "center", bold: true });
+
+                        let termsText = document.termsDetails || "";
+                        if (isSaleOrder) {
+                            // Remove duplicate sentence if present in user terms
+                            termsText = termsText.replace(/Goods once sold will not be taken back\.?/i, "").trim();
+                        }
+
+                        doc.fillColor(blackColor).fontSize(8).text(termsText, startX + 5, termsY + 12, { width: (sigSplit - startX) - 10 });
 
                         // Horizontal Separator inside Left Box
-                        const splitY = termsY + 15;
+                        // Moved down to prevent overlapping with termsDetails
+                        const splitY = termsY + 25;
                         doc.moveTo(startX, splitY).lineTo(sigSplit, splitY).stroke(blueColor);
 
                         // Bottom Half: Jurisdiction
-                        const mandatoryTerms = "Subject to our Home Jurisdiction.\nOur Responsibility Ceases as soon as goods leaves our Premises.\nGoods once sold will not taken back.\nDelivery Ex-Premises.";
+                        let mandatoryTerms = "";
+                        if (isSaleOrder) {
+                            // Sale Order: Exclude 'Goods once sold will not taken back'
+                            mandatoryTerms = "Subject to our Home Jurisdiction.\nOur Responsibility Ceases as soon as goods leaves our Premises.\nGoods once sold will not taken back.\nDelivery Ex-Premises.";
+                        } else {
+                            // Tax Invoice: Include all terms
+                            mandatoryTerms = "Subject to our Home Jurisdiction.\nOur Responsibility Ceases as soon as goods leaves our Premises.\nGoods once sold will not taken back.\nDelivery Ex-Premises.";
+                        }
+
                         doc.fillColor(blackColor).fontSize(7).text(mandatoryTerms, startX + 5, splitY + 2, { width: (sigSplit - startX) - 10, lineGap: 1 });
                     }
                 }

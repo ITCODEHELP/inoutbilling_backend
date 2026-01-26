@@ -707,6 +707,52 @@ const deleteCustomField = async (req, res) => {
     }
 };
 
+// @desc    Get data for duplicating a Delivery Challan (Prefill Add Form)
+// @route   GET /api/delivery-challans/:id/duplicate
+const getDuplicateChallanData = async (req, res) => {
+    try {
+        const challan = await DeliveryChallan.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!challan) return res.status(404).json({ success: false, message: 'Delivery Challan not found' });
+
+        const data = challan.toObject();
+
+        // System fields to exclude
+        delete data._id;
+        delete data.status;
+        delete data.createdAt;
+        delete data.updatedAt;
+        delete data.__v;
+        delete data.userId;
+        delete data.attachments;
+        delete data.cancelledAt;
+        delete data.cancelledBy;
+
+        // Reset document number
+        if (data.deliveryChallanDetails) {
+            delete data.deliveryChallanDetails.challanNumber;
+        }
+
+        // Linked references to exclude
+        delete data.staff;
+
+        // Reset sub-document IDs
+        if (Array.isArray(data.items)) {
+            data.items = data.items.map(item => {
+                delete item._id;
+                return item;
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Delivery Challan data for duplication retrieved',
+            data
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 // --- Item Column Handlers ---
 const getItemColumns = async (req, res) => {
     try {
@@ -1173,6 +1219,7 @@ module.exports = {
     createCustomField,
     updateCustomField,
     deleteCustomField,
+    getDuplicateChallanData,
     getItemColumns,
     createItemColumn,
     updateItemColumn,
