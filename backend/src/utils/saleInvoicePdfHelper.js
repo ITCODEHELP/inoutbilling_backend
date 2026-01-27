@@ -25,10 +25,11 @@ const generateSaleInvoicePDF = (documents, user, options = { original: true }, d
         const isDeliveryChallan = docType === 'Delivery Challan';
         const isPurchaseOrder = options.isPurchaseOrder === true;
         const isSaleOrder = docType === 'Sale Order';
+        const isJobWork = docType === 'Job Work';
 
-        const titleLabel = options.titleLabel || (isPurchaseOrder ? "PURCHASE ORDER" : (isDeliveryChallan ? "DELIVERY CHALLAN" : (isQuotation ? "QUOTATION" : (isSaleOrder ? "SALE ORDER" : "TAX INVOICE"))));
-        const numLabel = options.numLabel || (isPurchaseOrder ? "PO No." : (isDeliveryChallan ? "Challan No." : (isQuotation ? "Quotation No." : (isSaleOrder ? "Sale Order No." : "Invoice No."))));
-        const dateLabel = options.dateLabel || (isPurchaseOrder ? "PO Date" : (isDeliveryChallan ? "Challan Date" : (isQuotation ? "Quotation Date" : (isSaleOrder ? "Sale Order Date" : "Invoice Date"))));
+        const titleLabel = options.titleLabel || (isPurchaseOrder ? "PURCHASE ORDER" : (isJobWork ? "JOB WORK" : (isDeliveryChallan ? "DELIVERY CHALLAN" : (isQuotation ? "QUOTATION" : (isSaleOrder ? "SALE ORDER" : "TAX INVOICE")))));
+        const numLabel = options.numLabel || (isPurchaseOrder ? "PO No." : (isJobWork ? "Job Work No." : (isDeliveryChallan ? "Challan No." : (isQuotation ? "Quotation No." : (isSaleOrder ? "Sale Order No." : "Invoice No.")))));
+        const dateLabel = options.dateLabel || (isPurchaseOrder ? "PO Date" : (isJobWork ? "Job Work Date" : (isDeliveryChallan ? "Challan Date" : (isQuotation ? "Quotation Date" : (isSaleOrder ? "Sale Order Date" : "Invoice Date")))));
 
         // Determine copies to render
         const copies = [];
@@ -62,6 +63,9 @@ const generateSaleInvoicePDF = (documents, user, options = { original: true }, d
             } else if (isQuotation) {
                 details = document.quotationDetails;
                 docNumber = details.quotationNumber;
+            } else if (isJobWork) {
+                details = document.jobWorkDetails;
+                docNumber = details.jobWorkNumber;
             } else {
                 details = document.invoiceDetails;
                 docNumber = details.invoiceNumber;
@@ -140,8 +144,8 @@ const generateSaleInvoicePDF = (documents, user, options = { original: true }, d
 
                 // No (Left Half)
                 doc.fillColor(blackColor).fontSize(9).text(numLabel, rightStart + 5, gridTop + 6, { bold: true });
-                // Increased spacing for Sale Order to prevent overlap (60 -> 75)
-                const numXOffset = isSaleOrder ? 75 : 60;
+                // Increased spacing for Sale Order and Job Work to prevent overlap
+                const numXOffset = (isSaleOrder || isJobWork) ? 75 : 60;
                 doc.fillColor(blackColor).text(docNumber, rightStart + numXOffset, gridTop + 6, { bold: true });
 
                 // Date (Right Half)
@@ -149,7 +153,7 @@ const generateSaleInvoicePDF = (documents, user, options = { original: true }, d
                 doc.fillColor(blackColor).text(new Date(docDate).toLocaleDateString(), rightMid + 65, gridTop + 6, { width: (rightWidth / 2) - 70, align: 'right' });
 
                 // 2. Bottom Row: Due Date (Only for Invoice)
-                if (!isQuotation && !isSaleOrder && !options.hideDueDate) {
+                if (!isQuotation && !isSaleOrder && !isJobWork && !options.hideDueDate) {
                     doc.fillColor(blackColor).text("Due Date", rightStart + 5, gridTop + 26, { bold: true });
                     doc.fillColor(blackColor).text(document.dueDate ? new Date(document.dueDate).toLocaleDateString() : "-", rightStart + 60, gridTop + 26);
                 }
@@ -289,8 +293,8 @@ const generateSaleInvoicePDF = (documents, user, options = { original: true }, d
                 doc.moveTo(sigSplit, termsY).lineTo(sigSplit, termsY + Math.max(termsHeight, totalRightHeight)).stroke(blueColor);
 
                 if (!options.hideTerms) {
-                    if (isQuotation || isDeliveryChallan || isPurchaseOrder || isSaleOrder) {
-                        // For Quotation/Challan/PO/SaleOrder: logic to show/hide fixed lines
+                    if (isQuotation || isDeliveryChallan || isPurchaseOrder || isSaleOrder || isJobWork) {
+                        // For Quotation/Challan/PO/SaleOrder/JobWork: logic to show/hide fixed lines
                         const fixedTerms = "Subject to our home Jurisdiction.\nOur Responsibility Ceases as soon as goods leaves our Premises.\nGoods once sold will not taken back.\nDelivery Ex-Premises.";
 
                         // ONLY show for Quotation, Delivery Challan and Sale Order, NOT for Purchase Order
@@ -319,6 +323,8 @@ const generateSaleInvoicePDF = (documents, user, options = { original: true }, d
                         let mandatoryTerms = "";
                         if (isSaleOrder) {
                             // Sale Order: Exclude 'Goods once sold will not taken back'
+                            mandatoryTerms = "Subject to our Home Jurisdiction.\nOur Responsibility Ceases as soon as goods leaves our Premises.\nGoods once sold will not taken back.\nDelivery Ex-Premises.";
+                        } else if (isJobWork) {
                             mandatoryTerms = "Subject to our Home Jurisdiction.\nOur Responsibility Ceases as soon as goods leaves our Premises.\nGoods once sold will not taken back.\nDelivery Ex-Premises.";
                         } else {
                             // Tax Invoice: Include all terms

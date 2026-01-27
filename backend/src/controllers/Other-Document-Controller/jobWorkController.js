@@ -5,6 +5,24 @@ const { calculateShippingDistance } = require('../../utils/shippingHelper');
 const mongoose = require('mongoose');
 const { calculateDocumentTotals, getSummaryAggregation } = require('../../utils/documentHelper');
 const numberToWords = require('../../utils/numberToWords');
+const SaleInvoice = require('../../models/Sales-Invoice-Model/SaleInvoice');
+const DeliveryChallan = require('../../models/Other-Document-Model/DeliveryChallan');
+const { generateJobWorkPDF } = require('../../utils/jobWorkPdfHelper');
+const { getCopyOptions } = require('../../utils/pdfHelper');
+const { sendInvoiceEmail } = require('../../utils/emailHelper');
+const User = require('../../models/User-Model/User');
+const crypto = require('crypto');
+const fs = require('fs');
+
+// Helper to generate secure public token
+const generatePublicToken = (id) => {
+    const secret = process.env.JWT_SECRET || 'your-default-secret';
+    return crypto
+        .createHmac('sha256', secret)
+        .update(id.toString())
+        .digest('hex')
+        .substring(0, 16);
+};
 
 /**
  * Generate unique Job Work Number (user-wise)
@@ -582,6 +600,680 @@ const deleteJobWork = async (req, res) => {
     }
 };
 
+// @desc    Update Job Work Status
+// @route   PATCH /api/job-works/:id/status
+const updateJobWorkStatus = async (req, res) => {
+    try {
+        const { status } = req.body;
+        if (!status) return res.status(400).json({ success: false, message: 'Status is required' });
+
+        const validStatuses = ['New', 'Pending', 'In-Work', 'Completed'];
+        if (!validStatuses.includes(status)) {
+            return res.status(400).json({ success: false, message: 'Invalid status' });
+        }
+
+        const jobWork = await JobWork.findOneAndUpdate(
+            { _id: req.params.id, userId: req.user._id },
+            { 'jobWorkDetails.status': status },
+            { new: true, runValidators: true }
+        );
+
+        if (!jobWork) return res.status(404).json({ success: false, message: 'Job Work not found' });
+
+        res.status(200).json({ success: true, data: { status: jobWork.jobWorkDetails.status } });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Get Remaining Quantity for Job Work items
+// @route   GET /api/job-works/:id/remaining-quantity
+const getJobWorkRemainingQty = async (req, res) => {
+    try {
+        const jwId = req.params.id;
+        const userId = req.user._id;
+
+        const jw = await JobWork.findOne({ _id: jwId, userId });
+        if (!jw) return res.status(404).json({ success: false, message: 'Job Work not found' });
+
+        // Find all linked documents that consumed quantity
+        const siDocs = await SaleInvoice.find({
+            userId,
+            'conversions.convertedFrom.docId': jwId
+        });
+
+        const dcDocs = await DeliveryChallan.find({
+            userId,
+            'conversions.convertedFrom.docId': jwId,
+            'status': 'COMPLETED'
+        });
+
+        // Map to aggregate consumed quantity by productName
+        const consumedQtyMap = {};
+        const processItems = (items) => {
+            if (!Array.isArray(items)) return;
+            items.forEach(item => {
+                const name = item.productName;
+                const qty = Number(item.qty || 0);
+                if (name) {
+                    consumedQtyMap[name] = (consumedQtyMap[name] || 0) + qty;
+                }
+            });
+        };
+
+        siDocs.forEach(doc => processItems(doc.items));
+        dcDocs.forEach(doc => processItems(doc.items));
+
+        const resultData = [];
+        let totalItemsRemainingCount = 0;
+
+        jw.items.forEach(jwItem => {
+            const totalQty = Number(jwItem.qty || 0);
+            const usedQty = consumedQtyMap[jwItem.productName] || 0;
+            const remainingQty = Math.max(0, totalQty - usedQty);
+
+            if (remainingQty > 0) {
+                resultData.push({
+                    productName: jwItem.productName,
+                    usedQty,
+                    totalQty,
+                    remainingQty,
+                    displayFormat: `${usedQty}/${totalQty}`
+                });
+                totalItemsRemainingCount++;
+            }
+        });
+
+        if (resultData.length === 0) {
+            return res.status(200).json({
+                success: true,
+                count: 0,
+                data: null
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            count: totalItemsRemainingCount,
+            data: resultData
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Setup conversion to Delivery Challan (Prefill Data)
+// @route   GET /api/job-works/:id/convert-to-challan
+const convertJWToChallanData = async (req, res) => {
+    try {
+        const jw = await JobWork.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!jw) return res.status(404).json({ success: false, message: 'Job Work not found' });
+
+        const data = jw.toObject();
+        const mappedData = {
+            customerInformation: data.customerInformation,
+            shippingAddress: data.shippingAddress,
+            useSameShippingAddress: data.useSameShippingAddress,
+            items: data.items,
+            additionalCharges: data.additionalCharges || [],
+            totals: data.totals,
+            staff: data.staff,
+            branch: data.branch,
+            bankDetails: data.bankDetails,
+            termsTitle: data.termsTitle,
+            termsDetails: data.termsDetails,
+            documentRemarks: data.documentRemarks,
+            customFields: data.customFields || {},
+            conversions: {
+                convertedFrom: { docType: 'Job Work', docId: jw._id }
+            }
+        };
+        res.status(200).json({ success: true, message: 'Job Work data for Delivery Challan conversion retrieved', data: mappedData });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
+// @desc    Setup conversion to Sale Invoice (Prefill Data)
+// @route   GET /api/job-works/:id/convert-to-invoice
+const convertJWToInvoiceData = async (req, res) => {
+    try {
+        const jw = await JobWork.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!jw) {
+            return res.status(404).json({ success: false, message: 'Job Work not found' });
+        }
+
+        const data = jw.toObject();
+
+        // Map data to Sale Invoice structure for frontend prefilling
+        const mappedData = {
+            customerInformation: data.customerInformation,
+            shippingAddress: data.shippingAddress,
+            useSameShippingAddress: data.useSameShippingAddress,
+            items: data.items.map(item => ({
+                productName: item.productName,
+                productGroup: item.productGroup,
+                itemNote: item.itemNote,
+                hsnSac: item.hsnSac,
+                qty: item.qty,
+                uom: item.uom,
+                price: item.price,
+                discountValue: item.discount,
+                discountType: 'Percentage',
+                igst: item.igst,
+                cgst: item.cgst,
+                sgst: item.sgst,
+                taxableValue: item.price * item.qty,
+                total: item.total
+            })),
+            additionalCharges: data.additionalCharges || [],
+            totals: data.totals,
+            paymentType: data.paymentType || 'CREDIT', // Default if missing in JW
+            staff: data.staff,
+            branch: data.branch,
+            bankDetails: data.bankDetails,
+            termsTitle: data.termsTitle,
+            termsDetails: data.termsDetails,
+            documentRemarks: data.documentRemarks,
+            customFields: data.customFields || {},
+            conversions: {
+                convertedFrom: {
+                    docType: 'Job Work',
+                    docId: jw._id
+                }
+            }
+        };
+
+        res.status(200).json({
+            success: true,
+            message: 'Job Work data for conversion retrieved',
+            data: mappedData
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Setup conversion to Sale Order (Prefill Data)
+// @route   GET /api/job-works/:id/convert-to-sale-order
+const convertJWToSaleOrderData = async (req, res) => {
+    try {
+        const jw = await JobWork.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!jw) {
+            return res.status(404).json({ success: false, message: 'Job Work not found' });
+        }
+
+        const data = jw.toObject();
+
+        const mappedData = {
+            customerInformation: data.customerInformation,
+            shippingAddress: data.shippingAddress,
+            useSameShippingAddress: data.useSameShippingAddress,
+            items: data.items.map(item => ({
+                productName: item.productName,
+                productGroup: item.productGroup,
+                itemNote: item.itemNote,
+                hsnSac: item.hsnSac,
+                qty: item.qty,
+                uom: item.uom,
+                price: item.price,
+                discount: item.discount,
+                discountType: 'Percentage',
+                igst: item.igst,
+                cgst: item.cgst,
+                sgst: item.sgst,
+                taxableValue: item.price * item.qty,
+                total: item.total
+            })),
+            additionalCharges: data.additionalCharges || [],
+            totals: data.totals,
+            staff: data.staff,
+            branch: data.branch,
+            bankDetails: data.bankDetails,
+            termsTitle: data.termsTitle,
+            termsDetails: data.termsDetails,
+            documentRemarks: data.documentRemarks,
+            customFields: data.customFields || {},
+            conversions: {
+                convertedFrom: {
+                    docType: 'Job Work',
+                    docId: jw._id
+                }
+            }
+        };
+
+        res.status(200).json({
+            success: true,
+            message: 'Job Work data for Sale Order conversion retrieved',
+            data: mappedData
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Setup conversion to Quotation (Prefill Data)
+// @route   GET /api/job-works/:id/convert-to-quotation
+const convertJWToQuotationData = async (req, res) => {
+    try {
+        const jw = await JobWork.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!jw) {
+            return res.status(404).json({ success: false, message: 'Job Work not found' });
+        }
+
+        const data = jw.toObject();
+
+        const mappedData = {
+            customerInformation: data.customerInformation,
+            shippingAddress: data.shippingAddress,
+            useSameShippingAddress: data.useSameShippingAddress,
+            items: data.items.map(item => ({
+                productName: item.productName,
+                productGroup: item.productGroup,
+                itemNote: item.itemNote,
+                hsnSac: item.hsnSac,
+                qty: item.qty,
+                uom: item.uom,
+                price: item.price,
+                discount: item.discount,
+                igst: item.igst,
+                cgst: item.cgst,
+                sgst: item.sgst,
+                taxableValue: (item.price || 0) * (item.qty || 0),
+                total: item.total
+            })),
+            additionalCharges: data.additionalCharges || [],
+            totals: data.totals,
+            staff: data.staff,
+            branch: data.branch,
+            bankDetails: data.bankDetails,
+            termsTitle: data.termsTitle,
+            termsDetails: data.termsDetails,
+            documentRemarks: data.documentRemarks,
+            customFields: data.customFields || {},
+            conversions: {
+                convertedFrom: {
+                    docType: 'Job Work',
+                    docId: jw._id
+                }
+            }
+        };
+
+        res.status(200).json({
+            success: true,
+            message: 'Job Work data for Quotation conversion retrieved',
+            data: mappedData
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Get data for duplicating a Job Work (Prefill Add Form)
+// @route   GET /api/job-works/:id/duplicate
+const getDuplicateJobWorkData = async (req, res) => {
+    try {
+        const jw = await JobWork.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!jw) return res.status(404).json({ success: false, message: 'Job Work not found' });
+
+        const data = jw.toObject();
+
+        // System fields to exclude
+        delete data._id;
+        delete data.createdAt;
+        delete data.updatedAt;
+        delete data.__v;
+        delete data.userId;
+
+        // Reset document number (will be generated anew)
+        if (data.jobWorkDetails) {
+            delete data.jobWorkDetails.jobWorkNumber;
+            delete data.jobWorkDetails.status; // Consistency with SO duplicate
+        }
+
+        // Linked references to exclude (consistency with SO duplicate)
+        delete data.staff;
+        delete data.branch;
+
+        // Reset sub-document IDs for items and charges
+        if (Array.isArray(data.items)) {
+            data.items = data.items.map(item => {
+                delete item._id;
+                return item;
+            });
+        }
+        if (Array.isArray(data.additionalCharges)) {
+            data.additionalCharges = data.additionalCharges.map(charge => {
+                delete charge._id;
+                return charge;
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Job Work data for duplication retrieved',
+            data
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// --- Attachment Handlers ---
+
+// @desc    Attach files to Job Work
+// @route   POST /api/job-works/:id/attach-file
+const attachJobWorkFile = async (req, res) => {
+    try {
+        if (!req.files || req.files.length === 0) return res.status(400).json({ success: false, message: "No files uploaded" });
+
+        const newAttachments = req.files.map(file => ({
+            fileName: file.filename,
+            filePath: file.path,
+            fileSize: file.size,
+            mimeType: file.mimetype,
+            uploadedAt: new Date(),
+            uploadedBy: req.user._id
+        }));
+
+        const jw = await JobWork.findOneAndUpdate(
+            { _id: req.params.id, userId: req.user._id },
+            { $push: { attachments: { $each: newAttachments } } },
+            { new: true }
+        );
+
+        if (!jw) return res.status(404).json({ success: false, message: "Job Work not found" });
+
+        res.status(200).json({ success: true, message: "Files attached successfully", data: jw.attachments });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Get Job Work Attachments
+// @route   GET /api/job-works/:id/attachments
+const getJobWorkAttachments = async (req, res) => {
+    try {
+        const jw = await JobWork.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!jw) return res.status(404).json({ success: false, message: "Job Work not found" });
+        res.status(200).json({ success: true, data: jw.attachments || [] });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Update (Replace) Job Work Attachment
+// @route   PUT /api/job-works/:id/attachment/:attachmentId
+const updateJobWorkAttachment = async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded" });
+
+        const jw = await JobWork.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!jw) {
+            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return res.status(404).json({ success: false, message: "Job Work not found" });
+        }
+
+        const attachmentIndex = jw.attachments.findIndex(a => a._id.toString() === req.params.attachmentId);
+        if (attachmentIndex === -1) {
+            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return res.status(404).json({ success: false, message: "Attachment not found" });
+        }
+
+        // Remove old file
+        const oldFile = jw.attachments[attachmentIndex].filePath;
+        if (fs.existsSync(oldFile)) {
+            try { fs.unlinkSync(oldFile); } catch (e) { console.error("Error deleting old file:", e); }
+        }
+
+        // Update metadata
+        jw.attachments[attachmentIndex] = {
+            _id: jw.attachments[attachmentIndex]._id,
+            fileName: req.file.filename,
+            filePath: req.file.path,
+            fileSize: req.file.size,
+            mimeType: req.file.mimetype,
+            uploadedAt: new Date(),
+            uploadedBy: req.user._id
+        };
+
+        await jw.save();
+
+        res.status(200).json({ success: true, message: "Attachment replaced successfully", data: jw.attachments });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Delete Job Work Attachment
+// @route   DELETE /api/job-works/:id/attachment/:attachmentId
+const deleteJobWorkAttachment = async (req, res) => {
+    try {
+        const jw = await JobWork.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!jw) return res.status(404).json({ success: false, message: "Job Work not found" });
+
+        const attachment = jw.attachments.find(a => a._id.toString() === req.params.attachmentId);
+        if (!attachment) return res.status(404).json({ success: false, message: "Attachment not found" });
+
+        // Remove from disk
+        if (fs.existsSync(attachment.filePath)) {
+            try { fs.unlinkSync(attachment.filePath); } catch (e) { console.error("Error deleting file:", e); }
+        }
+
+        // Remove from array
+        jw.attachments = jw.attachments.filter(a => a._id.toString() !== req.params.attachmentId);
+        await jw.save();
+
+        res.status(200).json({ success: true, message: "Attachment deleted successfully" });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Print Job Work
+// @route   GET /api/job-works/:id/print
+const printJobWork = async (req, res) => {
+    try {
+        const jw = await JobWork.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!jw) return res.status(404).json({ success: false, message: 'Job Work not found' });
+
+        const userData = await User.findById(req.user._id);
+        const options = getCopyOptions(req);
+
+        // Map Job Work to template structure
+        const mappedJW = jw.toObject();
+        mappedJW.jobWorkDetails = {
+            jobWorkNumber: jw.jobWorkDetails.jobWorkNumber,
+            date: jw.jobWorkDetails.date
+        };
+
+        const pdfBuffer = await generateJobWorkPDF(mappedJW, userData, options);
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename=job-work-${jw.jobWorkDetails.jobWorkNumber}.pdf`);
+        res.send(pdfBuffer);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Download Job Work PDF (Supports merged)
+// @route   GET /api/job-works/:id/download-pdf
+const downloadJobWorkPDF = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const jws = await JobWork.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!jws || jws.length === 0) return res.status(404).json({ success: false, message: "Job Work(s) not found" });
+
+        const userData = await User.findById(req.user._id);
+        const options = getCopyOptions(req);
+
+        // Map Job Works to template structure
+        const mappedJWs = jws.map(jw => {
+            const mapped = jw.toObject();
+            mapped.jobWorkDetails = {
+                jobWorkNumber: jw.jobWorkDetails.jobWorkNumber,
+                date: jw.jobWorkDetails.date
+            };
+            return mapped;
+        });
+
+        const pdfBuffer = await generateJobWorkPDF(mappedJWs, userData, options);
+
+        const filename = jws.length === 1 ? `JobWork_${jws[0].jobWorkDetails.jobWorkNumber}.pdf` : `Merged_JobWorks.pdf`;
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.status(200).send(pdfBuffer);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Share Job Work via Email
+// @route   POST /api/job-works/:id/share-email
+const shareJobWorkEmail = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',').map(id => id.trim()).filter(id => mongoose.Types.ObjectId.isValid(id));
+        if (ids.length === 0) return res.status(400).json({ success: false, message: "Invalid ID(s) provided" });
+
+        const jws = await JobWork.find({ _id: { $in: ids }, userId: req.user._id });
+        if (jws.length !== ids.length) return res.status(404).json({ success: false, message: "Some Job Work(s) not found" });
+
+        const firstDoc = jws[0];
+        const customer = await Customer.findOne({ userId: req.user._id, companyName: firstDoc.customerInformation.ms });
+        const email = req.body.email || customer?.email;
+
+        if (!email) return res.status(400).json({ success: false, message: "Customer email not found. Please provide an email address." });
+
+        const options = getCopyOptions(req);
+
+        // Map Job Works to template structure for email attachment
+        const mappedJWs = jws.map(jw => {
+            const mapped = jw.toObject();
+            mapped.jobWorkDetails = {
+                jobWorkNumber: jw.jobWorkDetails.jobWorkNumber,
+                date: jw.jobWorkDetails.date
+            };
+            return mapped;
+        });
+
+        await sendInvoiceEmail(mappedJWs, email, false, options, 'Job Work');
+        res.status(200).json({ success: true, message: `Job Work(s) sent to ${email} successfully` });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Share Job Work via WhatsApp
+// @route   POST /api/job-works/:id/share-whatsapp
+const shareJobWorkWhatsApp = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const jws = await JobWork.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!jws || jws.length === 0) return res.status(404).json({ success: false, message: "Job Work(s) not found" });
+
+        const firstDoc = jws[0];
+        const customer = await Customer.findOne({ userId: req.user._id, companyName: firstDoc.customerInformation.ms });
+        const phone = req.body.phone || customer?.phone;
+
+        if (!phone) return res.status(400).json({ success: false, message: "Customer phone not found. Please provide a phone number." });
+
+        const cleanPhone = phone.replace(/\D/g, '');
+        const whatsappNumber = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+
+        const options = getCopyOptions(req);
+        let queryParams = [];
+        if (options.original) queryParams.push('original=true');
+        if (options.duplicate) queryParams.push('duplicate=true');
+        if (options.transport) queryParams.push('transport=true');
+        if (options.office) queryParams.push('office=true');
+
+        const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+        const token = generatePublicToken(req.params.id);
+        const publicLink = `${req.protocol}://${req.get('host')}/api/job-works/view-public/${req.params.id}/${token}${queryString}`;
+
+        let message = '';
+        if (jws.length === 1) {
+            message = `Dear ${firstDoc.customerInformation.ms},\n\nPlease find your Job Work No: ${firstDoc.jobWorkDetails.jobWorkNumber} for Total Amount: ${firstDoc.totals.grandTotal.toFixed(2)}.\n\nView Link: ${publicLink}\n\nThank you!`;
+        } else {
+            message = `Dear ${firstDoc.customerInformation.ms},\n\nPlease find your merged Job Works for Total Amount: ${jws.reduce((sum, q) => sum + q.totals.grandTotal, 0).toFixed(2)}.\n\nView Link: ${publicLink}\n\nThank you!`;
+        }
+
+        const encodedMessage = encodeURIComponent(message);
+        const deepLink = `https://wa.me/${whatsappNumber}?text=${encodedMessage}`;
+
+        res.status(200).json({
+            success: true,
+            message: "WhatsApp share link generated",
+            data: { whatsappNumber, deepLink }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Generate Public Link
+// @route   GET /api/job-works/:id/public-link
+const generateJobWorkPublicLink = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const jws = await JobWork.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!jws || jws.length === 0) return res.status(404).json({ success: false, message: "Job Work(s) not found" });
+
+        const token = generatePublicToken(req.params.id);
+        const options = getCopyOptions(req);
+        let queryParams = [];
+        if (options.original) queryParams.push('original=true');
+        if (options.duplicate) queryParams.push('duplicate=true');
+        if (options.transport) queryParams.push('transport=true');
+        if (options.office) queryParams.push('office=true');
+
+        const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const publicLink = `${baseUrl}/api/job-works/view-public/${req.params.id}/${token}${queryString}`;
+
+        res.status(200).json({ success: true, publicLink });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    View Job Work Publicly
+// @route   GET /api/job-works/view-public/:id/:token
+const viewJobWorkPublic = async (req, res) => {
+    try {
+        const { id, token } = req.params;
+        const generatedToken = generatePublicToken(id);
+
+        if (token !== generatedToken) {
+            return res.status(403).send('Invalid or expired link');
+        }
+
+        const ids = id.split(',');
+        const jws = await JobWork.find({ _id: { $in: ids } });
+        if (!jws || jws.length === 0) return res.status(404).send('Job Work not found');
+
+        const userData = await User.findById(jws[0].userId);
+        const options = getCopyOptions(req);
+
+        // Map Job Works to template structure
+        const mappedJWs = jws.map(jw => {
+            const mapped = jw.toObject();
+            mapped.jobWorkDetails = {
+                jobWorkNumber: jw.jobWorkDetails.jobWorkNumber,
+                date: jw.jobWorkDetails.date
+            };
+            return mapped;
+        });
+
+        const pdfBuffer = await generateJobWorkPDF(mappedJWs, userData, options);
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename=job-work.pdf`);
+        res.send(pdfBuffer);
+    } catch (error) {
+        res.status(500).send(error.message);
+    }
+};
+
 module.exports = {
     createJobWork,
     getJobWorks,
@@ -589,5 +1281,22 @@ module.exports = {
     updateJobWork,
     deleteJobWork,
     getJobWorkSummary,
-    searchJobWorks
+    searchJobWorks,
+    updateJobWorkStatus,
+    getJobWorkRemainingQty,
+    convertJWToChallanData,
+    convertJWToInvoiceData,
+    convertJWToSaleOrderData,
+    convertJWToQuotationData,
+    getDuplicateJobWorkData,
+    attachJobWorkFile,
+    getJobWorkAttachments,
+    updateJobWorkAttachment,
+    deleteJobWorkAttachment,
+    printJobWork,
+    downloadJobWorkPDF,
+    shareJobWorkEmail,
+    shareJobWorkWhatsApp,
+    generateJobWorkPublicLink,
+    viewJobWorkPublic
 };

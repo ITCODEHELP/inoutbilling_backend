@@ -56,8 +56,8 @@ const jobWorkSchema = new mongoose.Schema({
         date: { type: Date, required: [false, 'date is required'] },
         status: {
             type: String,
-            enum: ['PENDING', 'IN PROGRESS', 'COMPLETED', 'CANCELLED'],
-            default: 'PENDING'
+            enum: ['PENDING', 'IN PROGRESS', 'COMPLETED', 'CANCELLED', 'NEW', 'Pending', 'In-Work', 'Completed', 'Cancelled'],
+            default: 'New'
         }
     },
     // Section 3: Product Items
@@ -97,7 +97,15 @@ const jobWorkSchema = new mongoose.Schema({
     customFields: {
         type: mongoose.Schema.Types.Mixed,
         default: {}
-    }
+    },
+    attachments: [{
+        fileName: { type: String, required: true },
+        filePath: { type: String, required: true },
+        fileSize: { type: Number, required: true },
+        mimeType: { type: String, required: true },
+        uploadedAt: { type: Date, default: Date.now },
+        uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }
+    }]
 }, {
     timestamps: true
 });

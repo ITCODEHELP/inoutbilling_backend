@@ -148,6 +148,7 @@ app.use('/api/proformas', proformaRoutes);
 app.use('/api/purchase-orders', purchaseOrderRoutes);
 app.use('/api/sale-orders', saleOrderRoutes);
 app.use('/api/job-work', jobWorkRoutes);
+app.use('/api/job-works', jobWorkRoutes); // Alias to support plural endpoint request
 app.use('/api/letters', letterRoutes);
 app.use('/api/packing-list', packingListRoutes);
 app.use('/api/manufacture', manufactureRoutes);
