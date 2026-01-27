@@ -319,6 +319,182 @@ const getExpenseSummary = async (req, res) => {
     }
 };
 
+// @desc    Get single expense by ID
+// @route   GET /api/daily-expenses/:id
+// @access  Private
+const getExpenseById = async (req, res) => {
+    try {
+        const expense = await DailyExpense.findOne({ _id: req.params.id, userId: req.user._id })
+            .populate('party', 'companyName')
+            .populate('staff', 'fullName');
+
+        if (!expense) {
+            return res.status(404).json({ success: false, message: 'Expense not found' });
+        }
+
+        res.status(200).json({ success: true, data: expense });
+    } catch (error) {
+        console.error('Get Expense Error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// @desc    Update an expense
+// @route   PUT /api/daily-expenses/:id
+// @access  Private
+const updateExpense = async (req, res) => {
+    try {
+        let expense = await DailyExpense.findOne({ _id: req.params.id, userId: req.user._id });
+
+        if (!expense) {
+            return res.status(404).json({ success: false, message: 'Expense not found' });
+        }
+
+        const {
+            expenseNo,
+            expenseDate,
+            category,
+            isGstBill,
+            party,
+            staff,
+            paymentType,
+            remarks,
+            items,
+            roundOff,
+            amountInWords,
+            customFields
+        } = req.body;
+
+        // Update basic fields
+        if (expenseNo) expense.expenseNo = expenseNo;
+        if (expenseDate) expense.expenseDate = expenseDate;
+        if (category) expense.category = category;
+        if (isGstBill !== undefined) expense.isGstBill = isGstBill === 'true' || isGstBill === true;
+        if (party !== undefined) expense.party = party || null;
+        if (staff !== undefined) expense.staff = staff || null;
+        if (paymentType) expense.paymentType = paymentType;
+        if (remarks !== undefined) expense.remarks = remarks;
+        if (amountInWords !== undefined) expense.amountInWords = amountInWords;
+
+        // Handle Custom Fields
+        if (customFields) {
+            let parsedCustomFields = {};
+            try {
+                parsedCustomFields = typeof customFields === 'string' ? JSON.parse(customFields) : customFields;
+            } catch (error) {
+                return res.status(400).json({ success: false, message: 'Invalid format for customFields' });
+            }
+            // Update map
+            for (const key in parsedCustomFields) {
+                expense.customFields.set(key, parsedCustomFields[key]);
+            }
+        }
+
+        // Handle Items & Recalculate Totals
+        if (items) {
+            let parsedItems = [];
+            try {
+                parsedItems = typeof items === 'string' ? JSON.parse(items) : items;
+            } catch (error) {
+                return res.status(400).json({ success: false, message: 'Invalid format for items' });
+            }
+
+            let calculatedGrandTotal = 0;
+            let calculatedTotalTaxable = 0;
+
+            const finalItems = parsedItems.map(item => {
+                const qty = Number(item.quantity) || 0;
+                const price = Number(item.price) || 0;
+                const lineAmount = qty * price;
+
+                calculatedGrandTotal += lineAmount;
+                calculatedTotalTaxable += lineAmount;
+
+                return {
+                    ...item,
+                    quantity: qty,
+                    price: price,
+                    amount: lineAmount
+                };
+            });
+
+            expense.items = finalItems;
+            expense.totalTaxable = calculatedTotalTaxable;
+
+            const userRoundOff = roundOff !== undefined ? Number(roundOff) : (expense.roundOff || 0);
+            expense.roundOff = userRoundOff;
+            expense.grandTotal = calculatedGrandTotal + userRoundOff;
+        } else if (roundOff !== undefined) {
+            // Only roundOff changed
+            const userRoundOff = Number(roundOff);
+            const baseTotal = expense.grandTotal - expense.roundOff;
+            expense.roundOff = userRoundOff;
+            expense.grandTotal = baseTotal + userRoundOff;
+        }
+
+        // Handle Attachment replacement
+        if (req.file) {
+            const fs = require('fs');
+            // Delete old file
+            if (expense.attachment && fs.existsSync(expense.attachment)) {
+                try {
+                    fs.unlinkSync(expense.attachment);
+                } catch (err) {
+                    console.error("Error deleting old attachment on update:", err);
+                }
+            }
+            expense.attachment = req.file.path;
+        }
+
+        await expense.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Expense updated successfully',
+            data: expense
+        });
+
+    } catch (error) {
+        console.error('Update Expense Error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// @desc    Delete an expense
+// @route   DELETE /api/daily-expenses/:id
+// @access  Private
+const deleteExpense = async (req, res) => {
+    try {
+        const expense = await DailyExpense.findOne({ _id: req.params.id, userId: req.user._id });
+
+        if (!expense) {
+            return res.status(404).json({ success: false, message: 'Expense not found' });
+        }
+
+        // Delete attachment from disk
+        if (expense.attachment) {
+            const fs = require('fs');
+            if (fs.existsSync(expense.attachment)) {
+                try {
+                    fs.unlinkSync(expense.attachment);
+                } catch (err) {
+                    console.error("Error deleting attachment on delete:", err);
+                }
+            }
+        }
+
+        await DailyExpense.deleteOne({ _id: req.params.id });
+
+        res.status(200).json({
+            success: true,
+            message: 'Expense deleted successfully'
+        });
+    } catch (error) {
+        console.error('Delete Expense Error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
 // --- Custom Field Handlers ---
 const getCustomFields = async (req, res) => {
     try {
@@ -1113,6 +1289,9 @@ module.exports = {
     listExpenses,
     searchExpenses,
     getExpenseSummary,
+    getExpenseById,
+    updateExpense,
+    deleteExpense,
     getCustomFields,
     createCustomField,
     updateCustomField,
