@@ -1,5 +1,6 @@
 const nodemailer = require('nodemailer');
 const { generateSaleInvoicePDF } = require('./saleInvoicePdfHelper');
+const { generateJobWorkPDF } = require('./jobWorkPdfHelper');
 const { generatePurchaseInvoicePDF } = require('./purchaseInvoicePdfHelper');
 const { generateReceiptVoucherPDF } = require('./receiptPdfHelper');
 const User = require('../models/User-Model/User');
@@ -19,6 +20,8 @@ const sendInvoiceEmail = async (invoices, email, isPurchase = false, options = {
         if (isPurchase) {
             // Use professional PDF helper for purchase invoices
             pdfBuffer = await generatePurchaseInvoicePDF(items, userData || {}, options);
+        } else if (docType === 'Job Work') {
+            pdfBuffer = await generateJobWorkPDF(items, userData || {}, options);
         } else {
             // Use specialized Sale Invoice PDF helper with professional template (supports Quotation too)
             pdfBuffer = await generateSaleInvoicePDF(items, userData || {}, options, docType);
@@ -45,7 +48,8 @@ const sendInvoiceEmail = async (invoices, email, isPurchase = false, options = {
         const isProforma = docType === 'Proforma';
         const isDeliveryChallan = docType === 'Delivery Challan';
         const isSaleOrder = docType === 'Sale Order';
-        const invoiceType = isDeliveryChallan ? 'Delivery Challan' : (isQuotation ? 'Quotation' : (isProforma ? 'Proforma Invoice' : (isPurchase ? 'Purchase Invoice' : (isSaleOrder ? 'Sale Order' : 'Tax Invoice'))));
+        const isJobWork = docType === 'Job Work';
+        const invoiceType = isJobWork ? 'Job Work' : (isDeliveryChallan ? 'Delivery Challan' : (isQuotation ? 'Quotation' : (isProforma ? 'Proforma Invoice' : (isPurchase ? 'Purchase Invoice' : (isSaleOrder ? 'Sale Order' : 'Tax Invoice')))));
         const senderLabel = isPurchase ? 'Vendor' : 'Customer';
 
         const firstDoc = items[0];
@@ -56,6 +60,9 @@ const sendInvoiceEmail = async (invoices, email, isPurchase = false, options = {
         } else if (isQuotation) {
             details = firstDoc.quotationDetails;
             invoiceNo = items.length === 1 ? details?.quotationNumber : 'Multiple';
+        } else if (isJobWork) {
+            details = firstDoc.jobWorkDetails;
+            invoiceNo = items.length === 1 ? details?.jobWorkNumber : 'Multiple';
         } else {
             details = firstDoc.invoiceDetails;
             invoiceNo = items.length === 1 ? details?.invoiceNumber : 'Multiple';

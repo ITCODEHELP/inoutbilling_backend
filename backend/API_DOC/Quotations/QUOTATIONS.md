@@ -133,6 +133,11 @@
 `GET` /api/quotations/:id/convert-to-purchase-order
 - Description: Returns pre-filled data for the Purchase Order form based on the Quotation.
 
+### Convert to Sale Order
+`GET` /api/quotations/:id/convert-to-sale-order
+- Description: Returns pre-filled data for the Sale Order form based on the Quotation.
+- Includes conversion reference for automatic linking.
+
 ### Duplicate
 `GET` /api/quotations/:id/duplicate
 - Description: Returns cleaned Quotation data (excluding ID, document number, status, etc.) for pre-filling a new Quotation form.

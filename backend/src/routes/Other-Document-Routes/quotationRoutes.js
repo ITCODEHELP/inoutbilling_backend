@@ -24,6 +24,7 @@ const {
     convertToProformaData,
     convertToChallanData,
     convertToPurchaseOrderData,
+    convertToSaleOrderData,
     attachQuotationFile,
     getQuotationAttachments,
     updateQuotationAttachment,
@@ -79,6 +80,7 @@ router.get('/:id/convert-to-purchase-invoice', convertToPurchaseInvoiceData);
 router.get('/:id/convert-to-proforma', convertToProformaData);
 router.get('/:id/convert-to-challan', convertToChallanData);
 router.get('/:id/convert-to-purchase-order', convertToPurchaseOrderData);
+router.get('/:id/convert-to-sale-order', convertToSaleOrderData);
 router.get('/:id/duplicate', getDuplicateQuotationData);
 
 // Attachment Routes
