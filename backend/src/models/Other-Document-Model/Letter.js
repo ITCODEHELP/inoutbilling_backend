@@ -34,8 +34,19 @@ const letterSchema = new mongoose.Schema({
     },
     letterBody: {
         type: String,
-        required: [true, 'Letter body is required']
+        default: ""
     },
+    blocks: [{
+        id: { type: String, required: true },
+        type: {
+            type: String,
+            required: true,
+            enum: ['text', 'heading', 'pageBreak', 'list', 'table', 'image', 'delimiter', 'entitySelector', 'productSelector', 'multiProductSelector']
+        },
+        content: mongoose.Schema.Types.Mixed,
+        style: mongoose.Schema.Types.Mixed, // e.g. { level: 1 } for heading
+        metadata: mongoose.Schema.Types.Mixed // e.g. for selectors or uploaded images
+    }],
     staff: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Staff',

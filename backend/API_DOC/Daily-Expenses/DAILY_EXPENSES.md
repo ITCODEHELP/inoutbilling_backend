@@ -98,6 +98,52 @@
 }
 ```
 
+## Get Single Expense
+`GET` /api/daily-expenses/:id
+
+### Header
+> Authorization: Bearer <token>
+
+### Response
+Returns the full expense object with `party` and `staff` details populated.
+
+## Update Expense
+`PUT` /api/daily-expenses/:id
+
+### Header
+> Authorization: Bearer <token>
+> Content-Type: multipart/form-data
+
+### Form-Data
+Supports all fields from the **Create Expense** API. Unchanged fields will be preserved.
+- `attachment`: Providing a new file will replace the existing one.
+
+### Response
+```json
+{
+  "success": true,
+  "message": "Expense updated successfully",
+  "data": { ... }
+}
+```
+
+## Delete Expense
+`DELETE` /api/daily-expenses/:id
+
+### Header
+> Authorization: Bearer <token>
+
+### Description
+Permanently deletes the expense record and its associated physical attachment from the server.
+
+### Response
+```json
+{
+  "success": true,
+  "message": "Expense deleted successfully"
+}
+```
+
 ## Manage Custom Fields
 
 ### Get All Fields

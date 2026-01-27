@@ -7,6 +7,9 @@ const {
     listExpenses,
     searchExpenses,
     getExpenseSummary,
+    getExpenseById,
+    updateExpense,
+    deleteExpense,
     getCustomFields,
     createCustomField,
     updateCustomField,
@@ -57,6 +60,10 @@ router.get('/search', protect, searchExpenses);
 router.get('/summary', protect, getExpenseSummary);
 router.post('/import', protect, memoryUpload.single('file'), importExpenses);
 router.get('/import-history', protect, getImportHistory);
+
+router.get('/:id', protect, getExpenseById);
+router.put('/:id', protect, upload.single('attachment'), updateExpense);
+router.delete('/:id', protect, deleteExpense);
 router.get('/:id/print', protect, printExpense);
 
 router.post('/attach-file', protect, upload.single('attachment'), attachFile);
