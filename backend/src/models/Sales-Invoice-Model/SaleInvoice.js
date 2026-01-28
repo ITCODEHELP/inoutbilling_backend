@@ -146,8 +146,20 @@ const saleInvoiceSchema = new mongoose.Schema({
 
     transportDetails: {
         lrNo: { type: String, index: true },
+        documentNo: { type: String },
+        documentDate: { type: Date },
+        dispatchThrough: { type: String },
+        transportName: { type: String },
+        transportIdGstin: { type: String },
         vehicleNo: { type: String },
-        transportName: { type: String }
+        station: { type: String },
+        distance: { type: String }
+    },
+
+    customFields: {
+        type: Map,
+        of: mongoose.Schema.Types.Mixed,
+        default: {}
     },
 
     deliveryChallanId: {
