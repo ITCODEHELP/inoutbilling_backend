@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sales Contract</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 40px;
+            color: #000;
+            background-color: #fff;
+            line-height: 1.5;
+            font-size: 14px;
+        }
+
+        .title {
+            text-align: center;
+            font-weight: bold;
+            font-size: 18px;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+        }
+
+        .intro {
+            text-align: center;
+            margin-bottom: 25px;
+        }
+
+        .entity-section {
+            margin-bottom: 20px;
+        }
+
+        .entity-type {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .divider {
+            border-top: 1px solid #3498db;
+            margin: 20px 0;
+        }
+
+        .section-header {
+            font-weight: bold;
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+
+        .sub-text {
+            margin-bottom: 15px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+
+        th,
+        td {
+            border: 1px solid #000;
+            padding: 10px;
+            text-align: left;
+        }
+
+        .totals-label {
+            font-weight: bold;
+        }
+
+        .terms-list {
+            list-style-type: disc;
+            padding-left: 20px;
+            margin-bottom: 20px;
+        }
+
+        .terms-list li {
+            margin-bottom: 8px;
+        }
+
+        .signature-container {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 40px;
+        }
+
+        .signature-block {
+            width: 45%;
+        }
+
+        .sig-line {
+            border-bottom: 1px solid #000;
+            width: 250px;
+            margin: 10px 0;
+            height: 20px;
+        }
+
+        p {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="title">SALES CONTRACT</div>
+    <div class="intro">
+        This Sales Contract ("Agreement") is made and entered into on this [Date], by and between:
+    </div>
+
+    <div class="entity-section">
+        <div class="entity-type">Seller:</div>
+        <p>[Seller's Name / Company Name]</p>
+        <p>[Address]</p>
+        <p>Phone: [Phone Number]</p>
+        <p>Email: [Email Address]</p>
+    </div>
+
+    <p>AND</p>
+
+    <div class="entity-section">
+        <div class="entity-type">Buyer:</div>
+        <p>[Buyer's Name / Company Name]</p>
+        <p>[Address]</p>
+        <p>Phone: [Phone Number]</p>
+        <p>Email: [Email Address]</p>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="section-header">1. Description of Goods/Services</div>
+    <div class="sub-text">
+        The Seller agrees to sell, and the Buyer agrees to purchase, the following goods/services:
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 10%;">S.No.</th>
+                <th style="width: 45%;">Item Description</th>
+                <th style="width: 10%;">Quantity</th>
+                <th style="width: 15%;">Unit Price</th>
+                <th style="width: 20%;">Total Price</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>1</td>
+                <td>[Product/Service 1]</td>
+                <td>[Qty]</td>
+                <td>[Price]</td>
+                <td>[Total]</td>
+            </tr>
+            <tr>
+                <td colspan="4" class="totals-label">Subtotal</td>
+                <td>[Subtotal]</td>
+            </tr>
+            <tr>
+                <td colspan="4" class="totals-label">GST (@18%)</td>
+                <td>[GST]</td>
+            </tr>
+            <tr>
+                <td colspan="4" class="totals-label">Grand Total</td>
+                <td>[Total]</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="divider"></div>
+
+    <div class="section-header">2. Delivery Terms</div>
+    <ul class="terms-list">
+        <li>Delivery Address: [Delivery Location]</li>
+        <li>Expected Delivery Date: [Delivery Date]</li>
+        <li>Delivery Charges: [Include/Exclude]</li>
+    </ul>
+
+    <div class="divider"></div>
+
+    <div class="section-header">3. Payment Terms</div>
+    <ul class="terms-list">
+        <li>Total Amount Payable: [Total]</li>
+        <li>Payment Method: [Bank Transfer / UPI / Cheque / Cash]</li>
+        <li>Payment Schedule: [e.g., 50% advance, 50% upon delivery]</li>
+    </ul>
+
+    <div class="divider"></div>
+
+    <div class="section-header">4. Signatures</div>
+
+    <div class="signature-container">
+        <div class="signature-block">
+            <p><b>Seller:</b></p>
+            <p>Signature:
+            <div class="sig-line"></div>
+            </p>
+            <p>Name: [Seller's Name]</p>
+            <p>Designation: [Title]</p>
+            <p>Date: [Date]</p>
+        </div>
+
+        <div class="signature-block">
+            <p><b>Buyer:</b></p>
+            <p>Signature:
+            <div class="sig-line"></div>
+            </p>
+            <p>Name: [Buyer's Name]</p>
+            <p>Designation: [Title]</p>
+            <p>Date: [Date]</p>
+        </div>
+    </div>
+</body>
+
+</html>

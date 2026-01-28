@@ -1,6 +1,50 @@
 **Base URL**: `http://localhost:5000/api`
 
+### Get Letter Template
+Returns the predefined content and structure for a specific letter template type.
+```http
+GET /api/letters/template/:templateType
+Authorization: Bearer <token>
+```
+**Example Response (LETTER_OF_INTENT, JOB_WORK, NO_OBJECTION_LETTER, QUOTATION, or SALE_CONTRACT)**
+```json
+{
+  "success": true,
+  "data": {
+    "title": "Letter of Intent (LOI)",
+    "templateType": "LETTER_OF_INTENT",
+    "letterBody": "<html>...</html>",
+    "blocks": [ ... ]
+  }
+}
+
+### Create Letter from Template
+Creates a new independent letter record using the predefined content of a template.
+```http
+POST /api/letters/template/:templateType
+Authorization: Bearer <token>
+```
+**Example Response**
+```json
+{
+  "success": true,
+  "message": "Letter created from template",
+  "data": {
+    "_id": "67451234abcd...",
+    "title": "Letter of Intent (LOI) / Job Work / No Objection Letter / Quotation / Sales Contract",
+    "templateType": "LETTER_OF_INTENT / JOB_WORK / NO_OBJECTION_LETTER / QUOTATION / SALE_CONTRACT",
+    "letterNumber": { "prefix": "LOI / JW / NOL / QN / SC", "number": "1", "postfix": "" },
+    "letterDate": "2024-11-13T10:00:00.000Z",
+    "letterBody": "<html>...</html>",
+    "blocks": [],
+    "userId": "..."
+  }
+}
+```
+
+
 ## Letters
+
 
 ### Create Letter
 ```http
@@ -231,3 +275,89 @@ Content-Type: application/json
 DELETE /api/letters/:id/blocks/:blockId
 Authorization: Bearer <token>
 ```
+
+## Letter Actions (View, Print, Share)
+
+### Download Letter PDF
+Downloads the letter as a PDF with company and user details automatically injected in the header.
+```http
+GET /api/letters/:id/download?original=true&duplicate=false&transport=false&office=false
+Authorization: Bearer <token>
+```
+**Query Parameters** (optional):
+- `original`: Include original copy (default: true)
+- `duplicate`: Include duplicate copy
+- `transport`: Include transport copy
+- `office`: Include office copy
+
+**Response**: PDF file download
+
+**Example**:
+```http
+GET /api/letters/67451234abcd/download?original=true
+```
+
+### Share Letter via Email
+Sends the letter PDF to a specified email address.
+```http
+POST /api/letters/:id/share-email
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+**Request Body**:
+```json
+{
+  "email": "recipient@example.com"
+}
+```
+**Response**:
+```json
+{
+  "success": true,
+  "message": "Letter(s) shared via email successfully"
+}
+```
+
+### Share Letter via WhatsApp
+Generates a WhatsApp share link with a public viewing URL.
+```http
+POST /api/letters/:id/share-whatsapp
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+**Request Body**:
+```json
+{
+  "phone": "+919876543210"
+}
+```
+**Response**:
+```json
+{
+  "success": true,
+  "waLink": "https://wa.me/919876543210?text=..."
+}
+```
+
+### Generate Public Link
+Creates a secure, tokenized public link for viewing the letter without authentication.
+```http
+POST /api/letters/:id/generate-link
+Authorization: Bearer <token>
+```
+**Response**:
+```json
+{
+  "success": true,
+  "publicLink": "http://localhost:5000/api/letters/view-public/67451234abcd/a1b2c3d4e5f6"
+}
+```
+
+### View Letter Publicly
+Public endpoint to view letter PDF without authentication (requires valid token).
+```http
+GET /api/letters/view-public/:id/:token?original=true
+```
+**Response**: PDF file (inline display)
+
+**Note**: The token is automatically generated and verified for security. Links are permanent but require the correct token to access.

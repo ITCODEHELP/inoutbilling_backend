@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quotation Template</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 40px;
+            color: #000;
+            background-color: #fff;
+            line-height: 1.4;
+            font-size: 13px;
+        }
+
+        .company-info {
+            margin-bottom: 20px;
+        }
+
+        .date-section {
+            margin-bottom: 20px;
+        }
+
+        .client-info {
+            margin-bottom: 20px;
+        }
+
+        .divider {
+            border-top: 1px solid #3498db;
+            margin: 15px 0;
+        }
+
+        .subject {
+            font-weight: bold;
+            font-size: 15px;
+            margin-bottom: 10px;
+        }
+
+        .salutation {
+            margin-bottom: 15px;
+        }
+
+        .intro {
+            margin-bottom: 20px;
+        }
+
+        .details-header {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+
+        th,
+        td {
+            border: 1px solid #000;
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
+
+        .totals-label {
+            font-weight: bold;
+        }
+
+        .terms-header {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .terms-list {
+            margin-bottom: 20px;
+            padding-left: 20px;
+        }
+
+        .closing-text {
+            margin-bottom: 20px;
+        }
+
+        .signature-block {
+            margin-top: 30px;
+        }
+
+        p {
+            margin: 3px 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="company-info">
+        <p>[Your Company Name]</p>
+        <p>[Your Company Address]</p>
+        <p>[City, State, ZIP Code]</p>
+        <p>Phone: [Your Phone Number]</p>
+        <p>Email: [Your Email Address]</p>
+        <p>Website: [Your Website, if any]</p>
+    </div>
+
+    <div class="date-section">
+        <p>Date: [DD/MM/YYYY]</p>
+    </div>
+
+    <div class="client-info">
+        <p>To,</p>
+        <p>[Client's Name]</p>
+        <p>[Client's Company Name]</p>
+        <p>[Client's Address]</p>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="subject">
+        Subject: Quotation for [Product/Service Name]
+    </div>
+
+    <div class="salutation">
+        Dear [Client's Name],
+    </div>
+
+    <div class="intro">
+        Thank you for your interest in our [products/services]. We are pleased to submit our quotation as per your
+        requirements:
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="details-header">
+        Quotation Details:
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 10%;">S.No.</th>
+                <th style="width: 40%;">Description</th>
+                <th style="width: 15%;">Quantity</th>
+                <th style="width: 15%;">Unit Price</th>
+                <th style="width: 20%;">Total Price</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>1</td>
+                <td>[Item Name 1]</td>
+                <td>[Qty]</td>
+                <td>[Price]</td>
+                <td>[Total]</td>
+            </tr>
+            <tr>
+                <td>2</td>
+                <td>[Item Name 2]</td>
+                <td>[Qty]</td>
+                <td>[Price]</td>
+                <td>[Total]</td>
+            </tr>
+            <tr>
+                <td colspan="4" class="totals-label">Subtotal</td>
+                <td>[Subtotal]</td>
+            </tr>
+            <tr>
+                <td colspan="4" class="totals-label">GST (@18%)</td>
+                <td>[GST]</td>
+            </tr>
+            <tr>
+                <td colspan="4" class="totals-label">Grand Total</td>
+                <td>[Total]</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="divider"></div>
+
+    <div class="terms-section">
+        <div class="terms-header">Terms and Conditions:</div>
+        <div class="terms-list">
+            <p>1. <b>Validity:</b> This quotation is valid for [number] days from the date of issue.</p>
+            <p>2. <b>Payment Terms:</b> [e.g., 50% advance, 50% upon delivery]</p>
+            <p>3. <b>Delivery Time:</b> [e.g., Within 7 working days from the date of order confirmation]</p>
+            <p>4. <b>Warranty:</b> [If applicable]</p>
+            <p>5. <b>Mode of Payment:</b> [e.g., Bank transfer, UPI, Cheque]</p>
+        </div>
+    </div>
+
+    <div class="closing-text">
+        We hope you find our offer satisfactory. Please feel free to contact us for any clarifications or further
+        assistance.
+        <br><br>
+        Looking forward to doing business with you.
+    </div>
+
+    <div class="signature-block">
+        <p>Thank you and regards,</p>
+        <p>[Your Name]</p>
+        <p>[Your Designation]</p>
+        <p>[Your Company Name]</p>
+        <p>Phone: [Your Number]</p>
+        <p>Email: [Your Email]</p>
+    </div>
+</body>
+
+</html>
