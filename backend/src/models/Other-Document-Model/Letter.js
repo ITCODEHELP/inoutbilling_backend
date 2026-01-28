@@ -28,13 +28,17 @@ const letterSchema = new mongoose.Schema({
         type: String,
         required: [true, 'Template type is required'],
         enum: {
-            values: ['BLANK', 'LETTER_OF_INTENT', 'JOB_WORK', 'NO_OBJECTION', 'QUOTATION', 'SALES_CONTRACT'],
+            values: ['BLANK', 'LETTER_OF_INTENT', 'JOB_WORK', 'NO_OBJECTION', 'NO_OBJECTION_LETTER', 'QUOTATION', 'SALE_CONTRACT', 'SALES_CONTRACT'],
             message: 'Invalid template type'
         }
     },
     letterBody: {
         type: String,
         default: ""
+    },
+    pdfFile: {
+        type: Buffer,
+        default: null
     },
     blocks: [{
         id: { type: String, required: true },
