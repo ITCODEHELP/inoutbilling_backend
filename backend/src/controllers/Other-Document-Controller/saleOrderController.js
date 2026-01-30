@@ -748,7 +748,7 @@ const convertSOToInvoiceData = async (req, res) => {
     }
 };
 
-// @desc    Setup conversion to Proforma Invoice (Prefill Data)
+// @desc    Setup conversion to Proforma  (Prefill Data)
 // @route   GET /api/sale-orders/:id/convert-to-proforma
 const convertSOToProformaData = async (req, res) => {
     try {

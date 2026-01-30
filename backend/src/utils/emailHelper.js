@@ -49,7 +49,7 @@ const sendInvoiceEmail = async (invoices, email, isPurchase = false, options = {
         const isDeliveryChallan = docType === 'Delivery Challan';
         const isSaleOrder = docType === 'Sale Order';
         const isJobWork = docType === 'Job Work';
-        const invoiceType = isJobWork ? 'Job Work' : (isDeliveryChallan ? 'Delivery Challan' : (isQuotation ? 'Quotation' : (isProforma ? 'Proforma Invoice' : (isPurchase ? 'Purchase Invoice' : (isSaleOrder ? 'Sale Order' : 'Tax Invoice')))));
+        const invoiceType = isJobWork ? 'Job Work' : (isDeliveryChallan ? 'Delivery Challan' : (isQuotation ? 'Quotation' : (isProforma ? 'Proforma ' : (isPurchase ? 'Purchase Invoice' : (isSaleOrder ? 'Sale Order' : 'Tax Invoice')))));
         const senderLabel = isPurchase ? 'Vendor' : 'Customer';
 
         const firstDoc = items[0];
@@ -235,11 +235,11 @@ const sendProformaEmail = async (proforma, email) => {
         const mailOptions = {
             from: `${process.env.FROM_NAME} <${process.env.FROM_EMAIL}>`,
             to: email,
-            subject: `Proforma Invoice ${proforma.proformaDetails.proformaNumber} from Inout Billing`,
-            text: `Dear Customer,\n\nPlease find attached the proforma invoice ${proforma.proformaDetails.proformaNumber}.\n\nThank you!`,
+            subject: `Proforma  ${proforma.proformaDetails.proformaNumber} from Inout Billing`,
+            text: `Dear Customer,\n\nPlease find attached the Proforma  ${proforma.proformaDetails.proformaNumber}.\n\nThank you!`,
             html: `
                 <p>Dear Customer,</p>
-                <p>Please find attached the <strong>proforma invoice ${proforma.proformaDetails.proformaNumber}</strong>.</p>
+                <p>Please find attached the <strong>Proforma  ${proforma.proformaDetails.proformaNumber}</strong>.</p>
                 <p>Thank you!</p>
             `,
             attachments: [

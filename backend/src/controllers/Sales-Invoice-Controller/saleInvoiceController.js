@@ -1364,7 +1364,7 @@ const convertToProformaInvoice = async (req, res) => {
         invoice.conversions.convertedTo.push({ docType: 'Proforma', docId: proforma._id });
         await invoice.save();
 
-        res.status(201).json({ success: true, message: "Converted to Proforma Invoice", data: proforma });
+        res.status(201).json({ success: true, message: "Converted to Proforma ", data: proforma });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }

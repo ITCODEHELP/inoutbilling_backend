@@ -728,7 +728,7 @@ const convertToPurchaseInvoiceData = async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
-// @desc    Setup conversion to Proforma Invoice (Prefill Data)
+// @desc    Setup conversion to Proforma  (Prefill Data)
 // @route   GET /api/quotations/:id/convert-to-proforma
 const convertToProformaData = async (req, res) => {
     try {
