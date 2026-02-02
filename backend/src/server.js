@@ -39,6 +39,7 @@ const productStockSettingsRoutes = require('./routes/Product-Service-Routes/prod
 const printTemplateSettingsRoutes = require('./routes/Setting-Page-Routes/printTemplateSettingsRoutes');
 const printOptionsRoutes = require('./routes/Setting-Page-Routes/printOptionsRoutes');
 const bankDetailsRoutes = require('./routes/Bank-Detail-Routes/bankDetailsRoutes');
+const bankStatementRoutes = require('./routes/Bank-Statement-Routes/bankStatementRoutes');
 const termsConditionsRoutes = require('./routes/Setting-Page-Routes/termsConditionsRoutes');
 const shippingEnvelopeSettingsRoutes = require('./routes/Setting-Page-Routes/shippingEnvelopeSettingsRoutes');
 const messageTemplateSettingsRoutes = require('./routes/Setting-Page-Routes/messageTemplateSettingsRoutes');
@@ -123,6 +124,7 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/bank-logos', express.static(path.join(__dirname, 'src', 'bank-logos')));
 
 /* -------------------- ROUTES -------------------- */
 app.use('/api/auth', authRoutes);
@@ -153,6 +155,7 @@ app.use('/api/product-stock-settings', productStockSettingsRoutes);
 app.use('/api/print-template-settings', printTemplateSettingsRoutes);
 app.use('/api/print-options', printOptionsRoutes);
 app.use('/api/bank-details', bankDetailsRoutes);
+app.use('/api/bank-statements', bankStatementRoutes);
 app.use('/api/terms-conditions', termsConditionsRoutes);
 app.use('/api/shipping-envelope-settings', shippingEnvelopeSettingsRoutes);
 app.use('/api/message-templates', messageTemplateSettingsRoutes);
