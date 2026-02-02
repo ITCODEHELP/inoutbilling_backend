@@ -1,0 +1,57 @@
+name: Deploy Backend (sshpass)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install sshpass
+        run: sudo apt-get update && sudo apt-get install -y sshpass
+
+      - name: Deploy to Server via SSH
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_PASS: ${{ secrets.SERVER_PASS }}
+          PROJECT_PATH: ${{ secrets.PROJECT_PATH }}
+          SSH_PORT: ${{ secrets.SSH_PORT || 22 }}
+        run: |
+          sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no -p $SSH_PORT $SSH_USER@$SSH_HOST << 'EOF'
+            # Navigate to the project directory
+            cd ${{ env.PROJECT_PATH }}
+            
+            # Pull the latest changes
+            git fetch origin main
+            git reset --hard origin/main
+            
+            # Install/Update dependencies
+            npm install --production
+            
+            # Restart the backend using PM2
+            pm2 describe inout-billing-backend > /dev/null 2>&1
+            if [ $? -eq 0 ]; then
+              echo "Existing PM2 process found, restarting..."
+              pm2 restart inout-billing-backend --update-env
+            else
+              echo "No existing PM2 process, starting new..."
+              pm2 start src/server.js --name inout-billing-backend
+            fi
+            
+            # Save PM2 process list
+            pm2 save
+            
+            # Print logs
+            echo "Deployment successful. Fetching logs..."
+            pm2 logs inout-billing-backend --lines 50 --no-daemon &
+            LOG_PID=$!
+            sleep 5
+            kill $LOG_PID
+          EOF

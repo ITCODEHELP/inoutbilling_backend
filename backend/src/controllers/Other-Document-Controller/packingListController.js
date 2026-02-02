@@ -1,72 +1,210 @@
 const PackingList = require('../../models/Other-Document-Model/PackingList');
 const Staff = require('../../models/Setting-Model/Staff');
 const ProductGroup = require('../../models/Product-Service-Model/ProductGroup');
+const User = require('../../models/User-Model/User');
+const Customer = require('../../models/Customer-Vendor-Model/Customer');
 const mongoose = require('mongoose');
 const path = require('path');
 const fs = require('fs');
-const PDFDocument = require('pdfkit');
+const crypto = require('crypto');
+const { generateSaleInvoicePDF } = require('../../utils/saleInvoicePdfHelper');
+const { getCopyOptions } = require('../../utils/pdfHelper');
+const { sendInvoiceEmail } = require('../../utils/emailHelper');
+
+// Helper to generate secure public token
+const generatePublicToken = (id) => {
+    const secret = process.env.JWT_SECRET || 'your-default-secret';
+    return crypto
+        .createHmac('sha256', secret)
+        .update(id.toString())
+        .digest('hex')
+        .substring(0, 16);
+};
 
 // Helper to generate and save PDF
-const generatePackingListPDFFile = async (packingList) => {
-    return new Promise((resolve, reject) => {
-        try {
-            const doc = new PDFDocument({ margin: 50 });
-            const fileName = `packing_list_${packingList._id}_${Date.now()}.pdf`;
-            const uploadDir = path.join(__dirname, '../uploads/packing-lists');
+// Helper to generate and save PDF using the standard Sale Invoice template
+const generatePackingListPDFFile = async (packingList, userId) => {
+    try {
+        const user = await User.findById(userId);
+        const options = { original: true };
+        const pdfBuffer = await generateSaleInvoicePDF(packingList, user, options, 'Packing List');
 
-            if (!fs.existsSync(uploadDir)) {
-                fs.mkdirSync(uploadDir, { recursive: true });
-            }
+        const fileName = `packing_list_${packingList._id}_${Date.now()}.pdf`;
+        const uploadDir = path.join(__dirname, '../../uploads/packing-lists'); // Adjusted path
 
-            const filePath = path.join(uploadDir, fileName);
-            const stream = fs.createWriteStream(filePath);
-            doc.pipe(stream);
-
-            // PDF Content (Basic structure for demonstration, similar to generateInvoicePDF)
-            doc.fontSize(20).text('PACKING LIST', { align: 'center' });
-            doc.moveDown();
-            doc.fontSize(10).text(`Packing No: ${packingList.packingListDetails.prefix || ''}${packingList.packingListDetails.number}${packingList.packingListDetails.postfix || ''}`);
-            doc.text(`Invoice No: ${packingList.packingListDetails.invoiceNumber}`);
-            doc.text(`Invoice Date: ${new Date(packingList.packingListDetails.invoiceDate).toLocaleDateString()}`);
-            doc.moveDown();
-            doc.text(`Customer: ${packingList.customerInformation.ms}`);
-            doc.text(`Address: ${packingList.customerInformation.address || ''}`);
-            doc.moveDown();
-
-            // Items table
-            const tableTop = 250;
-            doc.text('Pkg No', 50, tableTop);
-            doc.text('Product Description', 100, tableTop);
-            doc.text('Qty', 300, tableTop);
-            doc.text('Gross Wt', 350, tableTop);
-            doc.text('Net Wt', 450, tableTop);
-            doc.moveTo(50, tableTop + 15).lineTo(550, tableTop + 15).stroke();
-
-            let y = tableTop + 25;
-            packingList.items.forEach(item => {
-                doc.text(item.pkgNo || '', 50, y);
-                doc.text(item.productDescription, 100, y, { width: 180 });
-                doc.text(item.qty.toString(), 300, y);
-                doc.text(item.grossWeight.toString(), 350, y);
-                doc.text(item.netWeight.toString(), 450, y);
-                y += 20;
-            });
-
-            doc.moveTo(50, y + 10).lineTo(550, y + 10).stroke();
-            y += 20;
-            doc.text(`Total Packages: ${packingList.totals.totalPackages}`, 350, y);
-            y += 15;
-            doc.text(`Total Gross Wt: ${packingList.totals.totalGrossWeight}`, 350, y);
-            y += 15;
-            doc.text(`Total Net Wt: ${packingList.totals.totalNetWeight}`, 350, y);
-
-            doc.end();
-            stream.on('finish', () => resolve(`/uploads/packing-lists/${fileName}`));
-            stream.on('error', reject);
-        } catch (error) {
-            reject(error);
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
         }
-    });
+
+        const filePath = path.join(uploadDir, fileName);
+        fs.writeFileSync(filePath, pdfBuffer);
+
+        return `/uploads/packing-lists/${fileName}`;
+    } catch (error) {
+        throw error;
+    }
+};
+
+/**
+ * @desc    Print Packing List
+ * @route   GET /api/packing-list/:id/print
+ */
+const printPackingList = async (req, res) => {
+    try {
+        const packingList = await PackingList.findOne({ _id: req.params.id, userId: req.user._id, isDeleted: false });
+        if (!packingList) return res.status(404).json({ success: false, message: 'Packing List not found' });
+
+        const userData = await User.findById(req.user._id);
+        const options = getCopyOptions(req);
+        const pdfBuffer = await generateSaleInvoicePDF(packingList, userData, options, 'Packing List');
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'inline; filename="PackingList.pdf"');
+        res.send(pdfBuffer);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Download Packing List PDF (Support Multiple)
+ * @route   GET /api/packing-list/:id/download-pdf
+ */
+const downloadPackingListPDF = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',').map(id => id.trim());
+        const packingLists = await PackingList.find({ _id: { $in: ids }, userId: req.user._id, isDeleted: false });
+        if (!packingLists || packingLists.length === 0) return res.status(404).json({ success: false, message: "Packing List(s) not found" });
+
+        const userData = await User.findById(req.user._id);
+        const options = getCopyOptions(req);
+        const pdfBuffer = await generateSaleInvoicePDF(packingLists, userData, options, 'Packing List');
+
+        const filename = packingLists.length === 1 ? `PackingList_${packingLists[0].packingListDetails.number}.pdf` : `Merged_PackingLists.pdf`;
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.status(200).send(pdfBuffer);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Share Packing List via Email
+ * @route   POST /api/packing-list/:id/share-email
+ */
+const sharePackingListEmail = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',').map(id => id.trim());
+        const packingLists = await PackingList.find({ _id: { $in: ids }, userId: req.user._id, isDeleted: false });
+
+        if (packingLists.length === 0) return res.status(404).json({ success: false, message: "Packing List(s) not found" });
+
+        const firstDoc = packingLists[0];
+        const customer = await Customer.findOne({ userId: req.user._id, companyName: firstDoc.customerInformation.ms });
+        const email = req.body.email || customer?.email;
+
+        if (!email) return res.status(400).json({ success: false, message: "Customer email not found. Please provide an email address." });
+
+        const options = getCopyOptions(req);
+        await sendInvoiceEmail(packingLists, email, false, options, 'Packing List');
+        res.status(200).json({ success: true, message: `Packing List(s) sent to ${email} successfully` });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Share Packing List via WhatsApp
+ * @route   POST /api/packing-list/:id/share-whatsapp
+ */
+const sharePackingListWhatsApp = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',').map(id => id.trim());
+        const packingLists = await PackingList.find({ _id: { $in: ids }, userId: req.user._id, isDeleted: false });
+        if (packingLists.length === 0) return res.status(404).json({ success: false, message: "Packing List(s) not found" });
+
+        const firstDoc = packingLists[0];
+        const customer = await Customer.findOne({ userId: req.user._id, companyName: firstDoc.customerInformation.ms });
+        const phone = req.body.phone || customer?.phone;
+
+        if (!phone) return res.status(400).json({ success: false, message: "Customer phone not found. Please provide a phone number." });
+
+        const cleanPhone = phone.replace(/\D/g, '');
+        const whatsappNumber = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+
+        const token = generatePublicToken(req.params.id);
+        const options = getCopyOptions(req);
+        let queryParams = [];
+        if (options.original) queryParams.push('original=true');
+        if (options.duplicate) queryParams.push('duplicate=true');
+        if (options.transport) queryParams.push('transport=true');
+        if (options.office) queryParams.push('office=true');
+
+        const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+        const publicLink = `${req.protocol}://${req.get('host')}/api/packing-list/view-public/${req.params.id}/${token}${queryString}`;
+
+        const docNum = firstDoc.packingListDetails.prefix + firstDoc.packingListDetails.number + (firstDoc.packingListDetails.postfix || '');
+        const message = `Dear ${firstDoc.customerInformation.ms},\n\nPlease find your Packing List No: ${docNum}.\n\nView Link: ${publicLink}\n\nThank you!`;
+        const encodedMessage = encodeURIComponent(message);
+        const deepLink = `https://wa.me/${whatsappNumber}?text=${encodedMessage}`;
+
+        res.status(200).json({ success: true, message: "WhatsApp share link generated", data: { whatsappNumber, deepLink } });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Generate Secure Public Link for Packing List
+ * @route   GET /api/packing-list/:id/public-link
+ */
+const generatePackingListPublicLink = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',').map(id => id.trim());
+        const packingLists = await PackingList.find({ _id: { $in: ids }, userId: req.user._id, isDeleted: false });
+        if (packingLists.length === 0) return res.status(404).json({ success: false, message: "Packing List(s) not found" });
+
+        const token = generatePublicToken(req.params.id);
+        const options = getCopyOptions(req);
+        let queryParams = [];
+        if (options.original) queryParams.push('original=true');
+        if (options.duplicate) queryParams.push('duplicate=true');
+        if (options.transport) queryParams.push('transport=true');
+        if (options.office) queryParams.push('office=true');
+        const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+
+        const publicLink = `${req.protocol}://${req.get('host')}/api/packing-list/view-public/${req.params.id}/${token}${queryString}`;
+        res.status(200).json({ success: true, publicLink });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    View Packing List Publicly (Render PDF)
+ * @route   GET /api/packing-list/view-public/:id/:token
+ */
+const viewPackingListPublic = async (req, res) => {
+    try {
+        const { id, token } = req.params;
+        if (token !== generatePublicToken(id)) return res.status(401).send("Invalid or expired link");
+
+        const ids = id.split(',').map(id => id.trim());
+        const packingLists = await PackingList.find({ _id: { $in: ids }, isDeleted: false });
+        if (!packingLists || packingLists.length === 0) return res.status(404).send("Packing List(s) not found");
+
+        const userData = await User.findById(packingLists[0].userId);
+        const options = getCopyOptions(req);
+        const pdfBuffer = await generateSaleInvoicePDF(packingLists, userData || {}, options, 'Packing List');
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'inline; filename="PackingList.pdf"');
+        res.status(200).send(pdfBuffer);
+    } catch (error) {
+        res.status(500).send("Error rendering PDF");
+    }
 };
 
 /**
@@ -85,7 +223,7 @@ const createPackingList = async (req, res) => {
         });
 
         if (saveAndPrint) {
-            const pdfUrl = await generatePackingListPDFFile(packingList);
+            const pdfUrl = await generatePackingListPDFFile(packingList, req.user._id);
             packingList.pdfUrl = pdfUrl;
         }
 
@@ -224,6 +362,24 @@ const getPackingListById = async (req, res) => {
  * @desc    Update Packing List
  * @route   PUT /api/packing-list/:id
  */
+const deepMerge = (target, source) => {
+    for (const key in source) {
+        if (source[key] instanceof Date) {
+            target[key] = new Date(source[key]);
+        } else if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+            if (!target[key]) target[key] = {};
+            deepMerge(target[key], source[key]);
+        } else {
+            target[key] = source[key];
+        }
+    }
+    return target;
+};
+
+/**
+ * @desc    Update Packing List
+ * @route   PUT /api/packing-list/:id
+ */
 const updatePackingList = async (req, res) => {
     try {
         const { saveAndPrint, ...data } = req.body;
@@ -241,12 +397,17 @@ const updatePackingList = async (req, res) => {
             });
         }
 
-        // Update fields
-        Object.assign(packingList, data);
+        // Deep merge updates
+        deepMerge(packingList, data);
+
+        // Explicitly mark modified paths for mixed types if any, though deepMerge sets properties directly
+        // Mongoose sometimes needs markModified for Mixed types, but direct assignment to schema paths usually triggers setters.
+        // Array replacement (if items are sent) works via deepMerge else clause (arrays are treated as values).
+
         packingList.updatedBy = req.user._id;
 
         if (saveAndPrint) {
-            const pdfUrl = await generatePackingListPDFFile(packingList);
+            const pdfUrl = await generatePackingListPDFFile(packingList, req.user._id);
             packingList.pdfUrl = pdfUrl;
         }
 
@@ -332,11 +493,76 @@ const downloadPackingList = async (req, res) => {
     }
 };
 
+/**
+ * @desc    Get data for duplicating a Packing List (Prefill Add Form)
+ * @route   GET /api/packing-list/:id/duplicate
+ */
+const getDuplicatePackingListData = async (req, res) => {
+    try {
+        const packingList = await PackingList.findOne({
+            _id: req.params.id,
+            userId: req.user._id,
+            isDeleted: false
+        });
+
+        if (!packingList) {
+            return res.status(404).json({
+                success: false,
+                message: 'Packing List not found'
+            });
+        }
+
+        const data = packingList.toObject();
+
+        // System fields to exclude
+        delete data._id;
+        delete data.createdAt;
+        delete data.updatedAt;
+        delete data.__v;
+        delete data.userId;
+        delete data.pdfUrl;
+        delete data.isDeleted;
+        delete data.createdBy;
+        delete data.updatedBy;
+
+        // Reset document number
+        if (data.packingListDetails) {
+            delete data.packingListDetails.number;
+        }
+
+        // Reset sub-document IDs
+        if (Array.isArray(data.items)) {
+            data.items = data.items.map(item => {
+                delete item._id;
+                return item;
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Packing List data for duplication retrieved',
+            data
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
 module.exports = {
     createPackingList,
     getPackingLists,
     getPackingListById,
     updatePackingList,
     deletePackingList,
-    downloadPackingList
+    downloadPackingList,
+    getDuplicatePackingListData,
+    printPackingList,
+    downloadPackingListPDF,
+    sharePackingListEmail,
+    sharePackingListWhatsApp,
+    generatePackingListPublicLink,
+    viewPackingListPublic
 };
