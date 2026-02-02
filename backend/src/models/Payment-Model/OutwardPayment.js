@@ -69,6 +69,11 @@ const outwardPaymentSchema = new mongoose.Schema({
         enum: ['ACTIVE', 'CANCELLED'],
         default: 'ACTIVE'
     },
+    paymentStatus: {
+        type: String,
+        enum: ['auto-match', 'unmatched', 'matched', 'not-active', 'inactive'],
+        default: 'unmatched'
+    },
     cancellationDetails: {
         cancelledAt: Date,
         cancelledBy: {
