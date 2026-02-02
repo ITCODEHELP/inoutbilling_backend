@@ -92,7 +92,7 @@ const saleInvoiceSchema = new mongoose.Schema({
 
     status: {
         type: String,
-        enum: ['Paid', 'Unpaid', 'Partial'],
+        enum: ['Paid', 'Unpaid', 'Partial', 'Draft'],
         default: 'Unpaid'
     },
 

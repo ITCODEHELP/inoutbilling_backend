@@ -957,6 +957,48 @@ const convertToPurchaseOrderData = async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
+// @route   GET /api/proformas/:id/convert-to-sale-order
+const convertToSaleOrderData = async (req, res) => {
+    try {
+        const proforma = await Proforma.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!proforma) return res.status(404).json({ success: false, message: 'Proforma not found' });
+
+        const data = proforma.toObject();
+        const mappedData = {
+            customerInformation: data.customerInformation,
+            shippingAddress: data.shippingAddress,
+            useSameShippingAddress: data.useSameShippingAddress,
+            items: data.items.map(item => ({
+                productName: item.productName,
+                productGroup: item.productGroup,
+                itemNote: item.itemNote,
+                hsnSac: item.hsnSac,
+                qty: item.qty,
+                uom: item.uom,
+                price: item.price,
+                discount: item.discount, // Proforma items usually have amount or % discount
+                igst: item.igst,
+                cgst: item.cgst,
+                sgst: item.sgst,
+                total: item.total
+            })),
+            additionalCharges: data.additionalCharges || [],
+            totals: data.totals,
+            staff: data.staff,
+            branch: data.branch,
+            bankDetails: data.bankDetails,
+            termsTitle: data.termsTitle,
+            termsDetails: data.termsDetails,
+            documentRemarks: data.documentRemarks,
+            customFields: data.customFields || {},
+            conversions: {
+                convertedFrom: { docType: 'Proforma', docId: proforma._id }
+            }
+        };
+        res.status(200).json({ success: true, message: 'Proforma data for Sale Order conversion retrieved', data: mappedData });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
 // @desc    Cancel Proforma
 // @route   POST /api/proformas/:id/cancel
 const cancelProforma = async (req, res) => {
@@ -1182,6 +1224,7 @@ module.exports = {
     convertToPurchaseInvoiceData,
     convertToChallanData,
     convertToPurchaseOrderData,
+    convertToSaleOrderData,
     cancelProforma,
     restoreProforma,
     attachProformaFile,

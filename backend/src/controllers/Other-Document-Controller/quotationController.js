@@ -1053,7 +1053,6 @@ const viewQuotationPublic = async (req, res) => {
     }
 };
 
-// @desc    Setup conversion to Sale Order (Prefill Data)
 // @route   GET /api/quotations/:id/convert-to-sale-order
 const convertToSaleOrderData = async (req, res) => {
     try {
@@ -1073,7 +1072,7 @@ const convertToSaleOrderData = async (req, res) => {
                 qty: item.qty,
                 uom: item.uom,
                 price: item.price,
-                discount: item.discount, // Quotation uses 'discount', Sale Order also uses 'discount'
+                discount: item.discount,
                 discountType: 'Percentage',
                 igst: item.igst,
                 cgst: item.cgst,

@@ -20,6 +20,7 @@ const {
     convertToPurchaseInvoiceData,
     convertToChallanData,
     convertToPurchaseOrderData,
+    convertToSaleOrderData,
     cancelProforma,
     restoreProforma,
     attachProformaFile,
@@ -83,6 +84,7 @@ router.get('/:id/convert-to-purchase-invoice', convertToPurchaseInvoiceData);
 router.get('/:id/convert-to-challan', convertToChallanData);
 router.get('/:id/duplicate', getDuplicateProformaData);
 router.get('/:id/convert-to-purchase-order', convertToPurchaseOrderData);
+router.get('/:id/convert-to-sale-order', convertToSaleOrderData);
 
 // Actions
 router.post('/:id/cancel', cancelProforma);
