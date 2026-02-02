@@ -85,7 +85,35 @@ const bankDetailsSchema = new mongoose.Schema({
     upiQrOnInvoiceWithAmount: {
         type: Boolean,
         default: false
-    }
+    },
+    transactions: [{
+        date: {
+            type: Date,
+            required: true
+        },
+        amount: {
+            type: Number,
+            required: true
+        },
+        transactionType: {
+            type: String,
+            required: true,
+            enum: ['Credit', 'Debit']
+        },
+        description: {
+            type: String,
+            required: true
+        },
+        remarks: {
+            type: String,
+            default: ''
+        },
+        paymentStatus: {
+            type: String,
+            enum: ['auto-match', 'unmatched', 'matched', 'not-active', 'inactive'],
+            default: 'unmatched'
+        }
+    }]
 }, {
     timestamps: true
 });
