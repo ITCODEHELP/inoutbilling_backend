@@ -7,7 +7,7 @@ const Quotation = require('../../models/Other-Document-Model/Quotation');
 const PurchaseInvoice = require('../../models/Purchase-Invoice-Model/PurchaseInvoice');
 const DeliveryChallan = require('../../models/Other-Document-Model/DeliveryChallan');
 const mongoose = require('mongoose');
-const { calculateDocumentTotals, getSummaryAggregation } = require('../../utils/documentHelper');
+const { calculateDocumentTotals, getSummaryAggregation, getSelectedPrintTemplate } = require('../../utils/documentHelper');
 const numberToWords = require('../../utils/numberToWords');
 const { calculateShippingDistance } = require('../../utils/shippingHelper');
 const User = require('../../models/User-Model/User');
@@ -511,7 +511,8 @@ const printPurchaseOrder = async (req, res) => {
         };
         mappedPO.customerInformation = po.vendorInformation;
 
-        const pdfBuffer = await generateSaleInvoicePDF(mappedPO, userData, options, 'Delivery Challan');
+        const printConfig = await getSelectedPrintTemplate(req.user._id, 'Purchase Order', po.branch);
+        const pdfBuffer = await generateSaleInvoicePDF(mappedPO, userData, options, 'Purchase Order', printConfig);
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename=purchase-order-${po.purchaseOrderDetails.poNumber}.pdf`);
         res.send(pdfBuffer);

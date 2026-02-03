@@ -3,7 +3,7 @@ const SaleOrderCustomField = require('../../models/Other-Document-Model/SaleOrde
 const SaleOrderItemColumn = require('../../models/Other-Document-Model/SaleOrderItemColumn');
 const Staff = require('../../models/Setting-Model/Staff');
 const mongoose = require('mongoose');
-const { calculateDocumentTotals, getSummaryAggregation } = require('../../utils/documentHelper');
+const { calculateDocumentTotals, getSummaryAggregation, getSelectedPrintTemplate } = require('../../utils/documentHelper');
 const numberToWords = require('../../utils/numberToWords');
 const { calculateShippingDistance } = require('../../utils/shippingHelper');
 const SaleInvoice = require('../../models/Sales-Invoice-Model/SaleInvoice');
@@ -1027,7 +1027,8 @@ const printSaleOrder = async (req, res) => {
             date: so.saleOrderDetails.date
         };
 
-        const pdfBuffer = await generateSaleInvoicePDF(mappedSO, userData, options, 'Sale Order');
+        const printConfig = await getSelectedPrintTemplate(req.user._id, 'Sale Order', so.branch);
+        const pdfBuffer = await generateSaleInvoicePDF(mappedSO, userData, options, 'Sale Order', printConfig);
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename=sale-order-${so.saleOrderDetails.soNumber}.pdf`);
         res.send(pdfBuffer);

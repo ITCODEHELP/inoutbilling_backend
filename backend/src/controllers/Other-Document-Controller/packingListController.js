@@ -4,6 +4,7 @@ const ProductGroup = require('../../models/Product-Service-Model/ProductGroup');
 const User = require('../../models/User-Model/User');
 const Customer = require('../../models/Customer-Vendor-Model/Customer');
 const mongoose = require('mongoose');
+const { getSelectedPrintTemplate } = require('../../utils/documentHelper');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -27,7 +28,8 @@ const generatePackingListPDFFile = async (packingList, userId) => {
     try {
         const user = await User.findById(userId);
         const options = { original: true };
-        const pdfBuffer = await generateSaleInvoicePDF(packingList, user, options, 'Packing List');
+        const printConfig = await getSelectedPrintTemplate(userId, 'Packing List', packingList.branch);
+        const pdfBuffer = await generateSaleInvoicePDF(packingList, user, options, 'Packing List', printConfig);
 
         const fileName = `packing_list_${packingList._id}_${Date.now()}.pdf`;
         const uploadDir = path.join(__dirname, '../../uploads/packing-lists'); // Adjusted path
@@ -56,7 +58,8 @@ const printPackingList = async (req, res) => {
 
         const userData = await User.findById(req.user._id);
         const options = getCopyOptions(req);
-        const pdfBuffer = await generateSaleInvoicePDF(packingList, userData, options, 'Packing List');
+        const printConfig = await getSelectedPrintTemplate(req.user._id, 'Packing List', packingList.branch);
+        const pdfBuffer = await generateSaleInvoicePDF(packingList, userData, options, 'Packing List', printConfig);
 
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', 'inline; filename="PackingList.pdf"');

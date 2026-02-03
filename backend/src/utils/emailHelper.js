@@ -4,6 +4,7 @@ const { generateJobWorkPDF } = require('./jobWorkPdfHelper');
 const { generatePurchaseInvoicePDF } = require('./purchaseInvoicePdfHelper');
 const { generateReceiptVoucherPDF } = require('./receiptPdfHelper');
 const User = require('../models/User-Model/User');
+const { getSelectedPrintTemplate } = require('./documentHelper');
 
 const sendInvoiceEmail = async (invoices, email, isPurchase = false, options = { original: true }, docType = 'Sale Invoice') => {
     try {
@@ -24,7 +25,8 @@ const sendInvoiceEmail = async (invoices, email, isPurchase = false, options = {
             pdfBuffer = await generateJobWorkPDF(items, userData || {}, options);
         } else {
             // Use specialized Sale Invoice PDF helper with professional template (supports Quotation too)
-            pdfBuffer = await generateSaleInvoicePDF(items, userData || {}, options, docType);
+            const printConfig = await getSelectedPrintTemplate(items[0].userId, docType, items[0].branch);
+            pdfBuffer = await generateSaleInvoicePDF(items, userData || {}, options, docType, printConfig);
         }
 
         const transporter = nodemailer.createTransport({

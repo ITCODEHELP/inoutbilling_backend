@@ -4,7 +4,7 @@ const ProformaCustomField = require('../../models/Other-Document-Model/ProformaC
 const ProformaItemColumn = require('../../models/Other-Document-Model/ProformaItemColumn');
 const Staff = require('../../models/Setting-Model/Staff');
 const mongoose = require('mongoose');
-const { calculateDocumentTotals, getSummaryAggregation } = require('../../utils/documentHelper');
+const { calculateDocumentTotals, getSummaryAggregation, getSelectedPrintTemplate } = require('../../utils/documentHelper');
 const numberToWords = require('../../utils/numberToWords');
 const { generateSaleInvoicePDF } = require('../../utils/saleInvoicePdfHelper');
 const { getCopyOptions } = require('../../utils/pdfHelper');
@@ -315,6 +315,7 @@ const createProforma = async (req, res) => {
                 date: newProforma.proformaDetails.date
             };
 
+            const templateName = await getSelectedPrintTemplate(req.user._id, 'Proforma');
             const pdfBuffer = await generateSaleInvoicePDF(docForPdf, userData, {
                 ...options,
                 titleLabel: 'PROFORMA',
@@ -322,7 +323,7 @@ const createProforma = async (req, res) => {
                 dateLabel: 'Proforma Date',
                 hideDueDate: true,
                 hideTerms: true
-            });
+            }, 'Proforma', templateName);
             res.setHeader('Content-Type', 'application/pdf');
             res.setHeader('Content-Disposition', `attachment; filename=proforma-${newProforma.proformaDetails.proformaNumber}.pdf`);
             return res.send(pdfBuffer);
@@ -357,6 +358,7 @@ const printProforma = async (req, res) => {
             date: proforma.proformaDetails.date
         };
 
+        const printConfig = await getSelectedPrintTemplate(req.user._id, 'Proforma', proforma.branch);
         const pdfBuffer = await generateSaleInvoicePDF(docForPdf, userData, {
             ...options,
             titleLabel: 'PROFORMA',
@@ -364,7 +366,7 @@ const printProforma = async (req, res) => {
             dateLabel: 'Proforma Date',
             hideDueDate: true,
             hideTerms: true
-        });
+        }, 'Proforma', printConfig);
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename=proforma-${proforma.proformaDetails.proformaNumber}.pdf`);
         res.send(pdfBuffer);
@@ -392,6 +394,7 @@ const downloadProformaPDF = async (req, res) => {
             return mapped;
         });
 
+        const printConfig = await getSelectedPrintTemplate(req.user._id, 'Proforma', proformas[0].branch);
         const pdfBuffer = await generateSaleInvoicePDF(docsForPdf, userData, {
             ...options,
             titleLabel: 'PROFORMA',
@@ -399,7 +402,7 @@ const downloadProformaPDF = async (req, res) => {
             dateLabel: 'Proforma Date',
             hideDueDate: true,
             hideTerms: true
-        });
+        }, 'Proforma', printConfig);
 
         const filename = proformas.length === 1 ? `Proforma_${proformas[0].proformaDetails.proformaNumber}.pdf` : `Merged_Proformas.pdf`;
 
@@ -551,6 +554,8 @@ const viewPublicProforma = async (req, res) => {
             date: proforma.proformaDetails.date
         };
 
+        const printConfig = await getSelectedPrintTemplate(proforma.userId, 'Proforma', proforma.branch);
+
         const pdfBuffer = await generateSaleInvoicePDF(docForPdf, userData, {
             ...options,
             titleLabel: 'PROFORMA',
@@ -558,7 +563,7 @@ const viewPublicProforma = async (req, res) => {
             dateLabel: 'Proforma Date',
             hideDueDate: true,
             hideTerms: true
-        });
+        }, 'Proforma', printConfig);
 
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename=proforma-${proforma.proformaDetails.proformaNumber}.pdf`);
