@@ -14,6 +14,7 @@ const Staff = require('../../models/Setting-Model/Staff');
 const { sendInvoiceEmail } = require('../../utils/emailHelper');
 const { generateSaleInvoicePDF } = require('../../utils/saleInvoicePdfHelper');
 const { getCopyOptions } = require('../../utils/pdfHelper');
+const { getSelectedPrintTemplate } = require('../../utils/documentHelper');
 const { recordActivity } = require('../../utils/activityLogHelper');
 const fs = require('fs');
 const path = require('path');
@@ -415,7 +416,8 @@ const handleCreateInvoiceLogic = async (req) => {
     // 7️⃣ Generate PDF Buffer
     const userData = await User.findById(req.user._id);
     const options = getCopyOptions(req);
-    const pdfBuffer = await generateSaleInvoicePDF(invoice, userData, options);
+    const printConfig = await getSelectedPrintTemplate(req.user._id, 'Sale Invoice', bodyData.branch);
+    const pdfBuffer = await generateSaleInvoicePDF(invoice, userData, options, 'Sale Invoice', printConfig);
 
     // Save PDF to disk (optional but recommended for persistence)
     const pdfDir = 'src/uploads/invoices/pdf';
@@ -901,7 +903,8 @@ const handleCreateDynamicInvoiceLogic = async (req) => {
 
     const userData = await User.findById(req.user._id);
     const options = getCopyOptions(req);
-    const pdfBuffer = await generateSaleInvoicePDF(invoice, userData, options);
+    const printConfig = await getSelectedPrintTemplate(req.user._id, 'Sale Invoice');
+    const pdfBuffer = await generateSaleInvoicePDF(invoice, userData, options, 'Sale Invoice', printConfig);
     const pdfDir = 'src/uploads/invoices/pdf';
     if (!fs.existsSync(pdfDir)) fs.mkdirSync(pdfDir, { recursive: true });
     const pdfFileName = `invoice-${invoice._id}.pdf`;
@@ -1008,19 +1011,24 @@ const getInvoiceSummary = async (req, res) => {
 
 const shareEmail = async (req, res) => {
     try {
-        const ids = req.params.id.split(',');
+        const ids = req.params.id.split(',').map(id => id.trim()).filter(id => mongoose.Types.ObjectId.isValid(id));
+        if (ids.length === 0) return res.status(400).json({ success: false, message: "Invalid ID(s) provided" });
+
         const invoices = await SaleInvoice.find({ _id: { $in: ids }, userId: req.user._id });
-        if (!invoices || invoices.length === 0) return res.status(404).json({ success: false, message: "Invoice(s) not found" });
+        if (invoices.length !== ids.length) return res.status(404).json({ success: false, message: "Some invoice(s) not found" });
 
         const firstInvoice = invoices[0];
         const customer = await Customer.findOne({ userId: req.user._id, companyName: firstInvoice.customerInformation.ms });
-        const email = req.body.email || (customer ? customer.email : null);
+        const email = req.body.email || customer?.email;
 
         if (!email) return res.status(400).json({ success: false, message: "Customer email not found. Please provide an email address." });
 
         const options = getCopyOptions(req);
         const { sendInvoiceEmail } = require('../../utils/emailHelper');
-        await sendInvoiceEmail(invoices, email, false, options);
+
+        // sendInvoiceEmail now handles multi-copy flags inside it or we can pass as options
+        await sendInvoiceEmail(invoices, email, false, options, 'Sale Invoice');
+
         res.status(200).json({ success: true, message: `Invoice(s) sent to ${email} successfully` });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -1029,21 +1037,23 @@ const shareEmail = async (req, res) => {
 
 const shareWhatsApp = async (req, res) => {
     try {
-        const ids = req.params.id.split(',');
+        const ids = req.params.id.split(',').map(id => id.trim()).filter(id => mongoose.Types.ObjectId.isValid(id));
+        if (ids.length === 0) return res.status(400).json({ success: false, message: "Invalid ID(s) provided" });
+
         const invoices = await SaleInvoice.find({ _id: { $in: ids }, userId: req.user._id });
-        if (!invoices || invoices.length === 0) return res.status(404).json({ success: false, message: "Invoice(s) not found" });
+        if (invoices.length !== ids.length) return res.status(404).json({ success: false, message: "Some invoice(s) not found" });
 
         const firstInvoice = invoices[0];
         const customer = await Customer.findOne({ userId: req.user._id, companyName: firstInvoice.customerInformation.ms });
-        const phone = req.body.phone || (customer ? customer.phone : null);
+        const phone = req.body.phone || customer?.phone;
 
         if (!phone) return res.status(400).json({ success: false, message: "Customer phone not found. Please provide a phone number." });
 
         const cleanPhone = phone.replace(/\D/g, '');
         const whatsappNumber = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
 
-        // Construct message
         const options = getCopyOptions(req);
+
         let queryParams = [];
         if (options.original) queryParams.push('original=true');
         if (options.duplicate) queryParams.push('duplicate=true');
@@ -1056,9 +1066,9 @@ const shareWhatsApp = async (req, res) => {
 
         let message = '';
         if (invoices.length === 1) {
-            message = `Dear ${firstInvoice.customerInformation.ms},\n\nPlease find your Invoice No: ${firstInvoice.invoiceDetails.invoiceNumber} for Total Amount: ${firstInvoice.totals.grandTotal.toFixed(2)}.\n\nView Link: ${publicLink}\n\nThank you for your business!`;
+            message = `Dear ${firstInvoice.customerInformation.ms},\n\nPlease find your Invoice No: ${firstInvoice.invoiceDetails.invoiceNumber} for Total Amount: ₹${firstInvoice.totals.grandTotal.toFixed(2)}.\n\nView/Download PDF: ${publicLink}\n\nThank you for your business!`;
         } else {
-            message = `Dear ${firstInvoice.customerInformation.ms},\n\nPlease find your merged Invoices for Total Amount: ${invoices.reduce((sum, inv) => sum + inv.totals.grandTotal, 0).toFixed(2)}.\n\nView Link: ${publicLink}\n\nThank you for your business!`;
+            message = `Dear ${firstInvoice.customerInformation.ms},\n\nPlease find your merged Invoices for Total Amount: ₹${invoices.reduce((sum, inv) => sum + inv.totals.grandTotal, 0).toFixed(2)}.\n\nView/Download PDF: ${publicLink}\n\nThank you for your business!`;
         }
 
         const encodedMessage = encodeURIComponent(message);
@@ -1077,26 +1087,38 @@ const shareWhatsApp = async (req, res) => {
 const shareSMS = async (req, res) => {
     try {
         const axios = require('axios');
-        const invoice = await SaleInvoice.findOne({ _id: req.params.id, userId: req.user._id });
-        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+        const ids = req.params.id.split(',').map(id => id.trim()).filter(id => mongoose.Types.ObjectId.isValid(id));
+        if (ids.length === 0) return res.status(400).json({ success: false, message: "Invalid ID(s) provided" });
 
-        const customer = await Customer.findOne({ userId: req.user._id, companyName: invoice.customerInformation.ms });
-        const phone = req.body.phone || (customer ? customer.phone : null);
+        const invoices = await SaleInvoice.find({ _id: { $in: ids }, userId: req.user._id });
+        if (invoices.length !== ids.length) return res.status(404).json({ success: false, message: "Some invoice(s) not found" });
+
+        const firstInvoice = invoices[0];
+        const customer = await Customer.findOne({ userId: req.user._id, companyName: firstInvoice.customerInformation.ms });
+        const phone = req.body.phone || customer?.phone;
 
         if (!phone) return res.status(400).json({ success: false, message: "Customer phone not found. Please provide a phone number." });
 
         const authKey = process.env.MSG91_AUTH_KEY;
-        const templateId = process.env.MSG91_INVOICE_TEMPLATE_ID || process.env.MSG91_TEMPLATE_ID;
+        const templateId = process.env.MSG91_INVOICE_TEMPLATE_ID || process.env.MSG91_FLOW_ID;
+
+        if (!authKey || !templateId) {
+            return res.status(500).json({ success: false, message: "MSG91 credentials not configured" });
+        }
 
         const cleanPhone = phone.replace(/\D/g, '');
         const fullMobile = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+
+        const token = generatePublicToken(req.params.id);
+        const publicLink = `${req.protocol}://${req.get('host')}/api/sale-invoice/view-public/${req.params.id}/${token}`;
 
         const payload = {
             template_id: templateId,
             recipients: [{
                 mobiles: fullMobile,
-                invoice_no: invoice.invoiceDetails.invoiceNumber,
-                amount: invoice.totals.grandTotal.toFixed(2)
+                invoice_no: invoices.length === 1 ? firstInvoice.invoiceDetails.invoiceNumber : 'Multiple',
+                amount: invoices.reduce((sum, inv) => sum + inv.totals.grandTotal, 0).toFixed(2),
+                view_link: publicLink
             }]
         };
 
@@ -1118,7 +1140,8 @@ const downloadInvoicePDF = async (req, res) => {
 
         const userData = await User.findById(req.user._id);
         const options = getCopyOptions(req);
-        const pdfBuffer = await generateSaleInvoicePDF(invoices, userData, options);
+        const printConfig = await getSelectedPrintTemplate(req.user._id, 'Sale Invoice', invoices[0].branch);
+        const pdfBuffer = await generateSaleInvoicePDF(invoices, userData, options, 'Sale Invoice', printConfig);
 
         const filename = invoices.length === 1 ? `Invoice_${invoices[0].invoiceDetails.invoiceNumber}.pdf` : `Merged_Invoices.pdf`;
 
@@ -1613,7 +1636,8 @@ const updateInvoice = async (req, res) => {
         // 6️⃣ Re-generate PDF
         const userData = await User.findById(req.user._id);
         const options = getCopyOptions(req);
-        const pdfBuffer = await generateSaleInvoicePDF(invoice, userData, options);
+        const printConfig = await getSelectedPrintTemplate(req.user._id, 'Sale Invoice', bodyData.branch);
+        const pdfBuffer = await generateSaleInvoicePDF(invoice, userData, options, 'Sale Invoice', printConfig);
         const pdfDir = 'src/uploads/invoices/pdf';
         if (!fs.existsSync(pdfDir)) {
             fs.mkdirSync(pdfDir, { recursive: true });
@@ -1676,7 +1700,8 @@ const viewInvoicePublic = async (req, res) => {
 
         const userData = await User.findById(invoices[0].userId);
         const options = getCopyOptions(req);
-        const pdfBuffer = await generateSaleInvoicePDF(invoices, userData || {}, options);
+        const printConfig = await getSelectedPrintTemplate(invoices[0].userId, 'Sale Invoice', invoices[0].branch);
+        const pdfBuffer = await generateSaleInvoicePDF(invoices, userData || {}, options, 'Sale Invoice', printConfig);
 
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', 'inline; filename="Invoice.pdf"');

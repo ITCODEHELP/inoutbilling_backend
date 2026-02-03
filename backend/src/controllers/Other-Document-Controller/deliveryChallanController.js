@@ -8,7 +8,7 @@ const Customer = require('../../models/Customer-Vendor-Model/Customer');
 const mongoose = require('mongoose');
 const { generateDeliveryChallanPDF } = require('../../utils/pdfHelper');
 const { sendDeliveryChallanEmail } = require('../../utils/emailHelper');
-const { calculateDocumentTotals, getSummaryAggregation } = require('../../utils/documentHelper');
+const { calculateDocumentTotals, getSummaryAggregation, getSelectedPrintTemplate } = require('../../utils/documentHelper');
 const numberToWords = require('../../utils/numberToWords');
 const { calculateShippingDistance } = require('../../utils/shippingHelper');
 const { generateLabelPDF } = require('../../utils/deliveryChallanLabelHelper');
@@ -326,9 +326,12 @@ const createDeliveryChallan = async (req, res) => {
         }
 
         if (print) {
-            const pdfBuffer = await generateDeliveryChallanPDF(newChallan);
+            const userData = await User.findById(req.user._id);
+            const options = getCopyOptions(req);
+            const templateName = await getSelectedPrintTemplate(req.user._id, 'Delivery Challan');
+            const pdfBuffer = await generateSaleInvoicePDF(newChallan, userData, options, 'Delivery Challan', templateName);
             res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Disposition', `attachment; filename = challan - ${newChallan.deliveryChallanDetails.challanNumber}.pdf`);
+            res.setHeader('Content-Disposition', `attachment; filename=challan-${newChallan.deliveryChallanDetails.challanNumber}.pdf`);
             return res.send(pdfBuffer);
         }
 
@@ -533,7 +536,8 @@ const printDeliveryChallan = async (req, res) => {
         const userData = await User.findById(req.user._id);
         const options = getCopyOptions(req);
 
-        const pdfBuffer = await generateSaleInvoicePDF(challan, userData, options, 'Delivery Challan');
+        const printConfig = await getSelectedPrintTemplate(req.user._id, 'Delivery Challan', challan.branch);
+        const pdfBuffer = await generateSaleInvoicePDF(challan, userData, options, 'Delivery Challan', printConfig);
 
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename=challan-${challan.deliveryChallanDetails.challanNumber}.pdf`);
@@ -553,7 +557,8 @@ const downloadDeliveryChallansPDF = async (req, res) => {
 
         const userData = await User.findById(req.user._id);
         const options = getCopyOptions(req);
-        const pdfBuffer = await generateSaleInvoicePDF(challans, userData, options, 'Delivery Challan');
+        const printConfig = await getSelectedPrintTemplate(req.user._id, 'Delivery Challan', challans[0].branch);
+        const pdfBuffer = await generateSaleInvoicePDF(challans, userData, options, 'Delivery Challan', printConfig);
 
         const filename = challans.length === 1 ? `Challan_${challans[0].deliveryChallanDetails.challanNumber}.pdf` : `Merged_Challans.pdf`;
 
@@ -1196,7 +1201,8 @@ const viewDeliveryChallanPublic = async (req, res) => {
 
         const userData = await User.findById(challans[0].userId);
         const options = getCopyOptions(req);
-        const pdfBuffer = await generateSaleInvoicePDF(challans, userData || {}, options, 'Delivery Challan');
+        const printConfig = await getSelectedPrintTemplate(challans[0].userId, 'Delivery Challan', challans[0].branch);
+        const pdfBuffer = await generateSaleInvoicePDF(challans, userData || {}, options, 'Delivery Challan', printConfig);
 
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', 'inline; filename="DeliveryChallan.pdf"');

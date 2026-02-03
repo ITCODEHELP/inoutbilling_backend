@@ -3,7 +3,7 @@ const QuotationCustomField = require('../../models/Other-Document-Model/Quotatio
 const QuotationItemColumn = require('../../models/Other-Document-Model/QuotationItemColumn');
 const Staff = require('../../models/Setting-Model/Staff');
 const mongoose = require('mongoose');
-const { calculateDocumentTotals, getSummaryAggregation } = require('../../utils/documentHelper');
+const { calculateDocumentTotals, getSummaryAggregation, getSelectedPrintTemplate } = require('../../utils/documentHelper');
 const numberToWords = require('../../utils/numberToWords');
 const { generateSaleInvoicePDF } = require('../../utils/saleInvoicePdfHelper');
 const { getCopyOptions } = require('../../utils/pdfHelper');
@@ -269,7 +269,8 @@ const createQuotation = async (req, res) => {
         if (print) {
             const userData = await User.findById(req.user._id);
             const options = getCopyOptions(req);
-            const pdfBuffer = await generateSaleInvoicePDF(newQuotation, userData, options, 'Quotation');
+            const templateName = await getSelectedPrintTemplate(req.user._id, 'Quotation');
+            const pdfBuffer = await generateSaleInvoicePDF(newQuotation, userData, options, 'Quotation', templateName);
             res.setHeader('Content-Type', 'application/pdf');
             res.setHeader('Content-Disposition', `attachment; filename=quotation-${newQuotation.quotationDetails.quotationNumber}.pdf`);
             return res.send(pdfBuffer);
@@ -297,7 +298,8 @@ const printQuotation = async (req, res) => {
 
         const userData = await User.findById(req.user._id);
         const options = getCopyOptions(req);
-        const pdfBuffer = await generateSaleInvoicePDF(quotation, userData, options, 'Quotation');
+        const printConfig = await getSelectedPrintTemplate(req.user._id, 'Quotation', quotation.branch);
+        const pdfBuffer = await generateSaleInvoicePDF(quotation, userData, options, 'Quotation', printConfig);
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename=quotation-${quotation.quotationDetails.quotationNumber}.pdf`);
         res.send(pdfBuffer);
@@ -314,7 +316,8 @@ const downloadQuotationPDF = async (req, res) => {
 
         const userData = await User.findById(req.user._id);
         const options = getCopyOptions(req);
-        const pdfBuffer = await generateSaleInvoicePDF(quotations, userData, options, 'Quotation');
+        const printConfig = await getSelectedPrintTemplate(req.user._id, 'Quotation', quotations[0].branch);
+        const pdfBuffer = await generateSaleInvoicePDF(quotations, userData, options, 'Quotation', printConfig);
 
         const filename = quotations.length === 1 ? `Quotation_${quotations[0].quotationDetails.quotationNumber}.pdf` : `Merged_Quotations.pdf`;
 

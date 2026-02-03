@@ -37,8 +37,22 @@ Content-Type: application/json
 {
   "branchId": "main",
   "templateConfigurations": [
-    { "documentType": "Sale Invoice", "selectedTemplate": "Designed", "printSize": "A4" }
+    { 
+      "documentType": "Sale Invoice", 
+      "selectedTemplate": "Designed", 
+      "printSize": "A4",
+      "printOrientation": "Portrait"
+    }
   ]
 }
 ```
+
+## High-Fidelity PDF Generation
+The system now uses Puppeteer for high-fidelity HTML to PDF conversion. All document templates (Sale Invoice, Quotation, Proforma, etc.) are rendered in a headless browser to ensure perfect layout, styles, and font preservation.
+
+### Features:
+- **Exact Browser Fidelity**: Preserves all CSS3, Web Fonts, and Image formatting.
+- **Dynamic Orientation**: Supports `Portrait` and `Landscape` modes.
+- **Flexible Print Sizes**: Supports `A4`, `A5`, and `Letter` formats.
+- **Multi-Copy Support**: Correctly renders Original, Duplicate, Triplicate, and Office copies in a single PDF stream.
 

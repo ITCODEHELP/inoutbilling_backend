@@ -1,5 +1,6 @@
 const DispatchAddress = require('../models/Setting-Model/DispatchAddress');
 const User = require('../models/User-Model/User');
+const PrintTemplateSettings = require('../models/Setting-Model/PrintTemplateSetting');
 const mongoose = require('mongoose');
 const numberToWords = require('./numberToWords');
 
@@ -185,7 +186,7 @@ const calculateExportInvoiceTotals = async (userId, documentData, invoiceType, c
             // For now, we'll use IGST directly for exports, but allow derivation if needed
             finalIgstRate = igstRate;
             igst = (taxableValue * finalIgstRate) / 100;
-            
+
             // If business rule requires CGST/SGST derivation (uncomment if needed):
             // cgstRate = igstRate / 2;
             // sgstRate = igstRate / 2;
@@ -252,9 +253,47 @@ const calculateExportInvoiceTotals = async (userId, documentData, invoiceType, c
     };
 };
 
+/**
+ * Common Template Resolver
+ * Checks database for user's selected template for a document type and branch.
+ * @param {string} userId
+ * @param {string} docType
+ * @param {string} branchId - Optional branchId, defaults to 'main'
+ * @returns {Promise<Object>} Selected template config
+ */
+const getSelectedPrintTemplate = async (userId, docType, branchId = 'main') => {
+    try {
+        const defaultSettings = {
+            selectedTemplate: 'Default',
+            printSize: 'A4',
+            printOrientation: 'Portrait'
+        };
+
+        const settings = await PrintTemplateSettings.findOne({ userId, branchId });
+        if (!settings || !settings.templateConfigurations) return defaultSettings;
+
+        const config = settings.templateConfigurations.find(c => c.documentType === docType);
+        if (!config || !config.selectedTemplate) return defaultSettings;
+
+        return {
+            selectedTemplate: config.selectedTemplate,
+            printSize: config.printSize || 'A4',
+            printOrientation: config.printOrientation || 'Portrait'
+        };
+    } catch (err) {
+        console.error(`Error resolving template for ${docType} (Branch: ${branchId}):`, err);
+        return {
+            selectedTemplate: 'Default',
+            printSize: 'A4',
+            printOrientation: 'Portrait'
+        };
+    }
+};
+
 module.exports = {
     calculateDocumentTotals,
     calculateExportInvoiceTotals,
     getSummaryAggregation,
-    numberToWords
+    numberToWords,
+    getSelectedPrintTemplate
 };
