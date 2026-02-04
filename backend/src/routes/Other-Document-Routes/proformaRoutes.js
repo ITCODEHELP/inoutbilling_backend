@@ -4,6 +4,7 @@ const {
     createProforma,
     getProformas,
     getProformaSummary,
+    getNextProformaNumber,
     getProformaById,
     updateProforma,
     deleteProforma,
@@ -62,6 +63,7 @@ router.route('/item-columns/:id')
 
 // Proforma Routes
 router.get('/summary', getProformaSummary);
+router.get('/next-number', getNextProformaNumber);
 
 router.route('/')
     .get(getProformas)

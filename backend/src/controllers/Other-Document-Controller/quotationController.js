@@ -1100,9 +1100,34 @@ const convertToSaleOrderData = async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
+// @desc    Get Next Quotation Number
+// @route   GET /api/quotations/next-number
+const getNextQuotationNumber = async (req, res) => {
+    try {
+        const lastQuotation = await Quotation.findOne({ userId: req.user._id })
+            .sort({ createdAt: -1 })
+            .select('quotationDetails.quotationNumber');
+
+        let nextNumber = 1;
+
+        if (lastQuotation?.quotationDetails?.quotationNumber) {
+            const match = lastQuotation.quotationDetails.quotationNumber.match(/\d+$/);
+            if (match) {
+                nextNumber = parseInt(match[0], 10) + 1;
+            }
+        }
+
+        const nextNo = `QUO-${String(nextNumber).padStart(3, '0')}`;
+        res.status(200).json({ success: true, data: { nextNo } });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 module.exports = {
     createQuotation,
     getQuotations,
+    getNextQuotationNumber,
     getQuotationSummary,
     getQuotationById,
     updateQuotation,

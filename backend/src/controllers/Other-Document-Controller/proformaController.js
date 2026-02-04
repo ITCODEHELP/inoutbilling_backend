@@ -1204,9 +1204,34 @@ const deleteProformaAttachment = async (req, res) => {
     }
 };
 
+// @desc    Get Next Proforma Number
+// @route   GET /api/proformas/next-number
+const getNextProformaNumber = async (req, res) => {
+    try {
+        const lastProforma = await Proforma.findOne({ userId: req.user._id })
+            .sort({ createdAt: -1 })
+            .select('proformaDetails.proformaNumber');
+
+        let nextNumber = 1;
+
+        if (lastProforma?.proformaDetails?.proformaNumber) {
+            const match = lastProforma.proformaDetails.proformaNumber.match(/\d+$/);
+            if (match) {
+                nextNumber = parseInt(match[0], 10) + 1;
+            }
+        }
+
+        const nextNo = `PI-${String(nextNumber).padStart(3, '0')}`;
+        res.status(200).json({ success: true, data: { nextNo } });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 module.exports = {
     createProforma,
     getProformas,
+    getNextProformaNumber,
     getProformaSummary,
     getProformaById,
     updateProforma,

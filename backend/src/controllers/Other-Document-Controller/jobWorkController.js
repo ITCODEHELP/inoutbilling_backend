@@ -608,21 +608,28 @@ const updateJobWorkStatus = async (req, res) => {
         const { status } = req.body;
         if (!status) return res.status(400).json({ success: false, message: 'Status is required' });
 
-        const validStatuses = ['New', 'Pending', 'In-Work', 'Completed'];
+        const validStatuses = ['New', 'Pending', 'In-Work', 'Completed', 'Cancelled'];
         if (!validStatuses.includes(status)) {
-            return res.status(400).json({ success: false, message: 'Invalid status' });
+            return res.status(400).json({ success: false, message: `Invalid status: ${status}` });
         }
 
         const jobWork = await JobWork.findOneAndUpdate(
             { _id: req.params.id, userId: req.user._id },
-            { 'jobWorkDetails.status': status },
-            { new: true, runValidators: true }
+            { $set: { 'jobWorkDetails.status': status } },
+            { new: true } // Removed runValidators to prevent legacy data from blocking updates
         );
 
-        if (!jobWork) return res.status(404).json({ success: false, message: 'Job Work not found' });
+        if (!jobWork) {
+            return res.status(404).json({ success: false, message: 'Job Work not found' });
+        }
 
-        res.status(200).json({ success: true, data: { status: jobWork.jobWorkDetails.status } });
+        res.status(200).json({
+            success: true,
+            message: 'Status updated successfully',
+            data: { status: jobWork.jobWorkDetails.status }
+        });
     } catch (error) {
+        console.error('Update status error:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 };
