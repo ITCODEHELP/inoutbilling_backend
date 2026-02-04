@@ -1238,6 +1238,36 @@ const cancelInvoice = async (req, res) => {
     }
 };
 
+const restoreInvoice = async (req, res) => {
+    try {
+        const invoice = await SaleInvoice.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+
+        // Determine status based on payments
+        let newStatus = 'Unpaid';
+        if (invoice.paidAmount >= invoice.totals.grandTotal && invoice.totals.grandTotal > 0) {
+            newStatus = 'Paid';
+        } else if (invoice.paidAmount > 0) {
+            newStatus = 'Partial';
+        }
+
+        invoice.status = newStatus;
+        await invoice.save();
+
+        await recordActivity(
+            req,
+            'Restore',
+            'Sale Invoice',
+            `Invoice restored: ${invoice.invoiceDetails.invoiceNumber}`,
+            invoice.invoiceDetails.invoiceNumber
+        );
+
+        res.status(200).json({ success: true, message: "Invoice restored successfully", data: invoice });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 const attachFileToInvoice = async (req, res) => {
     try {
         if (!req.files || req.files.length === 0) return res.status(400).json({ success: false, message: "No files uploaded" });
@@ -1752,5 +1782,6 @@ module.exports = {
     viewInvoicePublic,
     updateInvoice,
     createDynamicInvoice,
-    resolveInvoiceItem
+    resolveInvoiceItem,
+    restoreInvoice
 };
