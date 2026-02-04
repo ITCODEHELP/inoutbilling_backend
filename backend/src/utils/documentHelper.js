@@ -70,6 +70,7 @@ const calculateDocumentTotals = async (userId, documentData, branchId = null) =>
 
         return {
             ...item,
+            hsnSac: item.hsnSac || item.hsnCode || "",
             qty, price, discount,
             taxableValue: Math.round(taxableValue * 100) / 100,
             igst: isIntraState ? 0 : finalIgstRate,
@@ -208,6 +209,7 @@ const calculateExportInvoiceTotals = async (userId, documentData, invoiceType, c
 
         return {
             ...item,
+            hsnSac: item.hsnSac || item.hsnCode || "",
             qty, price, discount,
             taxableValue: Math.round(taxableValue * 100) / 100,
             igst: finalIgstRate,

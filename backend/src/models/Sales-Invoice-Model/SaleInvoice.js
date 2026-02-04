@@ -157,8 +157,7 @@ const saleInvoiceSchema = new mongoose.Schema({
     },
 
     customFields: {
-        type: Map,
-        of: mongoose.Schema.Types.Mixed,
+        type: mongoose.Schema.Types.Mixed,
         default: {}
     },
 

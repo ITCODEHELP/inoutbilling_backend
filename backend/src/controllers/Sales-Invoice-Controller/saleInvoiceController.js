@@ -275,7 +275,7 @@ const handleCreateInvoiceLogic = async (req) => {
         // Parse individual nested fields if they are strings (for backward compatibility or direct form-data fields)
         const nestedFields = [
             'customerInformation', 'invoiceDetails', 'items', 'additionalCharges',
-            'totals', 'conversions', 'eWayBill', 'termsAndConditions'
+            'totals', 'conversions', 'eWayBill', 'termsAndConditions', 'customFields'
         ];
         nestedFields.forEach(field => {
             if (bodyData[field] && typeof bodyData[field] === 'string') {
@@ -310,6 +310,11 @@ const handleCreateInvoiceLogic = async (req) => {
                 normalizedItem.price = Number(item.rate);
             } else if (item.price) {
                 normalizedItem.price = Number(item.price);
+            }
+
+            // Normalize HSN/SAC
+            if (item.hsnCode && !item.hsnSac) {
+                normalizedItem.hsnSac = item.hsnCode;
             }
 
             return normalizedItem;
@@ -489,14 +494,15 @@ const resolveItemLogic = async (userId, itemInput) => {
         product = await Product.findOne({ _id: itemInput.productId, userId });
     } else if (itemInput.productName) {
         product = await Product.findOne({ name: itemInput.productName, userId });
-    } else if (itemInput.hsnSac) {
-        product = await Product.findOne({ hsnSac: itemInput.hsnSac, userId });
+    } else if (itemInput.hsnSac || itemInput.hsnCode) {
+        product = await Product.findOne({ hsnSac: itemInput.hsnSac || itemInput.hsnCode, userId });
     }
 
     if (!product) {
         // If no product found, return the item as is (manual entry)
         return {
             ...itemInput,
+            hsnSac: itemInput.hsnSac || itemInput.hsnCode || '',
             qty: Number(itemInput.qty || 1),
             price: Number(itemInput.price || 0),
             discountValue: Number(itemInput.discountValue || 0),
@@ -513,7 +519,7 @@ const resolveItemLogic = async (userId, itemInput) => {
         ...itemInput,
         productId: product._id,
         productName: itemInput.productName || product.name,
-        hsnSac: itemInput.hsnSac || product.hsnSac,
+        hsnSac: itemInput.hsnSac || itemInput.hsnCode || product.hsnSac,
         uom: itemInput.uom || product.unitOfMeasurement,
         productGroup: itemInput.productGroup || product.productGroup,
         qty: Number(itemInput.qty || 1),
@@ -756,7 +762,7 @@ const handleCreateDynamicInvoiceLogic = async (req) => {
         bodyData = { ...req.body };
         const nestedFields = [
             'customerInformation', 'invoiceDetails', 'items', 'additionalCharges',
-            'totals', 'conversions', 'eWayBill', 'termsAndConditions'
+            'totals', 'conversions', 'eWayBill', 'termsAndConditions', 'customFields'
         ];
         nestedFields.forEach(field => {
             if (bodyData[field] && typeof bodyData[field] === 'string') {
@@ -1539,7 +1545,7 @@ const updateInvoice = async (req, res) => {
             // Parse individual nested fields if they are strings
             const nestedFields = [
                 'customerInformation', 'invoiceDetails', 'items', 'additionalCharges',
-                'totals', 'conversions', 'eWayBill', 'termsAndConditions'
+                'totals', 'conversions', 'eWayBill', 'termsAndConditions', 'customFields', 'transportDetails'
             ];
             nestedFields.forEach(field => {
                 if (bodyData[field] && typeof bodyData[field] === 'string') {
@@ -1574,6 +1580,11 @@ const updateInvoice = async (req, res) => {
                     normalizedItem.price = Number(item.rate);
                 } else if (item.price) {
                     normalizedItem.price = Number(item.price);
+                }
+
+                // Normalize HSN/SAC
+                if (item.hsnCode && !item.hsnSac) {
+                    normalizedItem.hsnSac = item.hsnCode;
                 }
 
                 return normalizedItem;
