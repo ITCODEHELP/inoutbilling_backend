@@ -571,8 +571,26 @@ const updateJobWork = async (req, res) => {
 const getJobWorkSummary = async (req, res) => {
     try {
         const query = await buildJobWorkQuery(req.user._id, req.query);
-        const data = await getSummaryAggregation(req.user._id, query, JobWork);
-        res.status(200).json({ success: true, data });
+        const summary = await getSummaryAggregation(req.user._id, query, JobWork);
+
+        // Fetch status counts specifically for Job Work
+        const pendingCount = await JobWork.countDocuments({
+            ...query,
+            'jobWorkDetails.status': { $in: ['New', 'Pending', 'In-Work'] }
+        });
+        const completedCount = await JobWork.countDocuments({
+            ...query,
+            'jobWorkDetails.status': 'Completed'
+        });
+
+        res.status(200).json({
+            success: true,
+            data: {
+                ...summary,
+                pendingCount,
+                completedCount
+            }
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }

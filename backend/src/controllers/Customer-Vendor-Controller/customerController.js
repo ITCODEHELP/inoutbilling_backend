@@ -24,6 +24,7 @@ const createCustomer = async (req, res) => {
             registrationType,
             billingAddress,
             shippingAddress,
+            shippingAddresses,
             bankDetails,
             openingBalance,
             additionalDetails
@@ -53,6 +54,7 @@ const createCustomer = async (req, res) => {
             registrationType,
             billingAddress,
             shippingAddress,
+            shippingAddresses,
             bankDetails,
             openingBalance,
             additionalDetails
@@ -164,7 +166,7 @@ const updateCustomer = async (req, res) => {
 const deleteCustomer = async (req, res) => {
     try {
         if (!req.user) req.user = { _id: '000000000000000000000000' };
-        
+
         if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
             return res.status(400).json({ message: 'Invalid Customer ID' });
         }

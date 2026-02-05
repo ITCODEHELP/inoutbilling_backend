@@ -51,6 +51,8 @@ const customerSchema = new mongoose.Schema({
         pincode: String
     },
 
+    shippingAddresses: [addressSchema],
+
     bankDetails: {
         bankName: String,
         ifscCode: String,
