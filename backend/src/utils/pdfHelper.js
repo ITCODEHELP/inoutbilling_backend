@@ -254,7 +254,7 @@ const generateProformaPDF = (data) => {
         // Header
         doc.fillColor("#444444")
             .fontSize(20)
-            .text("PROFORMA INVOICE", 50, 50, { align: "right" })
+            .text("Proforma ", 50, 50, { align: "right" })
             .fontSize(10)
             .text(`Proforma No: ${data.proformaDetails.proformaNumber}`, 50, 50)
             .text(`Date: ${new Date(data.proformaDetails.date).toLocaleDateString()}`, 50, 65)

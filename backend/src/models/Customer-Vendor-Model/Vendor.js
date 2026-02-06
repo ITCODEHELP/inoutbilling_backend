@@ -35,6 +35,20 @@ const vendorSchema = new mongoose.Schema({
         pincode: String
     },
 
+    shippingAddresses: [{
+        street: String,
+        landmark: String,
+        city: String,
+        state: String,
+        country: String,
+        pincode: String,
+        distance: Number,
+        gstin: String,
+        name: String,
+        phone: String,
+        email: String
+    }],
+
     openingBalance: { type: Number, default: 0 },
     customerBalance: { type: Number, default: 0 },
     vendorBalance: {

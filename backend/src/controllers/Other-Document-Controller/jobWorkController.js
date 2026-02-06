@@ -571,8 +571,26 @@ const updateJobWork = async (req, res) => {
 const getJobWorkSummary = async (req, res) => {
     try {
         const query = await buildJobWorkQuery(req.user._id, req.query);
-        const data = await getSummaryAggregation(req.user._id, query, JobWork);
-        res.status(200).json({ success: true, data });
+        const summary = await getSummaryAggregation(req.user._id, query, JobWork);
+
+        // Fetch status counts specifically for Job Work
+        const pendingCount = await JobWork.countDocuments({
+            ...query,
+            'jobWorkDetails.status': { $in: ['New', 'Pending', 'In-Work'] }
+        });
+        const completedCount = await JobWork.countDocuments({
+            ...query,
+            'jobWorkDetails.status': 'Completed'
+        });
+
+        res.status(200).json({
+            success: true,
+            data: {
+                ...summary,
+                pendingCount,
+                completedCount
+            }
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -608,21 +626,28 @@ const updateJobWorkStatus = async (req, res) => {
         const { status } = req.body;
         if (!status) return res.status(400).json({ success: false, message: 'Status is required' });
 
-        const validStatuses = ['New', 'Pending', 'In-Work', 'Completed'];
+        const validStatuses = ['New', 'Pending', 'In-Work', 'Completed', 'Cancelled'];
         if (!validStatuses.includes(status)) {
-            return res.status(400).json({ success: false, message: 'Invalid status' });
+            return res.status(400).json({ success: false, message: `Invalid status: ${status}` });
         }
 
         const jobWork = await JobWork.findOneAndUpdate(
             { _id: req.params.id, userId: req.user._id },
-            { 'jobWorkDetails.status': status },
-            { new: true, runValidators: true }
+            { $set: { 'jobWorkDetails.status': status } },
+            { new: true } // Removed runValidators to prevent legacy data from blocking updates
         );
 
-        if (!jobWork) return res.status(404).json({ success: false, message: 'Job Work not found' });
+        if (!jobWork) {
+            return res.status(404).json({ success: false, message: 'Job Work not found' });
+        }
 
-        res.status(200).json({ success: true, data: { status: jobWork.jobWorkDetails.status } });
+        res.status(200).json({
+            success: true,
+            message: 'Status updated successfully',
+            data: { status: jobWork.jobWorkDetails.status }
+        });
     } catch (error) {
+        console.error('Update status error:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 };

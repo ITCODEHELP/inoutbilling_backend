@@ -4,6 +4,7 @@ const {
     createQuotation,
     getQuotations,
     getQuotationSummary,
+    getNextQuotationNumber,
     getQuotationById,
     updateQuotation,
     deleteQuotation,
@@ -60,6 +61,7 @@ router.route('/item-columns/:id')
 
 // Quotation Routes
 router.get('/summary', getQuotationSummary);
+router.get('/next-number', getNextQuotationNumber);
 
 router.route('/')
     .get(getQuotations)

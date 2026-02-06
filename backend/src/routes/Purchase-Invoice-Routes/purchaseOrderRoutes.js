@@ -21,6 +21,7 @@ const {
     generatePOLabel,
     convertPOToPurchaseInvoiceData,
     convertPOToChallanData,
+    convertPOToSaleOrderData,
     getDuplicatePOData,
     cancelPurchaseOrder,
     restorePurchaseOrder,
@@ -86,6 +87,8 @@ router.route('/:id/convert-to-purchase-invoice')
     .get(convertPOToPurchaseInvoiceData);
 
 router.get('/:id/convert-to-challan', convertPOToChallanData);
+
+router.get('/:id/convert-to-sale-order', convertPOToSaleOrderData);
 
 router.get('/:id/duplicate', getDuplicatePOData);
 

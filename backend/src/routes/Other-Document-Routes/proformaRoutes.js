@@ -4,6 +4,7 @@ const {
     createProforma,
     getProformas,
     getProformaSummary,
+    getNextProformaNumber,
     getProformaById,
     updateProforma,
     deleteProforma,
@@ -20,6 +21,7 @@ const {
     convertToPurchaseInvoiceData,
     convertToChallanData,
     convertToPurchaseOrderData,
+    convertToSaleOrderData,
     cancelProforma,
     restoreProforma,
     attachProformaFile,
@@ -61,6 +63,7 @@ router.route('/item-columns/:id')
 
 // Proforma Routes
 router.get('/summary', getProformaSummary);
+router.get('/next-number', getNextProformaNumber);
 
 router.route('/')
     .get(getProformas)
@@ -83,6 +86,7 @@ router.get('/:id/convert-to-purchase-invoice', convertToPurchaseInvoiceData);
 router.get('/:id/convert-to-challan', convertToChallanData);
 router.get('/:id/duplicate', getDuplicateProformaData);
 router.get('/:id/convert-to-purchase-order', convertToPurchaseOrderData);
+router.get('/:id/convert-to-sale-order', convertToSaleOrderData);
 
 // Actions
 router.post('/:id/cancel', cancelProforma);
