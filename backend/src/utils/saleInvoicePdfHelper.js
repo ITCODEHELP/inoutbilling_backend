@@ -23,12 +23,12 @@ const TEMPLATE_MAP = {
     'Template-10': 'saleinvoice_10.html',
     'Template-11': 'saleinvoice_11.html',
     'Template-12': 'saleinvoice_12.html',
-    'Template-13': 'saleinvoice_12.html',
-    'A5-Default': 'saleinvoicedefault.html',
-    'A5-Designed': 'saleinvoicedefault.html',
-    'A5-Letterpad': 'saleinvoicedefault.html',
-    'Thermal-2inch': 'saleinvoicedefault.html',
-    'Thermal-3inch': 'saleinvoicedefault.html',
+    'Template-13': 'saleinvoice_13.html',
+    'A5-Default': 'saleinvoice_A5.html',
+    'A5-Designed': 'saleinvoice_A5_2.html',
+    'A5-Letterpad': 'saleinvoice_A5_3.html',
+    'Thermal-2inch': 'saleinvoice_A5_4.html',
+    'Thermal-3inch': 'saleinvoice_A5_5.html',
 };
 
 /**
