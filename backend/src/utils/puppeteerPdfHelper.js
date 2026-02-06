@@ -22,13 +22,27 @@ const convertHtmlToPdf = async (input, options = {}) => {
             format = 'A4',
             landscape = false,
             margin = { top: '10mm', right: '10mm', bottom: '10mm', left: '10mm' },
-            printBackground = true
+            printBackground = true,
+            executablePath
         } = options;
 
-        browser = await puppeteer.launch({
+        const launchOptions = {
             headless: 'new',
             args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-        });
+        };
+
+        // Use provided executablePath or fallback to common Windows locations if not found by Puppeteer
+        if (executablePath) {
+            launchOptions.executablePath = executablePath;
+        } else {
+            // Check common Windows Chrome path if Puppeteer doesn't find its own
+            const commonChromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+            if (fs.existsSync(commonChromePath)) {
+                launchOptions.executablePath = commonChromePath;
+            }
+        }
+
+        browser = await puppeteer.launch(launchOptions);
 
         const page = await browser.newPage();
 
