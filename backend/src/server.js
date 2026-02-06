@@ -46,6 +46,7 @@ const messageTemplateSettingsRoutes = require('./routes/Setting-Page-Routes/mess
 const paymentReminderSettingsRoutes = require('./routes/Setting-Page-Routes/paymentReminderSettingsRoutes');
 const customHeaderDesignRoutes = require('./routes/Setting-Page-Routes/customHeaderDesignRoutes');
 const headerShapesRoutes = require('./routes/Setting-Page-Routes/headerShapesRoutes');
+const documentOptionRoutes = require('./routes/Setting-Page-Routes/documentOptionRoutes');
 const inwardPaymentRoutes = require('./routes/Payment-Routes/inwardPaymentRoutes');
 const outwardPaymentRoutes = require('./routes/Payment-Routes/outwardPaymentRoutes');
 const dailyExpenseRoutes = require('./routes/Expenses-Income-Routes/dailyExpenseRoutes');
@@ -162,6 +163,7 @@ app.use('/api/message-templates', messageTemplateSettingsRoutes);
 app.use('/api/payment-reminder-settings', paymentReminderSettingsRoutes);
 app.use('/api/custom-header-design', customHeaderDesignRoutes);
 app.use('/api/header-shapes', headerShapesRoutes);
+app.use('/api/document-options', documentOptionRoutes);
 app.use('/api/inward-payments', inwardPaymentRoutes);
 app.use('/api/outward-payments', outwardPaymentRoutes);
 app.use('/api/daily-expenses', dailyExpenseRoutes);

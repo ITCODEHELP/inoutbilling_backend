@@ -1,0 +1,635 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Tax Invoice</title>
+
+    <style>
+      * {
+        padding: 0;
+        margin: 0;
+      }
+
+      .page-copy-container-wrapper,
+      .page-copy-container-wrapper-letter,
+      body {
+        background: #dde0e4 !important;
+      }
+
+      .page-copy-container-wrapper,
+      .page-copy-container-wrapper-letter {
+        margin: 55px 0 95px;
+        padding: 1px;
+      }
+
+      .page-wrapper-table,
+      .page-wrapper-tr,
+      .page-copy-container-wrapper {
+        position: relative;
+      }
+
+      .page-wrapper-table {
+        width: 320px;
+        margin: 0px auto;
+        position: relative;
+      }
+
+      .page-wrapper-tr,
+      .page-wrapper-tr-letter {
+        background: #fff;
+        box-shadow: 0 0 10px 0 rgb(0 0 0 / 50%);
+        -webkit-box-shadow: 0 0 10px 0 rgb(0 0 0 / 50%);
+        margin: 10px 0;
+      }
+
+      div {
+        font-size: 13px;
+      }
+
+      .page-wrapper,
+      .page-wrapper-letter {
+        padding: 28px 0 !important;
+      }
+      .page-wrapper {
+        margin-top: 20px;
+        padding-bottom: 20px;
+      }
+      .page-wrapper {
+        height: auto;
+        width: 300px;
+        margin: 0px auto;
+        position: relative;
+      }
+
+      .page-wrapper .page-header,
+      .page-wrapper-letter .page-header {
+        position: relative;
+        padding: 0px;
+        margin: 0px;
+        z-index: 1;
+        border-bottom: 0px;
+      }
+      tr {
+        vertical-align: top;
+      }
+      .table_org_details td,
+      .table_org_details th {
+        padding: 6px 0;
+        line-height: 1.2;
+      }
+
+      body td {
+        font-size: 13px;
+      }
+      td {
+        vertical-align: middle;
+        margin: 0;
+        padding: 0;
+      }
+
+      b {
+        font-weight: bold;
+      }
+
+      strong {
+        font-weight: bold;
+      }
+
+      table.branding {
+        border: none;
+      }
+
+      table {
+        border-spacing: 0;
+        vertical-align: top;
+        width: 100%;
+        border-collapse: collapse;
+        max-width: 100%;
+      }
+
+      .table_org_details td,
+      .table_org_details th {
+        padding: 6px 0;
+        line-height: 1.2;
+      }
+      body td {
+        font-size: 13px;
+      }
+      td {
+        vertical-align: middle;
+        margin: 0;
+        padding: 0;
+      }
+
+      .divider-w-text {
+        width: 300px;
+        overflow: hidden;
+        white-space: nowrap;
+        font-family: monospace;
+        font-size: 14px;
+        text-overflow: clip;
+        position: relative;
+      }
+
+      .divider-w-text .text {
+        display: block;
+        position: absolute;
+        top: 0;
+        left: 37%;
+        background-color: #fff;
+        padding: 0 5px;
+      }
+
+      .divider {
+        width: 300px;
+        overflow: hidden;
+        white-space: nowrap;
+        font-family: monospace;
+        font-size: 14px;
+        text-overflow: clip;
+      }
+
+      element.style {
+        text-align: left;
+      }
+
+      .billdetailsthead .valign-mid {
+        border: 0px solid #fff !important;
+        font-size: 13px;
+        padding: 5px;
+        background: #fff;
+      }
+      .billdetailsthead .valign-mid {
+        font-size: 12px;
+      }
+      .billdetailsthead td {
+        background-color: #e8e8e8;
+      }
+      .table_org_details td,
+      .table_org_details th {
+        padding: 6px 0;
+        line-height: 1.2;
+      }
+      .billdetailsthead td {
+        background-color: #e8f3fd;
+        border: 1px solid #0070c0;
+        border-collapse: collapse;
+        text-align: center;
+        font-weight: bold;
+        padding: 5px 2px;
+      }
+      .valign-mid {
+        vertical-align: middle;
+      }
+
+      .txt-right {
+        text-align: right;
+      }
+
+      .vertical-align-top {
+        vertical-align: top;
+      }
+
+      .branding.table_tax_inv_details td {
+        vertical-align: top;
+      }
+    </style>
+  </head>
+  <body
+    style="
+      font-family: Arial, Helvetica, sans-serif;
+      background: #f5f5f5;
+      padding: 20px;
+    "
+  >
+    <div class="page-copy-container-wrapper">
+      <div class="page-wrapper-table">
+        <div
+          class="page-wrapper-tr"
+          style="page-break-inside: avoid; page-break-after: auto"
+        >
+          <div>
+            <div class="Active page-wrapper">
+              <div class="page-header">
+                <table
+                  cellspacing="0"
+                  cellpadding="0"
+                  class="branding table_org_details"
+                  width="100%"
+                >
+                  <tbody>
+                    <tr>
+                      <td style="text-align: center">
+                        <div class="org_name" data-editor="div.org_name">
+                          <b>itcode</b>
+                        </div>
+                        <div
+                          class="org_address_info"
+                          data-editor="div.org_address_info"
+                          style="
+                            max-width: 230px;
+                            display: inline-block;
+                            width: 100%;
+                          "
+                        >
+                          surat<br />surat, Gujarat - 395009
+                        </div>
+                        <div
+                          class="user_email_phone"
+                          data-editor="div.user_email_phone"
+                        >
+                          9624639257
+                        </div>
+                        <div class="divider">
+                          =========================================================================================
+                        </div>
+                        <span></span
+                        ><strong
+                          class="invoice-title"
+                          data-editor=".invoice-title"
+                        >
+                          TAX INVOICE
+                        </strong>
+                        <div class="divider">
+                          =========================================================================================
+                        </div>
+
+                        <!--                                             BILLED TO <br>
+                                         -->
+                        <table
+                          cellspacing="0"
+                          cellpadding="0"
+                          data-editor=".table_tax_inv_details td"
+                          class="branding table_tax_inv_details"
+                          width="100%"
+                        >
+                          <tbody>
+                            <tr>
+                              <td>
+                                <table
+                                  cellspacing="0"
+                                  cellpadding="0"
+                                  class="branding table_bill_to_details"
+                                  width="100%"
+                                >
+                                  <tbody>
+                                    <tr>
+                                      <td
+                                        style="
+                                          font-weight: bold;
+                                          text-align: left;
+                                        "
+                                      >
+                                        BILLED TO
+                                      </td>
+                                    </tr>
+                                    <tr>
+                                      <td
+                                        class="table_bill_to_name"
+                                        style="text-align: left"
+                                        data-editor=".table_bill_to_details .table_bill_to_name"
+                                      >
+                                        <span class="heading">Name :</span>
+                                        Shree Krishna Traders Pvt. Ltd.
+                                      </td>
+                                    </tr>
+                                    <tr>
+                                      <td
+                                        class="table_bill_to_email"
+                                        style="
+                                          text-align: left;
+                                          word-break: break-word;
+                                        "
+                                        data-editor=".table_bill_to_details .table_bill_to_email"
+                                      >
+                                        <span class="heading">Email :</span>
+                                        accounts@shreekrishnatraders.com,info@shreekrishnatraders.com
+                                      </td>
+                                    </tr>
+                                    <tr>
+                                      <td
+                                        class="table_bill_to_phone"
+                                        style="text-align: left"
+                                        data-editor=".table_bill_to_details .table_bill_to_phone"
+                                      >
+                                        <span class="heading">Phone : </span>+91
+                                        98765 43210
+                                      </td>
+                                    </tr>
+                                    <tr>
+                                      <td
+                                        class="customerdata_item_label table_bill_to_gstno"
+                                        style="text-align: left"
+                                        data-editor=".table_bill_to_details .table_bill_to_gstno"
+                                      >
+                                        <span class="heading">GSTIN :</span>
+                                        24ABCDE1234F1Z5
+                                      </td>
+                                    </tr>
+                                    <tr>
+                                      <td
+                                        class="customerdata_item_label table_bill_to_pan"
+                                        style="text-align: left"
+                                        data-editor=".table_bill_to_details .table_bill_to_pan"
+                                      >
+                                        <span class="heading">PAN :</span>
+                                        ABCDE1234F
+                                      </td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </td>
+                              <td>
+                                <table>
+                                  <tbody>
+                                    <tr>
+                                      <td style="text-align: right">
+                                        <span class="heading2"
+                                          >INVOICE # :
+                                        </span>
+                                        A24
+                                      </td>
+                                    </tr>
+                                    <tr>
+                                      <td style="text-align: right">
+                                        <span class="heading2">DATE : </span>
+                                        02-Feb-2026
+                                      </td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+
+                        <div class="divider">
+                          =========================================================================================
+                        </div>
+                        <table
+                          class="billdetailsthead billdetailEditor"
+                          cellspacing="0"
+                          border="0"
+                          cellpadding="0"
+                          data-editor=".billdetailsthead.billdetailEditor td"
+                        >
+                          <colgroup>
+                            <col data-column="0" style="width: 4%" />
+                            <col data-column="1" style="width: 30%" />
+                            <col data-column="3" class="" style="width: 10%" />
+                            <col data-column="4" style="width: 18%" />
+                            <col data-column="5" style="width: 18%" />
+                            <col data-column="11" style="width: 20%" />
+                          </colgroup>
+                          <tbody>
+                            <tr>
+                              <td
+                                data-column="0"
+                                class="valign-mid txt-left"
+                                style="text-align: left"
+                              >
+                                #
+                              </td>
+                              <td
+                                data-column="1"
+                                class="valign-mid txt-left product_item_td"
+                                style="text-align: left"
+                              >
+                                Items
+                              </td>
+                              <td
+                                data-column="3"
+                                class="valign-mid txt-center product_item_td"
+                              >
+                                Qty.
+                              </td>
+                              <td
+                                data-column="4"
+                                class="valign-mid txt-right product_item_td"
+                                style="text-align: right"
+                              >
+                                Rate
+                              </td>
+                              <td
+                                data-column="5"
+                                class="valign-mid txt-center td-body-disc"
+                              >
+                                Disc.
+                              </td>
+                              <td
+                                data-column="11"
+                                class="valign-mid txt-right product_item_td"
+                                style="text-align: right"
+                              >
+                                Total
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                        <div class="divider">
+                          =========================================================================================
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <div class="page-content" style="padding: 0 00px">
+                  <table
+                    class="billdetailstbody table_bordered billdetailstbodyEditor"
+                    id="billdetailstbody"
+                    cellspacing="0"
+                    border="0"
+                    cellpadding="0"
+                    data-editor=".billdetailstbody.billdetailstbodyEditor td"
+                  >
+                    <colgroup>
+                      <col data-column="0" style="width: 4%" />
+                      <col data-column="1" style="width: 30%" />
+                      <col data-column="3" class="" style="width: 10%" />
+                      <col data-column="4" style="width: 18%" />
+                      <col data-column="5" style="width: 18%" />
+                      <col data-column="11" style="width: 20%" />
+                    </colgroup>
+                    <tbody>
+                      <tr>
+                        <td
+                          data-column="0"
+                          class="valign-mid txt-left"
+                          style="text-align: left"
+                        >
+                          1
+                        </td>
+                        <td
+                          data-column="1"
+                          class="txt-left product_item_td"
+                          data-editor=".billdetailstbody.billdetailstbodyEditor td span"
+                        >
+                          <span></span>
+                          abc
+                          <br /><span style="font-style: normal"
+                            >HSN : 8471</span
+                          >
+                        </td>
+                        <td data-column="3" class="txt-center product_item_td">
+                          1.00
+                        </td>
+                        <td data-column="4" class="txt-right product_item_td">
+                          123.00
+                        </td>
+                        <td data-column="5" class="txt-right">20.00<br />%</td>
+                        <td
+                          data-column="11"
+                          class="txt-right product_item_td"
+                          style=""
+                        >
+                          98.40
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <div class="divider">
+                    =========================================================================================
+                  </div>
+                </div>
+                <div class="page-footer" style="text-align: center">
+                  <table
+                    class="invoicedataFooter"
+                    cellspacing="0"
+                    style="width: 100%"
+                    data-editor=".invoicedataFooter td"
+                  >
+                    <colgroup>
+                      <col data-column="0" style="width: 4%" />
+                      <col data-column="1" style="width: 30%" />
+                      <col data-column="3" class="" style="width: 10%" />
+                      <col data-column="4" style="width: 18%" />
+                      <col data-column="5" style="width: 18%" />
+                      <col data-column="11" style="width: 20%" />
+                    </colgroup>
+                    <tbody>
+                      <tr>
+                        <td
+                          class="valign-mid txt-left"
+                          style="text-align: left"
+                          colspan="2"
+                        >
+                          Total
+                        </td>
+                        <td
+                          data-column="3"
+                          class="valign-mid txt-center hideonlyformat product_item_td"
+                        >
+                          1.00 <span class="sameUOM-footer"></span>
+                        </td>
+                        <td
+                          data-column="4"
+                          class="valign-mid txt-right product_item_td"
+                        ></td>
+                        <td
+                          data-column="5"
+                          class="valign-mid txt-right footer-total-disc hideonlyformat"
+                        >
+                          24.60
+                        </td>
+                        <td
+                          data-column="11"
+                          class="valign-mid txt-right product_item_td hideonlyformat"
+                          style=""
+                        >
+                          98.40
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  <table
+                    cellspacing="0"
+                    cellpadding="0"
+                    class="branding table_summary"
+                    data-editor=".table_summary td"
+                    width="100%"
+                    style="text-align"
+                  >
+                    <tbody>
+                      <tr>
+                        <td class="" style="text-align: left">Total Amount</td>
+                        <td class="txt-right special" data-editor="td.special">
+                          ₹98.00
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <div class="divider">
+                    =========================================================================================
+                  </div>
+                  <table
+                    cellspacing="0"
+                    cellpadding="0"
+                    class="branding table_grand_total_details"
+                    data-editor=".table_grand_total_details td"
+                    width="100%"
+                  >
+                    <tbody>
+                      <tr>
+                        <td style="text-align: left">Grand Total :</td>
+                        <td style="text-align: right; vertical-align: top">
+                          98.00
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <div style="clear: both"></div>
+
+                  <div class="divider">
+                    =========================================================================================
+                  </div>
+                  <table
+                    cellspacing="0"
+                    cellpadding="0"
+                    class="branding table_terms_details"
+                    width="100%"
+                  >
+                    <tbody>
+                      <tr>
+                        <td
+                          class="section_header"
+                          style="
+                            width: 100%;
+                            text-align: left;
+                            border-bottom: none;
+                            font-weight: bold;
+                          "
+                        >
+                          Terms and Conditions
+                        </td>
+                      </tr>
+                      <tr class="terms_condition_section">
+                        <td
+                          style="
+                            width: 100%;
+                            text-align: left;
+                            border-bottom: none;
+                          "
+                          data-editor=".invoiceInfo td .terms_condition_box"
+                        >
+                          <div class="terms_condition_box">
+                            Subject to our home Jurisdiction. <br />
+                            Our Responsibility Ceases as soon as goods leaves
+                            our Premises. <br />
+                            Goods once sold will not taken back. <br />
+                            Delivery Ex-Premises.
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
