@@ -417,6 +417,15 @@ const handleCreateInvoiceLogic = async (req) => {
     const userData = await User.findById(req.user._id);
     const options = getCopyOptions(req);
     const printConfig = await getSelectedPrintTemplate(req.user._id, 'Sale Invoice', bodyData.branch);
+
+    // Check for attached logo (first image file)
+    if (req.files && req.files.length > 0) {
+        const imageFile = req.files.find(f => f.mimetype.startsWith('image/'));
+        if (imageFile) {
+            options.overrideLogoPath = imageFile.path;
+        }
+    }
+
     const pdfBuffer = await generateSaleInvoicePDF(invoice, userData, options, 'Sale Invoice', printConfig);
 
     // Save PDF to disk (optional but recommended for persistence)
@@ -451,6 +460,19 @@ const createInvoice = async (req, res) => {
         });
 
     } catch (error) {
+        // Cleanup: Delete uploaded files if creation fails
+        if (req.files && req.files.length > 0) {
+            req.files.forEach(file => {
+                if (file.path && fs.existsSync(file.path)) {
+                    try {
+                        fs.unlinkSync(file.path);
+                    } catch (unlinkErr) {
+                        console.error(`[Cleanup] Failed to delete file ${file.path}:`, unlinkErr);
+                    }
+                }
+            });
+        }
+
         if (error.code === 11000) {
             return res.status(400).json({ success: false, message: "Invoice number must be unique" });
         }
@@ -473,6 +495,19 @@ const createInvoiceAndPrint = async (req, res) => {
         return res.status(200).send(pdfBuffer);
 
     } catch (error) {
+        // Cleanup: Delete uploaded files if creation fails
+        if (req.files && req.files.length > 0) {
+            req.files.forEach(file => {
+                if (file.path && fs.existsSync(file.path)) {
+                    try {
+                        fs.unlinkSync(file.path);
+                    } catch (unlinkErr) {
+                        console.error(`[Cleanup] Failed to delete file ${file.path}:`, unlinkErr);
+                    }
+                }
+            });
+        }
+
         if (error.code === 11000) {
             return res.status(400).setHeader('Content-Type', 'application/json').json({ success: false, message: "Invoice number must be unique" });
         }
@@ -1141,6 +1176,17 @@ const downloadInvoicePDF = async (req, res) => {
         const userData = await User.findById(req.user._id);
         const options = getCopyOptions(req);
         const printConfig = await getSelectedPrintTemplate(req.user._id, 'Sale Invoice', invoices[0].branch);
+
+        // --- Fix for Logo Persistence ---
+        // Check if the first invoice has an image attachment (Logo)
+        if (invoices.length > 0 && invoices[0].attachments && invoices[0].attachments.length > 0) {
+            const logoAttachment = invoices[0].attachments.find(att => att.mimeType && att.mimeType.startsWith('image/'));
+            if (logoAttachment) {
+                options.overrideLogoPath = logoAttachment.filePath;
+            }
+        }
+        // -------------------------------
+
         const pdfBuffer = await generateSaleInvoicePDF(invoices, userData, options, 'Sale Invoice', printConfig);
 
         const filename = invoices.length === 1 ? `Invoice_${invoices[0].invoiceDetails.invoiceNumber}.pdf` : `Merged_Invoices.pdf`;

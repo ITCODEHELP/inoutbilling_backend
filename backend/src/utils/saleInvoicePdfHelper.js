@@ -3,6 +3,7 @@ const path = require('path');
 const cheerio = require('cheerio');
 const { convertHtmlToPdf } = require('./puppeteerPdfHelper');
 const Business = require('../models/Login-Model/Business');
+const PrintOptions = require('../models/Setting-Model/PrintOptions');
 
 /**
  * Centralized Template Mapping
@@ -52,12 +53,44 @@ const resolveTemplateFile = (templateName) => {
  * Generates a global document header with company logo and details from Business table
  * This header is injected before template content for consistent branding
  */
-const generateGlobalHeader = (businessData, userData) => {
-    const logoSrc = userData.businessLogo
-        ? (userData.businessLogo.startsWith('http')
-            ? userData.businessLogo
-            : `file://${path.join(__dirname, '..', userData.businessLogo)}`)
-        : '';
+const generateGlobalHeader = (businessData, userData, overrideLogoPath) => {
+    let logoSrc = '';
+
+    // Priority: Override Path > Business Logo
+    let rawLogoPath = overrideLogoPath || userData.businessLogo;
+
+    if (rawLogoPath) {
+        if (rawLogoPath.startsWith('http')) {
+            logoSrc = rawLogoPath;
+        } else {
+            try {
+                // Determine absolute path. 
+                // userData.businessLogo is often relative to 'src' (e.g. 'uploads/...')
+                // overrideLogoPath (from multer) is relative to CWD (e.g. 'src/uploads/...')
+
+                let logoPath = path.resolve(rawLogoPath); // Try absolute/CWD relative first (Works for overrideLogoPath)
+
+                if (!fs.existsSync(logoPath)) {
+                    // Fallback for old style relative paths relative to src/utils/.. -> src/
+                    const fallbackPath = path.join(__dirname, '..', rawLogoPath);
+                    if (fs.existsSync(fallbackPath)) {
+                        logoPath = fallbackPath;
+                    }
+                }
+
+                if (fs.existsSync(logoPath)) {
+                    const bitmap = fs.readFileSync(logoPath);
+                    const ext = path.extname(logoPath).split('.').pop() || 'png';
+                    const base64 = bitmap.toString('base64');
+                    logoSrc = `data:image/${ext};base64,${base64}`;
+                } else {
+                    console.warn(`[PDF Generator] Logo file not found. Tried: \n1. ${path.resolve(rawLogoPath)}\n2. ${path.join(__dirname, '..', rawLogoPath)}`);
+                }
+            } catch (err) {
+                console.error('[PDF Generator] Error loading logo:', err);
+            }
+        }
+    }
 
     return `
         <div class="global-document-header" style="
@@ -112,6 +145,7 @@ const generateGlobalHeader = (businessData, userData) => {
                 <div><strong>Name:</strong> ${businessData.fullName || ''}</div>
                 <div><strong>Phone:</strong> ${userData.phone || ''}</div>
                 <div><strong>Email:</strong> ${businessData.email || ''}</div>
+                ${(businessData.showPan && userData.pan) ? `<div><strong>PAN:</strong> ${userData.pan}</div>` : ''}
             </div>
         </div>
     `;
@@ -156,10 +190,20 @@ const generateTitleSection = (docType, copyLabel) => {
 const generateSaleInvoicePDF = async (documents, user, options = { original: true }, docType = 'Sale Invoice', printConfig = { selectedTemplate: 'Default', printSize: 'A4', printOrientation: 'Portrait' }) => {
     const docList = Array.isArray(documents) ? documents : [documents];
 
-    // Fetch Business data from database
+    // Fetch Business data AND Print Settings
     let businessData = {};
+    let printSettings = {};
     try {
+        // Business model uses String userId (custom ID)
         businessData = await Business.findOne({ userId: user.userId || user._id }).lean();
+
+        // PrintOptions model uses ObjectId userId (ref to User._id)
+        // Ensure we pass the ObjectId, not the String custom ID, to avoid CastError
+        if (user._id) {
+            printSettings = await PrintOptions.findOne({ userId: user._id }).lean();
+        }
+
+
         if (!businessData) {
             console.warn('[PDF Generator] Business data not found, using user data as fallback');
             businessData = {
@@ -169,8 +213,14 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                 address: user.address || '',
                 city: user.city || '',
                 state: user.state || '',
-                pincode: user.pincode || ''
+                pincode: user.pincode || '',
+                showPan: false
             };
+        } else {
+            // Attach showPan flag from PrintOptions to businessData for easier access in header
+            if (printSettings && printSettings.headerPrintSettings && printSettings.headerPrintSettings.showPan) {
+                businessData.showPan = true;
+            }
         }
     } catch (error) {
         console.error('[PDF Generator] Error fetching Business data:', error);
@@ -239,7 +289,7 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
             `);
 
             // --- INJECT GLOBAL HEADER AT TOP OF PAGE WRAPPER ---
-            const globalHeaderHtml = generateGlobalHeader(businessData, user);
+            const globalHeaderHtml = generateGlobalHeader(businessData, user, options.overrideLogoPath);
 
             // Map copy type to proper label
             const copyLabels = {
@@ -313,13 +363,16 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
 
                 // Add email to the top-right branding table
                 const $rightTable = $('.branding td[style*="text-align: right"] tbody');
-                $rightTable.append(`
-                    <tr>
-                        <td class="contact_details" style="text-align: right;">
-                            <b>Email</b> : ${user.email || ""}
-                        </td>
-                    </tr>
-                `);
+                // Check if email row already exists to avoid duplication if multiple passes
+                if ($rightTable.find('.contact_details').length === 0) {
+                    $rightTable.append(`
+                        <tr>
+                            <td class="contact_details" style="text-align: right;">
+                                <b>Email</b> : ${user.email || ""}
+                            </td>
+                        </tr>
+                    `);
+                }
             } else {
                 // Default header for other documents
                 $('.org_orgname').text(user.companyName || "");
