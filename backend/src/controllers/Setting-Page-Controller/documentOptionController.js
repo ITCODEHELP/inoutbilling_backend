@@ -48,6 +48,7 @@ exports.saveDocumentOptions = async (req, res) => {
         );
 
         res.status(200).json({
+            updateData,
             success: true,
             message: 'Document options saved successfully',
             data: options
