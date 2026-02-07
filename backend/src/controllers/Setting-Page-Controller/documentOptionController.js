@@ -1,5 +1,5 @@
 const DocumentOption = require('../../models/Setting-Model/DocumentOption');
-const { fetchAndResolveDocumentOptions, computeEffectiveConfig, mapDocTypeToSchemaKey } = require('../../utils/documentOptionsHelper');
+const { computeEffectiveConfig, mapDocTypeToSchemaKey } = require('../../utils/documentOptionsHelper');
 
 /**
  * @desc    Get Document Options
@@ -28,84 +28,105 @@ exports.getDocumentOptions = async (req, res) => {
 };
 
 /**
- * @desc    Save or Update Document Options with Auto-Resolution
+ * @desc    Save or Update Document Options
  * @route   POST /api/document-options
  * @access  Private
  */
 exports.saveDocumentOptions = async (req, res) => {
     try {
         const userId = req.user.userId || req.user._id;
-        const updateData = req.body;
 
-        // Prevent modification of userId
-        delete updateData.userId;
+        // 1. Prepare Update Data
+        let updateData = { ...req.body };
+        delete updateData.userId; // Secure userId
 
-        // 1. Fetch existing options to ensure we have full context for resolution
-        // (We need defaults merged with existing data + new updates)
-        let docOptions = await DocumentOption.findOne({ userId });
-        if (!docOptions) {
-            docOptions = new DocumentOption({ userId });
-        }
+        // Helper to fix series mapping (name -> invoiceName)
+        const fixSeriesMapping = (seriesList) => {
+            if (!Array.isArray(seriesList)) return seriesList;
+            return seriesList.map(s => {
+                const sObj = { ...s };
+                // Ensure name is preserved into invoiceName if invoiceName is empty/missing
+                if (sObj.name && (!sObj.invoiceName || sObj.invoiceName.trim() === '')) {
+                    sObj.invoiceName = sObj.name;
+                }
+                return sObj;
+            });
+        };
 
-        // 2. Merge updates into the document (mongoose set handling)
-        // We do this manually or let findOneAndUpdate handle it, 
-        // BUT we need the *merged* state to compute resolvedConfig *before* final save/return.
-        // So applied updates to the mongoose document instance:
-        Object.keys(updateData).forEach(key => {
-            if (docOptions[key] && typeof updateData[key] === 'object') {
-                // If it's a known schema path (e.g. saleInvoice), merge deep?
-                // Mongoose set() handles top-level schema paths well, but for nested partials 
-                // we might need careful handling if updateData is partial.
-                // Assuming updateData sends complete sub-objects or we want standard merge:
-                // For simplicity and safety with sub-schemas, we can try Object.assign mechanism logic 
-                // or just let Mongoose apply updates if we use .set().
-                // However, deep merging partial 'saleInvoice' into existing 'saleInvoice' is trickier.
-                // Simpler approach: Use the updateData to derive resolved config for *updated* keys.
-
-                // Better approach: 
-                // A. Update the doc from request
-                docOptions.set(key, { ...docOptions[key], ...updateData[key] }); // Shallow merge at docType level
-            } else {
-                docOptions[key] = updateData[key];
-            }
-        });
-
-        // 3. Re-Calculate Resolved Config for affected document types
-        // We iterate over known standard doc types to see if they are in the update or just re-calculate all important ones.
+        // List of document types to check for resolution
         const docTypesToResolve = [
-            'Sale Invoice', 'Delivery Challan', 'Quotation', 'Proforma', 'Purchase Order', 'Sale Order'
+            'Sale Invoice', 'Delivery Challan', 'Quotation', 'Proforma',
+            'Purchase Order', 'Sale Order', 'Purchase Invoice', 'Job Work',
+            'Credit Note', 'Debit Note', 'Receipt', 'Payment', 'Inward Payment', 'Outward Payment'
         ];
 
-        docTypesToResolve.forEach(docType => {
-            const schemaKey = mapDocTypeToSchemaKey(docType);
+        // 2. Process each key in the update data
+        Object.keys(updateData).forEach(key => {
+            if (key === 'documentType' || key === 'docType') return;
 
-            // Only re-calculate if we have data for this type or if it was part of the update
-            // (Actually, safer to just re-calc all active ones to ensure consistency)
-            if (docOptions[schemaKey]) {
-                const effectiveConfig = computeEffectiveConfig(docOptions[schemaKey], docType);
+            // Fix Series Mapping if this section has invoiceSeries
+            if (updateData[key] && Array.isArray(updateData[key].invoiceSeries)) {
+                updateData[key].invoiceSeries = fixSeriesMapping(updateData[key].invoiceSeries);
+            }
 
-                // Store in the document
-                if (!docOptions[schemaKey].resolvedConfig) {
-                    docOptions[schemaKey].resolvedConfig = {};
-                }
-                docOptions[schemaKey].resolvedConfig = effectiveConfig;
+            // Compute Resolved Config
+            // Find which DocType this key corresponds to
+            const matchingDocType = docTypesToResolve.find(dt => mapDocTypeToSchemaKey(dt) === key);
+
+            if (matchingDocType && updateData[key]) {
+                const effectiveConfig = computeEffectiveConfig(updateData[key], matchingDocType);
+                updateData[key].resolvedConfig = effectiveConfig;
             }
         });
 
-        // 4. Save
-        const savedOptions = await docOptions.save();
+        // 3. Save using findOneAndUpdate with upsert
+        const options = await DocumentOption.findOneAndUpdate(
+            { userId },
+            { $set: updateData },
+            { new: true, upsert: true, setDefaultsOnInsert: true }
+        );
+
+        // 4. Return specific section(s) if context provided or inferred, else full object
+        const requestedDocType = req.body.documentType || req.body.docType;
+        let responseData = {};
+
+        if (requestedDocType) {
+            const schemaKey = mapDocTypeToSchemaKey(requestedDocType);
+            if (options[schemaKey]) {
+                responseData = { [schemaKey]: options[schemaKey] };
+            }
+        } else {
+            // Infer context from body keys if no explicit docType
+            const knownSchemaKeys = [
+                'saleInvoice', 'deliveryChallan', 'quotation', 'proforma',
+                'purchaseOrder', 'saleOrder', 'purchaseInvoice', 'jobWork',
+                'creditNote', 'debitNote', 'receipt', 'payment',
+                'inwardPayment', 'outwardPayment', 'dailyExpense', 'otherIncome', 'bankLedger'
+            ];
+
+            // Check if request body contains any known document keys
+            const inferredKeys = Object.keys(req.body).filter(key => knownSchemaKeys.includes(key));
+
+            if (inferredKeys.length > 0) {
+                // Return only the update sections
+                inferredKeys.forEach(key => {
+                    if (options[key]) {
+                        responseData[key] = options[key];
+                    }
+                });
+            } else {
+                // Fallback to full document if no recognizable keys found
+                responseData = options;
+            }
+        }
 
         res.status(200).json({
             success: true,
             message: 'Document options saved and resolved successfully',
-            data: savedOptions
+            data: responseData
         });
     } catch (error) {
         console.error('Error saving document options:', error);
         res.status(500).json({ message: 'Internal Server Error', error: error.message });
     }
 };
-
-
-
-
