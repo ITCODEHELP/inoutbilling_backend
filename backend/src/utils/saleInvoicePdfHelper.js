@@ -4,6 +4,7 @@ const cheerio = require('cheerio');
 const { convertHtmlToPdf } = require('./puppeteerPdfHelper');
 const Business = require('../models/Login-Model/Business');
 const PrintOptions = require('../models/Setting-Model/PrintOptions');
+const User = require('../models/User-Model/User');
 
 /**
  * Centralized Template Mapping
@@ -49,107 +50,8 @@ const resolveTemplateFile = (templateName) => {
     return fullPath;
 };
 
-/**
- * Generates a global document header with company logo and details from Business table
- * This header is injected before template content for consistent branding
- */
-const generateGlobalHeader = (businessData, userData, overrideLogoPath) => {
-    let logoSrc = '';
-
-    // Priority: Override Path > Business Logo
-    let rawLogoPath = overrideLogoPath || userData.businessLogo;
-
-    if (rawLogoPath) {
-        if (rawLogoPath.startsWith('http')) {
-            logoSrc = rawLogoPath;
-        } else {
-            try {
-                // Determine absolute path. 
-                // userData.businessLogo is often relative to 'src' (e.g. 'uploads/...')
-                // overrideLogoPath (from multer) is relative to CWD (e.g. 'src/uploads/...')
-
-                let logoPath = path.resolve(rawLogoPath); // Try absolute/CWD relative first (Works for overrideLogoPath)
-
-                if (!fs.existsSync(logoPath)) {
-                    // Fallback for old style relative paths relative to src/utils/.. -> src/
-                    const fallbackPath = path.join(__dirname, '..', rawLogoPath);
-                    if (fs.existsSync(fallbackPath)) {
-                        logoPath = fallbackPath;
-                    }
-                }
-
-                if (fs.existsSync(logoPath)) {
-                    const bitmap = fs.readFileSync(logoPath);
-                    const ext = path.extname(logoPath).split('.').pop() || 'png';
-                    const base64 = bitmap.toString('base64');
-                    logoSrc = `data:image/${ext};base64,${base64}`;
-                } else {
-                    console.warn(`[PDF Generator] Logo file not found. Tried: \n1. ${path.resolve(rawLogoPath)}\n2. ${path.join(__dirname, '..', rawLogoPath)}`);
-                }
-            } catch (err) {
-                console.error('[PDF Generator] Error loading logo:', err);
-            }
-        }
-    }
-
-    return `
-        <div class="global-document-header" style="
-            width: 100%;
-            padding: 5px 0;
-            margin-bottom: 8px;
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            background: #ffffff;
-            page-break-inside: avoid;
-            page-break-after: avoid;
-        ">
-            <!-- Left Section: Logo and Company Details -->
-            <div style="display: flex; align-items: flex-start; gap: 10px; flex: 1;">
-                ${logoSrc ? `
-                    <img src="${logoSrc}" alt="Company Logo" style="
-                        max-width: 60px;
-                        max-height: 60px;
-                        object-fit: contain;
-                    " onerror="this.style.display='none'">
-                ` : ''}
-                <div style="flex: 1;">
-                    <div style="
-                        font-family: Arial, Helvetica, sans-serif;
-                        font-size: 14px;
-                        font-weight: bold;
-                        color: #000000;
-                        margin-bottom: 2px;
-                    ">${businessData.companyName || ''}</div>
-                    <div style="
-                        font-family: Arial, Helvetica, sans-serif;
-                        font-size: 9px;
-                        color: #333333;
-                        line-height: 1.2;
-                    ">
-                        ${businessData.address || ''}<br>
-                        ${businessData.city || ''}, ${businessData.state || ''} - ${businessData.pincode || ''}
-                    </div>
-                </div>
-            </div>
-
-            <!-- Right Section: Contact Details -->
-            <div style="
-                text-align: right;
-                font-family: Arial, Helvetica, sans-serif;
-                font-size: 9px;
-                color: #333333;
-                line-height: 1.4;
-                min-width: 160px;
-            ">
-                <div><strong>Name:</strong> ${businessData.fullName || ''}</div>
-                <div><strong>Phone:</strong> ${userData.phone || ''}</div>
-                <div><strong>Email:</strong> ${businessData.email || ''}</div>
-                ${(businessData.showPan && userData.pan) ? `<div><strong>PAN:</strong> ${userData.pan}</div>` : ''}
-            </div>
-        </div>
-    `;
-};
+// generateGlobalHeader function removed as it caused duplication. 
+// Header data is now mapped directly to the template structure in generateSaleInvoicePDF.
 
 /**
  * Generates title section for specific templates (5-11)
@@ -190,49 +92,74 @@ const generateTitleSection = (docType, copyLabel) => {
 const generateSaleInvoicePDF = async (documents, user, options = { original: true }, docType = 'Sale Invoice', printConfig = { selectedTemplate: 'Default', printSize: 'A4', printOrientation: 'Portrait' }) => {
     const docList = Array.isArray(documents) ? documents : [documents];
 
-    // Fetch Business data AND Print Settings
+    let fullUser = {};
     let businessData = {};
     let printSettings = {};
-    try {
-        // Business model uses String userId (custom ID)
-        businessData = await Business.findOne({ userId: user.userId || user._id }).lean();
 
-        // PrintOptions model uses ObjectId userId (ref to User._id)
-        // Ensure we pass the ObjectId, not the String custom ID, to avoid CastError
-        if (user._id) {
-            printSettings = await PrintOptions.findOne({ userId: user._id }).lean();
+    // Header Data Objects (Strict Separation)
+    let headerLeftData = {};
+    let headerRightData = {};
+
+    try {
+        // Fetch full user data to ensure we have all fields for fallbacks
+        const userId = user.userId || user._id; // Handle both simplified and full user objects
+        fullUser = await User.findOne({ userId: userId }).lean() || {};
+
+        // Fetch Business Data
+        businessData = await Business.findOne({ userId: userId }).lean();
+
+        // Fetch Print Settings
+        if (fullUser._id) {
+            printSettings = await PrintOptions.findOne({ userId: fullUser._id }).lean();
         }
 
-
-        if (!businessData) {
-            console.warn('[PDF Generator] Business data not found, using user data as fallback');
-            businessData = {
-                companyName: user.companyName || '',
-                fullName: user.fullName || user.username || '',
-                email: user.email || '',
-                address: user.address || '',
-                city: user.city || '',
-                state: user.state || '',
-                pincode: user.pincode || '',
-                showPan: false
+        // --- PREPARE LEFT HEADER DATA (Business Details) ---
+        if (businessData) {
+            headerLeftData = {
+                companyName: businessData.companyName || fullUser.companyName || '',
+                address: businessData.address || fullUser.address || '',
+                city: businessData.city || fullUser.city || '',
+                state: businessData.state || fullUser.state || '',
+                pincode: businessData.pincode || fullUser.pincode || '',
+                gstin: businessData.gstin || fullUser.gstin || fullUser.gstNumber || '', // Check valid gstin fields
+                businessLogo: businessData.businessLogo || fullUser.businessLogo || ''
             };
         } else {
-            // Attach showPan flag from PrintOptions to businessData for easier access in header
-            if (printSettings && printSettings.headerPrintSettings && printSettings.headerPrintSettings.showPan) {
-                businessData.showPan = true;
+            // Fallback to User Data completely if Business Data missing
+            console.warn('[PDF Generator] Business data not found, using full user data as fallback');
+            headerLeftData = {
+                companyName: fullUser.companyName || '',
+                address: fullUser.address || '',
+                city: fullUser.city || '',
+                state: fullUser.state || '',
+                pincode: fullUser.pincode || '',
+                gstin: fullUser.gstin || fullUser.gstNumber || '',
+                businessLogo: fullUser.businessLogo || ''
+            };
+        }
+
+        // --- PREPARE RIGHT HEADER DATA (User Contact w/ Conditional PAN) ---
+        headerRightData = {
+            fullName: fullUser.fullName || businessData?.fullName || '',
+            phone: fullUser.displayPhone || fullUser.phone || '', // Prioritize displayPhone
+            email: fullUser.email || businessData?.email || '',
+            pan: null // Default to null
+        };
+
+        // Conditional PAN Logic: Only if enabled in Print Settings
+        if (printSettings && printSettings.headerPrintSettings && printSettings.headerPrintSettings.showPan) {
+            // Check user PAN first, then potentially business PAN if user PAN missing? 
+            // Request said "User PAN", usually in User model.
+            if (fullUser.pan) {
+                headerRightData.pan = fullUser.pan;
             }
         }
+
     } catch (error) {
-        console.error('[PDF Generator] Error fetching Business data:', error);
-        businessData = {
-            companyName: user.companyName || '',
-            fullName: user.fullName || user.username || '',
-            email: user.email || '',
-            address: user.address || '',
-            city: user.city || '',
-            state: user.state || '',
-            pincode: user.pincode || ''
-        };
+        console.error('[PDF Generator] Error fetching data for header:', error);
+        // Emergency Fallback
+        headerLeftData = { companyName: 'Error Loading Data' };
+        headerRightData = { fullName: 'Error Loading Data' };
     }
 
     // Support legacy string templateName or new config object
@@ -288,8 +215,8 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                 </style>
             `);
 
-            // --- INJECT GLOBAL HEADER AT TOP OF PAGE WRAPPER ---
-            const globalHeaderHtml = generateGlobalHeader(businessData, user, options.overrideLogoPath);
+            // --- REMOVED EXPLICIT GLOBAL HEADER INJECTION TO FIX DUPLICATION ---
+            // The template already has a header section (.branding table). We will populate THAT instead.
 
             // Map copy type to proper label
             const copyLabels = {
@@ -304,37 +231,18 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
             const templatesWithTitle = ['Template-5', 'Template-6', 'Template-7', 'Template-8', 'Template-9', 'Template-10', 'Template-11'];
             const shouldShowTitle = templatesWithTitle.includes(templateName);
 
-            // Generate combined header (title + global header for specific templates)
-            let combinedHeader = globalHeaderHtml;
+            // Generate combined header (title only if needed)
             if (shouldShowTitle) {
                 const titleSectionHtml = generateTitleSection(docType, copyLabel);
-                combinedHeader = titleSectionHtml + globalHeaderHtml;
+                // Try to inject inside .page-wrapper first, fallback to .page-header, then body
+                if ($('.page-wrapper').length > 0) {
+                    $('.page-wrapper').prepend(titleSectionHtml);
+                } else if ($('.page-header').length > 0) {
+                    $('.page-header').before(titleSectionHtml);
+                } else {
+                    $('body').prepend(titleSectionHtml);
+                }
             }
-
-            // Try to inject inside .page-wrapper first, fallback to .page-header, then body
-            if ($('.page-wrapper').length > 0) {
-                $('.page-wrapper').prepend(combinedHeader);
-            } else if ($('.page-header').length > 0) {
-                $('.page-header').before(combinedHeader);
-            } else {
-                $('body').prepend(combinedHeader);
-            }
-
-            // Add CSS to prevent page breaks between header and content
-            $('head').append(`
-                <style>
-                    .global-document-header {
-                        page-break-inside: avoid !important;
-                        page-break-after: avoid !important;
-                    }
-                    .page-wrapper {
-                        page-break-inside: auto !important;
-                    }
-                    .page-wrapper-tr {
-                        page-break-before: avoid !important;
-                    }
-                </style>
-            `);
 
             // --- 1. SET METADATA ---
             $('.invoice-title').text(docType.toUpperCase());
@@ -350,34 +258,100 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                 $('.copyname').text(copyLabel);
             }
 
-            // --- 2. INJECT DATA ---
-            // Company Info
-            if (docType === 'Sale Invoice') {
-                // Specific header for Sale Invoice as requested (Top-Left: Company, State, Pincode | Top-Right: Owner, Email, Phone)
-                $('.org_orgname').text(user.companyName || "").css('text-align', 'left');
-                $('.org_address').text(`${user.state || ""} - ${user.pincode || ""}`).css('text-align', 'left');
-                $('.gstin span').text(`GSTIN: ${user.gstin || ""}`).css('text-align', 'left');
+            // --- 2. INJECT DATA INTO EXISTING TEMPLATE HEADER (Strict Separation) ---
 
-                $('.org_contact_name').html(`<b>Owner</b> : ${user.fullName || ""}`).css('text-align', 'right');
-                $('.org_phone').html(`<b>Phone</b> : ${user.phone || ""}`).css('text-align', 'right');
+            // LEFT SECTION: Business Details
+            // Company Name
+            $('.org_orgname').text(headerLeftData.companyName || "").css('text-align', 'left');
 
-                // Add email to the top-right branding table
-                const $rightTable = $('.branding td[style*="text-align: right"] tbody');
-                // Check if email row already exists to avoid duplication if multiple passes
-                if ($rightTable.find('.contact_details').length === 0) {
-                    $rightTable.append(`
-                        <tr>
-                            <td class="contact_details" style="text-align: right;">
-                                <b>Email</b> : ${user.email || ""}
-                            </td>
-                        </tr>
-                    `);
+            // Address (Multi-line)
+            let addressHtml = headerLeftData.address || "";
+            if (headerLeftData.city || headerLeftData.state || headerLeftData.pincode) {
+                addressHtml += `<br>${headerLeftData.city || ""}, ${headerLeftData.state || ""} - ${headerLeftData.pincode || ""}`;
+            }
+            if (headerLeftData.gstin) {
+                addressHtml += `<br><strong>GSTIN:</strong> ${headerLeftData.gstin}`;
+            }
+            $('.org_address').html(addressHtml).css('text-align', 'left');
+
+
+            // RIGHT SECTION: User Contact Details
+            // We map these to the existing right-aligned table cells in the template
+
+            // Owner Name
+            $('.org_contact_name').html(`<b>Name</b> : ${headerRightData.fullName || ""}`).css('text-align', 'right');
+
+            // Phone
+            $('.org_phone').html(`<b>Phone</b> : ${headerRightData.phone || ""}`).css('text-align', 'right');
+
+            // Email & PAN (Injecting if not present in template or reusing existing structure if flexible)
+            // The default template has row for Name and Phone. We can append Email/PAN rows to the parent table body.
+            const $rightTableBody = $('.branding td[style*="text-align: right"] tbody');
+
+            // Clear existing Email/PAN rows to avoid duplication on re-runs (though cheerio load is fresh per loop)
+            $rightTableBody.find('.dynamic-contact-row').remove();
+
+            if (headerRightData.email) {
+                $rightTableBody.append(`
+                    <tr class="dynamic-contact-row">
+                        <td class="contact_details" style="text-align: right;">
+                            <b>Email</b> : ${headerRightData.email}
+                        </td>
+                    </tr>
+                `);
+            }
+
+            if (headerRightData.pan) {
+                $rightTableBody.append(`
+                    <tr class="dynamic-contact-row">
+                        <td class="contact_details" style="text-align: right;">
+                            <b>PAN</b> : ${headerRightData.pan}
+                        </td>
+                    </tr>
+                `);
+            }
+
+            // Handle Logo Substitution (If override or business logo exists)
+            // The template doesn't explicitly have an img tag for logo in strict default, 
+            // but we can inject it into the Left Section before company name if needed, 
+            // OR if the user meant "use HTML structure", we should see if HTML has a logo placeholder.
+            // HTML has no <img> in .org_orgname. We can prepend it if a logo exists.
+
+            let logoSrc = '';
+            let rawLogoPath = options.overrideLogoPath || headerLeftData.businessLogo;
+            if (rawLogoPath) {
+                if (rawLogoPath.startsWith('http')) {
+                    logoSrc = rawLogoPath;
+                } else {
+                    try {
+                        let logoPath = path.resolve(rawLogoPath);
+                        if (!fs.existsSync(logoPath)) {
+                            const fallbackPath = path.join(__dirname, '..', rawLogoPath);
+                            if (fs.existsSync(fallbackPath)) { logoPath = fallbackPath; }
+                        }
+                        if (fs.existsSync(logoPath)) {
+                            const bitmap = fs.readFileSync(logoPath);
+                            const ext = path.extname(logoPath).split('.').pop() || 'png';
+                            logoSrc = `data:image/${ext};base64,${bitmap.toString('base64')}`;
+                        }
+                    } catch (e) { /* ignore */ }
                 }
-            } else {
-                // Default header for other documents
-                $('.org_orgname').text(user.companyName || "");
-                $('.org_address').html(`${user.address || ""}<br>${user.city || ""}, ${user.state || ""} - ${user.pincode || ""}`);
-                $('.gstin span').text(`GSTIN: ${user.gstin || ""}`);
+            }
+
+            if (logoSrc) {
+                // Check if valid img alias exists or prepend to company name container
+                const $logoContainer = $('.org_orgname').parent().parent().parent(); // Moving up to main left table cell
+                // Actually, best to prepend to the .org_orgname's container or just before .org_orgname text
+                // Let's wrap .org_orgname text in a div and prepend img
+
+                // Ideally, we place it to the left of company name. The HTML structure is a table. 
+                // We can add a new cell/column for logo if we want side-by-side, or just block image above name.
+                // User wants "same structure as HTML". HTML has name top-left.
+                // let's put logo above name for now if not present.
+
+                if ($('.company-logo').length === 0) {
+                    $('.org_orgname').before(`<img src="${logoSrc}" class="company-logo" alt="Logo" style="max-height: 50px; display: block; margin-bottom: 5px;">`);
+                }
             }
 
             // Customer Info

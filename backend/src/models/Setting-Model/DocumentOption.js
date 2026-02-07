@@ -12,7 +12,7 @@ const invoiceSeriesSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
-    name: {
+    invoiceName: {
         type: String,
         default: ''
     },
@@ -81,7 +81,8 @@ const saleInvoiceSchema = new mongoose.Schema({
         defaultCustomer: { type: mongoose.Schema.Types.Mixed, default: 'No default customer' },
         defaultPaymentType: { type: String, default: 'CREDIT' },
         defaultDueDate: { type: Number, default: null }
-    }
+    },
+    resolvedConfig: { type: mongoose.Schema.Types.Mixed, default: {} }
 }, { _id: false });
 
 // Shared Other Options for Delivery Challan, Quotation, Proforma
@@ -96,21 +97,24 @@ const deliveryChallanSchema = new mongoose.Schema({
     invoiceSeries: [invoiceSeriesSchema],
     statusSettings: statusSettingsSchema,
     completionDate: completionDateSchema,
-    otherOptions: standardOtherOptionsSchema
+    otherOptions: standardOtherOptionsSchema,
+    resolvedConfig: { type: mongoose.Schema.Types.Mixed, default: {} }
 }, { _id: false });
 
 const quotationSchema = new mongoose.Schema({
     invoiceSeries: [invoiceSeriesSchema],
     statusSettings: statusSettingsSchema,
     completionDate: completionDateSchema,
-    otherOptions: standardOtherOptionsSchema
+    otherOptions: standardOtherOptionsSchema,
+    resolvedConfig: { type: mongoose.Schema.Types.Mixed, default: {} }
 }, { _id: false });
 
 const proformaSchema = new mongoose.Schema({
     invoiceSeries: [invoiceSeriesSchema],
     statusSettings: statusSettingsSchema,
     completionDate: completionDateSchema,
-    otherOptions: standardOtherOptionsSchema
+    otherOptions: standardOtherOptionsSchema,
+    resolvedConfig: { type: mongoose.Schema.Types.Mixed, default: {} }
 }, { _id: false });
 
 // Purchase/Sale Order have extra fields (Progress Bar)
@@ -125,14 +129,16 @@ const purchaseOrderSchema = new mongoose.Schema({
     invoiceSeries: [invoiceSeriesSchema],
     statusSettings: statusSettingsSchema,
     completionDate: completionDateSchema,
-    otherOptions: orderOtherOptionsSchema
+    otherOptions: orderOtherOptionsSchema,
+    resolvedConfig: { type: mongoose.Schema.Types.Mixed, default: {} }
 }, { _id: false });
 
 const saleOrderSchema = new mongoose.Schema({
     invoiceSeries: [invoiceSeriesSchema],
     statusSettings: statusSettingsSchema,
     completionDate: completionDateSchema,
-    otherOptions: orderOtherOptionsSchema
+    otherOptions: orderOtherOptionsSchema,
+    resolvedConfig: { type: mongoose.Schema.Types.Mixed, default: {} }
 }, { _id: false });
 
 // --- Main Model ---
