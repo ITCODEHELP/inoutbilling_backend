@@ -1,1066 +1,846 @@
 <!doctype html>
 <html>
-  <head>
-    <meta charset="UTF-8" />
-    <title>Tax Invoice</title>
 
-    <style>
-      .page-copy-container-wrapper,
-      .page-copy-container-wrapper-letter,
-      body {
-        background: #dde0e4 !important;
-      }
+<head>
+  <meta charset="UTF-8" />
+  <title>Tax Invoice</title>
 
-      .org_orgname {
-        vertical-align: top;
-        font-size: 23px;
-        font-weight: bold;
-        line-height: 30px;
-        padding-left: 0px;
-        padding-bottom: 5px;
-        padding-right: 0px;
-      }
+  <style>
+    .page-copy-container-wrapper,
+    .page-copy-container-wrapper-letter,
+    body {
+      background: #dde0e4 !important;
+    }
 
-      .org_address {
-        vertical-align: top;
-        font-size: 12px;
-        font-weight: normal;
-        line-height: 15px;
-        height: auto;
-        padding-left: 0px;
-      }
+    .org_orgname {
+      vertical-align: top;
+      font-size: 23px;
+      font-weight: bold;
+      line-height: 30px;
+      padding-left: 0px;
+      padding-bottom: 5px;
+      padding-right: 0px;
+    }
 
-      .page-wrapper-table,
-      .page-wrapper-tr,
-      .page-copy-container-wrapper {
-        position: relative;
-      }
+    .org_address {
+      vertical-align: top;
+      font-size: 12px;
+      font-weight: normal;
+      line-height: 15px;
+      height: auto;
+      padding-left: 0px;
+    }
 
-      .page-wrapper-table {
-        width: 780px;
-        margin: 0px auto;
-        position: relative;
-      }
+    .page-wrapper-table,
+    .page-wrapper-tr,
+    .page-copy-container-wrapper {
+      position: relative;
+    }
 
-      .page-wrapper-tr,
-      .page-wrapper-tr-letter {
-        background: #fff;
-        box-shadow: 0 0 10px 0 rgb(0 0 0 / 50%);
-        -webkit-box-shadow: 0 0 10px 0 rgb(0 0 0 / 50%);
-        margin: 10px 0;
-      }
+    .page-wrapper-table {
+      width: 780px;
+      margin: 0px auto;
+      position: relative;
+    }
 
-      .page-wrapper,
-      .page-wrapper-letter {
-        padding: 28px !important;
-      }
+    .page-wrapper-tr,
+    .page-wrapper-tr-letter {
+      background: #fff;
+      box-shadow: 0 0 10px 0 rgb(0 0 0 / 50%);
+      -webkit-box-shadow: 0 0 10px 0 rgb(0 0 0 / 50%);
+      margin: 10px 0;
+    }
 
-      .page-wrapper {
-        /* height: 1020px; */
-        width: 710px;
-        margin: 0px auto;
-        position: relative;
-      }
+    .page-wrapper,
+    .page-wrapper-letter {
+      padding: 28px !important;
+    }
 
-      .page-wrapper .page-header,
-      .page-wrapper-letter .page-header {
-        position: relative;
-        padding: 0px;
-        margin: 0px;
-        z-index: 1;
-        border-bottom: 0px;
-      }
+    .page-wrapper {
+      /* height: 1020px; */
+      width: 710px;
+      margin: 0px auto;
+      position: relative;
+    }
 
-      table {
-        vertical-align: top;
-        width: 100%;
-        border-collapse: collapse;
-      }
+    .page-wrapper .page-header,
+    .page-wrapper-letter .page-header {
+      position: relative;
+      padding: 0px;
+      margin: 0px;
+      z-index: 1;
+      border-bottom: 0px;
+    }
 
-      .contact_details {
-        line-height: 17px;
-        font-size: 12px;
-      }
+    table {
+      vertical-align: top;
+      width: 100%;
+      border-collapse: collapse;
+    }
 
-      .contact_details b {
-        font-size: 11px;
-      }
+    .contact_details {
+      line-height: 17px;
+      font-size: 12px;
+    }
 
-      .invoice .main-border {
-        border: 1px solid #0070c0;
-        padding: 0;
-        margin: 0;
-      }
+    .contact_details b {
+      font-size: 11px;
+    }
 
-      .invoice .header-row {
-        vertical-align: middle;
-        border-bottom: 1px solid #0070c0;
-      }
+    .invoice .main-border {
+      border: 1px solid #0070c0;
+      padding: 0;
+      margin: 0;
+    }
 
-      .invoice .header .gstin {
-        padding-left: 5px;
-      }
+    .invoice .header-row {
+      vertical-align: middle;
+      border-bottom: 1px solid #0070c0;
+    }
 
-      .invoice .header .gstin span {
-        font-weight: bold;
-        text-align: left;
-      }
+    .invoice .header .gstin {
+      padding-left: 5px;
+    }
 
-      .invoice .header .invoice-title {
-        text-align: center;
-        color: #0070c0;
-        padding: 3px 0;
-        font-weight: bold;
-      }
+    .invoice .header .gstin span {
+      font-weight: bold;
+      text-align: left;
+    }
 
-      .main-border .invoice-title {
-        font-size: 20px;
-      }
+    .invoice .header .invoice-title {
+      text-align: center;
+      color: #0070c0;
+      padding: 3px 0;
+      font-weight: bold;
+    }
 
-      .invoice .header .copyname {
-        text-align: right;
-        padding-right: 5px;
-        font-size: 11px;
-        font-weight: bold;
-      }
+    .main-border .invoice-title {
+      font-size: 20px;
+    }
 
-      .customerdata td.customerdata_label {
-        text-align: center;
-        font-weight: bold;
-        border-bottom: 1px solid #0070c0;
-        width: 100%;
-        font-size: 10px;
-      }
+    .invoice .header .copyname {
+      text-align: right;
+      padding-right: 5px;
+      font-size: 11px;
+      font-weight: bold;
+    }
 
-      .customerdata td,
-      .orgdata td {
-        padding: 2px 5px 3px 5px;
-        font-size: 11px;
-        vertical-align: top;
-        line-height: 13px;
-      }
+    .customerdata td.customerdata_label {
+      text-align: center;
+      font-weight: bold;
+      border-bottom: 1px solid #0070c0;
+      width: 100%;
+      font-size: 10px;
+    }
 
-      .customerdata td.customerdata_item_label {
-        font-weight: bold;
-      }
+    .customerdata td,
+    .orgdata td {
+      padding: 2px 5px 3px 5px;
+      font-size: 11px;
+      vertical-align: top;
+      line-height: 13px;
+    }
 
-      .invoicedata td {
-        padding: 3px 5px 6px 5px;
-        font-size: 11px;
-        vertical-align: top;
-        line-height: 13px;
-      }
+    .customerdata td.customerdata_item_label {
+      font-weight: bold;
+    }
 
-      .invoicedata td.special {
-        font-weight: bold;
-        font-size: 12px;
-      }
+    .invoicedata td {
+      padding: 3px 5px 6px 5px;
+      font-size: 11px;
+      vertical-align: top;
+      line-height: 13px;
+    }
 
-      .billdetailsthead td {
-        font-size: 9px;
-      }
+    .invoicedata td.special {
+      font-weight: bold;
+      font-size: 12px;
+    }
 
-      .billdetailsthead td {
-        background-color: #e8f3fd;
-        border: 1px solid #0070c0;
-        border-collapse: collapse;
-        text-align: center;
-        font-weight: bold;
-        padding: 5px 2px;
-      }
+    .billdetailsthead td {
+      font-size: 9px;
+    }
 
-      .valign-mid {
-        vertical-align: middle;
-      }
+    .billdetailsthead td {
+      background-color: #e8f3fd;
+      border: 1px solid #0070c0;
+      border-collapse: collapse;
+      text-align: center;
+      font-weight: bold;
+      padding: 5px 2px;
+    }
 
-      .page-wrapper .page-content {
-        position: relative;
-      }
+    .valign-mid {
+      vertical-align: middle;
+    }
 
-      .tableboxLinetable {
-        position: absolute;
-        top: 0;
-        left: 0;
-        z-index: 0;
-        border-bottom: 1px solid #0070c0;
-      }
+    .page-wrapper .page-content {
+      position: relative;
+    }
 
-      .tableboxLine {
-        border-right: 1px solid #0070c0;
-        border-left: 1px solid #0070c0;
-        border-collapse: collapse;
-        height: 417px;
-        top: 0;
-        box-sizing: border-box;
-        -moz-box-sizing: border-box;
-        -webkit-box-sizing: border-box;
-        z-index: -1;
-      }
+    .tableboxLinetable {
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 0;
+      border-bottom: 1px solid #0070c0;
+    }
 
-      .billdetailstbody {
-        position: absolute;
-        z-index: 1;
-      }
+    .tableboxLine {
+      border-right: 1px solid #0070c0;
+      border-left: 1px solid #0070c0;
+      border-collapse: collapse;
+      height: 417px;
+      top: 0;
+      box-sizing: border-box;
+      -moz-box-sizing: border-box;
+      -webkit-box-sizing: border-box;
+      z-index: -1;
+    }
 
-      .billdetailstbody td.txt-center {
-        text-align: center;
-      }
+    .billdetailstbody {
+      position: absolute;
+      z-index: 1;
+    }
 
-      .billdetailstbody td b {
-        font-weight: bold;
-      }
+    .billdetailstbody td.txt-center {
+      text-align: center;
+    }
 
-      .billdetailstbody td {
-        font-size: 11px;
-        line-height: 15px;
-      }
+    .billdetailstbody td b {
+      font-weight: bold;
+    }
 
-      .billdetailstbody td {
-        max-width: 1px;
-      }
+    .billdetailstbody td {
+      font-size: 11px;
+      line-height: 15px;
+    }
 
-      .billdetailstbody td {
-        padding: 2px 2px 0px;
-        font-size: 11px;
-        vertical-align: top;
-        line-height: 15px;
-      }
+    .billdetailstbody td {
+      max-width: 1px;
+    }
 
-      .billdetailstbody td.txt-right {
-        text-align: right;
-      }
+    .billdetailstbody td {
+      padding: 2px 2px 0px;
+      font-size: 11px;
+      vertical-align: top;
+      line-height: 15px;
+    }
 
-      .invoicedataFooter td {
-        font-size: 11px;
-        background-color: #e8f3fd;
-        padding: 5px 1px 5px 0px;
-        border: 1px solid #0070c0;
-      }
+    .billdetailstbody td.txt-right {
+      text-align: right;
+    }
 
-      .txt-right {
-        text-align: right;
-      }
+    .invoicedataFooter td {
+      font-size: 11px;
+      background-color: #e8f3fd;
+      padding: 5px 1px 5px 0px;
+      border: 1px solid #0070c0;
+    }
 
-      .txt-bold {
-        font-weight: bold;
-      }
+    .txt-right {
+      text-align: right;
+    }
 
-      .invoice .main-border {
-        border: 1px solid #0070c0;
-        padding: 0;
-        margin: 0;
-      }
+    .txt-bold {
+      font-weight: bold;
+    }
 
-      .invoiceTotal,
-      .invoiceTotalSign,
-      .invoiceInfo {
-        border-collapse: collapse;
-      }
+    .invoice .main-border {
+      border: 1px solid #0070c0;
+      padding: 0;
+      margin: 0;
+    }
 
-      .invoiceInfo td.section_header {
-        font-weight: bold;
-      }
+    .invoiceTotal,
+    .invoiceTotalSign,
+    .invoiceInfo {
+      border-collapse: collapse;
+    }
 
-      .invoiceInfo td {
-        font-size: 11px;
-        line-height: 13px;
-        font-weight: normal;
-      }
+    .invoiceInfo td.section_header {
+      font-weight: bold;
+    }
 
-      .invoiceInfo td {
-        padding: 3px 5px;
-        font-size: 11px;
-        line-height: 13px;
-        font-weight: bold;
-        border: 1px solid #0070c0;
-        border-left: none;
-        border-right: none;
-      }
+    .invoiceInfo td {
+      font-size: 11px;
+      line-height: 13px;
+      font-weight: normal;
+    }
 
-      .invoiceInfo td.amount_in_words {
-        width: 100%;
-        text-align: center;
-        font-size: 11px;
-        line-height: 15px;
-        height: 30px;
-        vertical-align: middle;
-        text-transform: capitalize;
-      }
+    .invoiceInfo td {
+      padding: 3px 5px;
+      font-size: 11px;
+      line-height: 13px;
+      font-weight: bold;
+      border: 1px solid #0070c0;
+      border-left: none;
+      border-right: none;
+    }
 
-      .invoiceTotal,
-      .invoiceTotalSign,
-      .invoiceInfo {
-        border-collapse: collapse;
-      }
+    .invoiceInfo td.amount_in_words {
+      width: 100%;
+      text-align: center;
+      font-size: 11px;
+      line-height: 15px;
+      height: 30px;
+      vertical-align: middle;
+      text-transform: capitalize;
+    }
 
-      .invoiceTotal td:not(.special) {
-        font-size: 10px;
-        line-height: 13px;
-        font-weight: bold;
-      }
+    .invoiceTotal,
+    .invoiceTotalSign,
+    .invoiceInfo {
+      border-collapse: collapse;
+    }
 
-      .invoiceTotal td {
-        padding: 3px 5px;
-        font-size: 10px;
-        font-weight: bold;
-        line-height: 13px;
-        border: 1px solid #0070c0;
-        border-right: none;
-        border-left: none;
-      }
+    .invoiceTotal td:not(.special) {
+      font-size: 10px;
+      line-height: 13px;
+      font-weight: bold;
+    }
 
-      .invoiceTotal td:not(.special) {
-        font-size: 10px;
-        line-height: 13px;
-        font-weight: bold;
-      }
+    .invoiceTotal td {
+      padding: 3px 5px;
+      font-size: 10px;
+      font-weight: bold;
+      line-height: 13px;
+      border: 1px solid #0070c0;
+      border-right: none;
+      border-left: none;
+    }
 
-      .invoiceTotal td.footer_seal_title {
-        border-bottom: none;
-        text-align: center;
-        font-size: 8px;
-      }
+    .invoiceTotal td:not(.special) {
+      font-size: 10px;
+      line-height: 13px;
+      font-weight: bold;
+    }
 
-      .invoiceTotal td.footer_seal_name {
-        border-top: none;
-        border-bottom: none;
-        text-align: center;
-        font-size: 12px;
-      }
+    .invoiceTotal td.footer_seal_title {
+      border-bottom: none;
+      text-align: center;
+      font-size: 8px;
+    }
 
-      .invoiceTotalSign {
-        position: absolute;
-        bottom: 0;
-      }
+    .invoiceTotal td.footer_seal_name {
+      border-top: none;
+      border-bottom: none;
+      text-align: center;
+      font-size: 12px;
+    }
 
-      .invoiceTotalSign td {
-        padding: 3px 5px;
-        font-size: 8px;
-        line-height: 13px;
-        font-weight: bold;
-        border-top: 1px solid #0070c0;
-        text-align: center;
-      }
-    </style>
-  </head>
-  <body
-    style="
+    .invoiceTotalSign {
+      position: absolute;
+      bottom: 0;
+    }
+
+    .invoiceTotalSign td {
+      padding: 3px 5px;
+      font-size: 8px;
+      line-height: 13px;
+      font-weight: bold;
+      border-top: 1px solid #0070c0;
+      text-align: center;
+    }
+  </style>
+</head>
+
+<body style="
       font-family: Arial, Helvetica, sans-serif;
       background: #f5f5f5;
       padding: 20px;
-    "
-  >
-    <div class="page-copy-container-wrapper">
-      <div
-        class="page-wrapper-table original_for_recipient"
-        data-customdecimalvalue="3"
-        data-allownumbercustomcolumn=""
-      >
-        <div
-          class="page-wrapper-tr page-first page-last"
-          style="page-break-inside: avoid; page-break-after: auto"
-        >
-          <div>
-            <div class="Active page-wrapper">
-              <div class="page-header">
-                <table
-                  cellspacing="0"
-                  cellpadding="0"
-                  class="branding"
-                  width="100%"
-                >
-                  <colgroup>
-                    <col style="width: 60%" />
-                    <col style="width: 40%" />
-                  </colgroup>
-                  <tbody>
-                    <tr>
-                      <td style="position: relative; vertical-align: top">
-                        <table cellspacing="0" cellpadding="0" width="100%">
-                          <tbody>
-                            <tr>
-                              <td
-                                class="org_orgname"
-                                data-editor="td .org_orgname"
-                              >
-                                itcode
-                              </td>
-                            </tr>
-                            <tr>
-                              <td
-                                class="org_address"
-                                data-editor="td .org_address"
-                              >
-                                surat<br />surat, Gujarat - 395009
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </td>
-                      <td
-                        style="
+    ">
+  <div class="page-copy-container-wrapper">
+    <div class="page-wrapper-table original_for_recipient" data-customdecimalvalue="3" data-allownumbercustomcolumn="">
+      <div class="page-wrapper-tr page-first page-last" style="page-break-inside: avoid; page-break-after: auto">
+        <div>
+          <div class="Active page-wrapper">
+            <div class="page-header">
+              <table cellspacing="0" cellpadding="0" class="branding" width="100%">
+                <colgroup>
+                  <col style="width: 60%" />
+                  <col style="width: 40%" />
+                </colgroup>
+                <tbody>
+                  <tr>
+                    <td style="position: relative; vertical-align: top">
+                      <table cellspacing="0" cellpadding="0" width="100%">
+                        <tbody>
+                          <tr>
+                            <td class="org_orgname" data-editor="td .org_orgname">
+                              itcode
+                            </td>
+                          </tr>
+                          <tr>
+                            <td class="org_address" data-editor="td .org_address">
+                              surat<br />surat, Gujarat - 395009
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </td>
+                    <td style="
                           text-align: right;
                           vertical-align: bottom;
                           float: right;
-                        "
-                      >
-                        <table cellspacing="0" cellpadding="0">
-                          <tbody>
-                            <tr>
-                              <td
-                                class="contact_details org_contact_name"
-                                data-editor=".contact_details"
-                              >
-                                <b>Name</b> : itcode infotech
-                              </td>
-                            </tr>
-                            <tr>
-                              <td class="contact_details org_phone">
-                                <b data-editor=".contact_details b">Phone</b> :
-                                9624639257
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-                <br />
+                        ">
+                      <table cellspacing="0" cellpadding="0">
+                        <tbody>
+                          <tr>
+                            <td class="contact_details org_contact_name" data-editor=".contact_details">
+                              <b>Name</b> : itcode infotech
+                            </td>
+                          </tr>
+                          <tr>
+                            <td class="contact_details org_phone">
+                              <b data-editor=".contact_details b">Phone</b> :
+                              9624639257
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <br />
 
-                <table cellspacing="0" cellpadding="0" class="invoice">
-                  <tbody>
-                    <tr>
-                      <td
-                        class="main-border"
-                        style="width: 100%; border-bottom: none"
-                      >
-                        <table
-                          cellspacing="0"
-                          border="0"
-                          cellpadding="0"
-                          class="header"
-                        >
-                          <tbody>
-                            <tr>
-                              <td style="width: 100%" class="header-row">
-                                <table cellspacing="0" cellpadding="0">
-                                  <tbody>
-                                    <tr>
-                                      <td
-                                        style="width: 35%"
-                                        class="gstin"
-                                        data-editor=".gstin"
-                                      >
-                                        <span style=""> </span>
-                                      </td>
-                                      <td
-                                        style="width: 30%"
-                                        data-editor=".main-border .invoice-title"
-                                        class="invoice-title"
-                                      >
-                                        TAX INVOICE
-                                      </td>
-                                      <td style="width: 35%" class="copyname">
-                                        ORIGINAL FOR RECIPIENT
-                                      </td>
-                                    </tr>
-                                  </tbody>
-                                </table>
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                        <table>
-                          <colgroup>
-                            <col style="width: 40%" />
-                            <col style="width: 60%" />
-                          </colgroup>
-                          <tbody>
-                            <tr>
-                              <td
-                                style="
+              <table cellspacing="0" cellpadding="0" class="invoice">
+                <tbody>
+                  <tr>
+                    <td class="main-border" style="width: 100%; border-bottom: none">
+                      <table cellspacing="0" border="0" cellpadding="0" class="header">
+                        <tbody>
+                          <tr>
+                            <td style="width: 100%" class="header-row">
+                              <table cellspacing="0" cellpadding="0">
+                                <tbody>
+                                  <tr>
+                                    <td style="width: 35%" class="gstin" data-editor=".gstin">
+                                      <span style=""> </span>
+                                    </td>
+                                    <td style="width: 30%" data-editor=".main-border .invoice-title"
+                                      class="invoice-title">
+                                      TAX INVOICE
+                                    </td>
+                                    <td style="width: 35%" class="copyname">
+                                      ORIGINAL FOR RECIPIENT
+                                    </td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      <table>
+                        <colgroup>
+                          <col style="width: 40%" />
+                          <col style="width: 60%" />
+                        </colgroup>
+                        <tbody>
+                          <tr>
+                            <td style="
                                   border-bottom: 1px solid #0070c0;
                                   border-right: 1px solid #0070c0;
                                   vertical-align: top;
-                                "
-                              >
-                                <table
-                                  cellspacing="0"
-                                  class="customerdata"
-                                  data-editor=".customerdata td:not(.customerdata_label):not(.customerdata_item_label):not(.special):not(.cmp_gstno)"
-                                  style="table-layout: fixed"
-                                >
-                                  <colgroup>
-                                    <col style="width: 22%" />
-                                    <col style="width: 78%" />
-                                  </colgroup>
-                                  <tbody>
-                                    <tr class="customer_label">
-                                      <td
-                                        colspan="2"
-                                        class="customerdata_label"
-                                        data-editor=".customerdata td.customerdata_label"
-                                      >
-                                        Customer Detail
-                                      </td>
-                                    </tr>
-                                    <tr class="company_name">
-                                      <td
-                                        class="customerdata_item_label"
-                                        data-editor=".customerdata td.customerdata_item_label"
-                                      >
-                                        Name
-                                      </td>
-                                      <td
-                                        class="special"
-                                        data-editor=".customerdata td.special"
-                                      ></td>
-                                    </tr>
-                                    <tr class="company_address">
-                                      <td class="customerdata_item_label">
-                                        Address
-                                      </td>
-                                      <td style="">
-                                        <div style="overflow: hidden">
-                                          , Gujarat, India<span class="cmp_city"
-                                            >, surat</span
-                                          ><span class="cmp_state"
-                                            >, Gujarat</span
-                                          >
-                                        </div>
-                                      </td>
-                                    </tr>
-                                    <tr
-                                      class="company_contact_no empty_contactno"
-                                    >
-                                      <td class="customerdata_item_label">
-                                        Phone
-                                      </td>
-                                      <td style="">-</td>
-                                    </tr>
-                                    <tr class="company_email empty_email">
-                                      <td class="customerdata_item_label">
-                                        Email
-                                      </td>
-                                      <td style="">-</td>
-                                    </tr>
-                                    <tr class="company_gstin is_empty">
-                                      <td class="customerdata_item_label">
-                                        GSTIN
-                                      </td>
-                                      <td
-                                        class="cmp_gstno"
-                                        data-editor=".customerdata td.cmp_gstno"
-                                      >
-                                        -
-                                      </td>
-                                    </tr>
-                                    <tr class="company_place_of_supply">
-                                      <td class="customerdata_item_label">
-                                        Place of Supply
-                                      </td>
-                                      <td style="">
-                                        Gujarat
-                                        <span class="supply_state_code"
-                                          >( 24 )</span
-                                        >
-                                      </td>
-                                    </tr>
-                                  </tbody>
-                                </table>
-                              </td>
+                                ">
+                              <table cellspacing="0" class="customerdata"
+                                data-editor=".customerdata td:not(.customerdata_label):not(.customerdata_item_label):not(.special):not(.cmp_gstno)"
+                                style="table-layout: fixed">
+                                <colgroup>
+                                  <col style="width: 22%" />
+                                  <col style="width: 78%" />
+                                </colgroup>
+                                <tbody>
+                                  <tr class="customer_label">
+                                    <td colspan="2" class="customerdata_label"
+                                      data-editor=".customerdata td.customerdata_label">
+                                      Customer Detail
+                                    </td>
+                                  </tr>
+                                  <tr class="company_name">
+                                    <td class="customerdata_item_label"
+                                      data-editor=".customerdata td.customerdata_item_label">
+                                      Name
+                                    </td>
+                                    <td class="special" data-editor=".customerdata td.special"></td>
+                                  </tr>
+                                  <tr class="company_address">
+                                    <td class="customerdata_item_label">
+                                      Address
+                                    </td>
+                                    <td style="">
+                                      <div style="overflow: hidden">
+                                        , Gujarat, India<span class="cmp_city">, surat</span><span class="cmp_state">,
+                                          Gujarat</span>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                  <tr class="company_contact_no empty_contactno">
+                                    <td class="customerdata_item_label">
+                                      Phone
+                                    </td>
+                                    <td style="">-</td>
+                                  </tr>
+                                  <tr class="company_email empty_email">
+                                    <td class="customerdata_item_label">
+                                      Email
+                                    </td>
+                                    <td style="">-</td>
+                                  </tr>
+                                  <tr class="company_gstin is_empty">
+                                    <td class="customerdata_item_label">
+                                      GSTIN
+                                    </td>
+                                    <td class="cmp_gstno" data-editor=".customerdata td.cmp_gstno">
+                                      -
+                                    </td>
+                                  </tr>
+                                  <tr class="company_place_of_supply">
+                                    <td class="customerdata_item_label">
+                                      Place of Supply
+                                    </td>
+                                    <td style="">
+                                      Gujarat
+                                      <span class="supply_state_code">( 24 )</span>
+                                    </td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </td>
 
-                              <td
-                                style="
+                            <td style="
                                   border-bottom: 1px solid #0070c0;
                                   vertical-align: top;
-                                "
-                              >
-                                <table
-                                  cellspacing="0"
-                                  class="invoicedata"
-                                  data-editor=".invoicedata td:not(.invoicedata_item_label):not(.special)"
-                                >
-                                  <colgroup>
-                                    <col style="width: 27%" />
-                                    <col style="width: 29%" />
-                                    <col style="width: 25%" />
-                                    <col style="width: 19%" />
-                                  </colgroup>
-                                  <tbody>
-                                    <tr class="invoice_no_date">
-                                      <td
-                                        class="invoicedata_item_label"
-                                        data-editor=".invoicedata td.invoicedata_item_label"
-                                      >
-                                        Invoice No.
-                                      </td>
-                                      <td
-                                        class="special"
-                                        data-editor=".invoicedata td.special"
-                                      >
-                                        1
-                                      </td>
-                                      <td class="invoicedata_item_label">
-                                        Invoice Date
-                                      </td>
-                                      <td>02-Feb-2026</td>
-                                    </tr>
-                                    <tr class="extra_field">
-                                      <td class="invoicedata_item_label">
-                                        Due Date
-                                      </td>
-                                      <td>17-Feb-2026</td>
-                                    </tr>
+                                ">
+                              <table cellspacing="0" class="invoicedata"
+                                data-editor=".invoicedata td:not(.invoicedata_item_label):not(.special)">
+                                <colgroup>
+                                  <col style="width: 27%" />
+                                  <col style="width: 29%" />
+                                  <col style="width: 25%" />
+                                  <col style="width: 19%" />
+                                </colgroup>
+                                <tbody>
+                                  <tr class="invoice_no_date">
+                                    <td class="invoicedata_item_label"
+                                      data-editor=".invoicedata td.invoicedata_item_label">
+                                      Invoice No.
+                                    </td>
+                                    <td class="special" data-editor=".invoicedata td.special">
+                                      1
+                                    </td>
+                                    <td class="invoicedata_item_label">
+                                      Invoice Date
+                                    </td>
+                                    <td>02-Feb-2026</td>
+                                  </tr>
+                                  <tr class="extra_field">
+                                    <td class="invoicedata_item_label">
+                                      Due Date
+                                    </td>
+                                    <td>17-Feb-2026</td>
+                                  </tr>
 
-                                    <tr class="transport_documents"></tr>
-                                  </tbody>
-                                </table>
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                        <br />
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+                                  <tr class="transport_documents"></tr>
+                                </tbody>
+                              </table>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      <br />
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
 
-                <table
-                  class="billdetailsthead"
-                  cellspacing="0"
-                  border="0"
-                  cellpadding="0"
-                  data-editor=".billdetailsthead td"
-                >
-                  <colgroup>
-                    <col class="sr_no" style="width: 4%" data-column="0" />
-                    <col
-                      class="productname"
-                      style="width: 43%"
-                      data-column="1"
-                    />
-                    <col class="hsnsac" style="width: 13%" data-column="2" />
-                    <col class="qty" style="width: 12%" data-column="3" />
-                    <col class="rate" style="width: 14%" data-column="4" />
-                    <col class="total" style="width: 14%" data-column="11" />
-                  </colgroup>
-                  <tbody>
-                    <tr>
-                      <td data-column="0" class="valign-mid header-sr-no">
-                        Sr. No.
-                      </td>
-                      <td
-                        data-column="1"
-                        class="valign-mid header-product-name"
-                      >
-                        Name of Product / Service
-                      </td>
-                      <td data-column="2" class="valign-mid header-hsn-sac">
-                        HSN / SAC
-                      </td>
-                      <td data-column="3" class="valign-mid header-qty">Qty</td>
-                      <td data-column="4" class="valign-mid header-rate">
-                        Rate
-                      </td>
-                      <td data-column="11" class="valign-mid header-total">
-                        Total
-                      </td>
-                    </tr>
-                    <tr></tr>
-                  </tbody>
-                </table>
-              </div>
-              <!-- -->
-              <div class="page-content" style="height: 511px">
-                <table
-                  class="tableboxLinetable"
-                  cellspacing="0"
-                  cellpadding="0"
-                  border="0"
-                >
-                  <colgroup>
-                    <col class="sr_no" style="width: 4%" data-column="0" />
-                    <col
-                      class="productname"
-                      style="width: 43%"
-                      data-column="1"
-                    />
-                    <col class="hsnsac" style="width: 13%" data-column="2" />
-                    <col class="qty" style="width: 12%" data-column="3" />
-                    <col class="rate" style="width: 14%" data-column="4" />
-                    <col class="total" style="width: 14%" data-column="11" />
-                  </colgroup>
-                  <tbody>
-                    <tr>
-                      <td
-                        data-column="0"
-                        class="tableboxLine linebox1 sr_no"
-                        style="
+              <table class="billdetailsthead" cellspacing="0" border="0" cellpadding="0"
+                data-editor=".billdetailsthead td">
+                <colgroup>
+                  <col class="sr_no" style="width: 4%" data-column="0" />
+                  <col class="productname" style="width: 43%" data-column="1" />
+                  <col class="hsnsac" style="width: 13%" data-column="2" />
+                  <col class="qty" style="width: 12%" data-column="3" />
+                  <col class="rate" style="width: 14%" data-column="4" />
+                  <col class="total" style="width: 14%" data-column="11" />
+                </colgroup>
+                <tbody>
+                  <tr>
+                    <td data-column="0" class="valign-mid header-sr-no">
+                      Sr. No.
+                    </td>
+                    <td data-column="1" class="valign-mid header-product-name">
+                      Name of Product / Service
+                    </td>
+                    <td data-column="2" class="valign-mid header-hsn-sac">
+                      HSN / SAC
+                    </td>
+                    <td data-column="3" class="valign-mid header-qty">Qty</td>
+                    <td data-column="4" class="valign-mid header-rate">
+                      Rate
+                    </td>
+                    <td data-column="11" class="valign-mid header-total">
+                      Total
+                    </td>
+                  </tr>
+                  <tr></tr>
+                </tbody>
+              </table>
+            </div>
+            <!-- -->
+            <div class="page-content" style="height: 511px">
+              <table class="tableboxLinetable" cellspacing="0" cellpadding="0" border="0">
+                <colgroup>
+                  <col class="sr_no" style="width: 4%" data-column="0" />
+                  <col class="productname" style="width: 43%" data-column="1" />
+                  <col class="hsnsac" style="width: 13%" data-column="2" />
+                  <col class="qty" style="width: 12%" data-column="3" />
+                  <col class="rate" style="width: 14%" data-column="4" />
+                  <col class="total" style="width: 14%" data-column="11" />
+                </colgroup>
+                <tbody>
+                  <tr>
+                    <td data-column="0" class="tableboxLine linebox1 sr_no" style="
                           width: 4%;
                           left: 0px;
                           border-left: 1px solid rgb(0, 112, 192);
                           height: 511px;
-                        "
-                      ></td>
-                      <td
-                        data-column="1"
-                        class="tableboxLine linebox2 productname"
-                        style="width: 43%; left: 4%; height: 511px"
-                      ></td>
-                      <td
-                        data-column="2"
-                        class="tableboxLine linebox3 hsnsac"
-                        style="width: 13%; left: 47%; height: 511px"
-                      ></td>
-                      <td
-                        data-column="3"
-                        class="tableboxLine linebox4 qty"
-                        style="width: 12%; left: 60%; height: 511px"
-                      ></td>
-                      <td
-                        data-column="4"
-                        class="tableboxLine linebox5 rate"
-                        style="width: 14%; left: 72%; height: 511px"
-                      ></td>
-                      <td
-                        data-column="11"
-                        class="tableboxLine linebox12 total"
-                        style="
+                        "></td>
+                    <td data-column="1" class="tableboxLine linebox2 productname"
+                      style="width: 43%; left: 4%; height: 511px"></td>
+                    <td data-column="2" class="tableboxLine linebox3 hsnsac"
+                      style="width: 13%; left: 47%; height: 511px"></td>
+                    <td data-column="3" class="tableboxLine linebox4 qty" style="width: 12%; left: 60%; height: 511px">
+                    </td>
+                    <td data-column="4" class="tableboxLine linebox5 rate" style="width: 14%; left: 72%; height: 511px">
+                    </td>
+                    <td data-column="11" class="tableboxLine linebox12 total" style="
                           width: 14%;
                           left: 86%;
                           background-color: rgb(232, 243, 253);
                           height: 511px;
-                        "
-                      ></td>
-                    </tr>
-                  </tbody>
-                </table>
-                <table
-                  class="billdetailstbody"
-                  id="billdetailstbody"
-                  cellspacing="0"
-                  border="0"
-                  cellpadding="0"
-                  data-editor=".billdetailstbody td"
-                >
-                  <colgroup>
-                    <col class="sr_no" style="width: 4%" data-column="0" />
-                    <col
-                      class="productname"
-                      style="width: 43%"
-                      data-column="1"
-                    />
-                    <col class="hsnsac" style="width: 13%" data-column="2" />
-                    <col class="qty" style="width: 12%" data-column="3" />
-                    <col class="rate" style="width: 14%" data-column="4" />
-                    <col class="total" style="width: 14%" data-column="11" />
-                  </colgroup>
-                  <tbody>
-                    <tr class="pageRow1">
-                      <td data-column="0" class="txt-center td-body-sr-no">
-                        1
-                      </td>
-                      <td
-                        data-column="1"
-                        class="txt-left td-body-product-name"
-                        data-editor=".billdetailstbody td b"
-                      >
-                        <b>abc</b>
-                      </td>
-                      <td
-                        data-column="2"
-                        class="txt-center td-body-hsn-sac"
-                      ></td>
-                      <td data-column="3" class="txt-center td-body-qty">
-                        1.00
-                      </td>
-                      <td
-                        data-column="4"
-                        class="txt-center td-body-rate isZero"
-                      >
-                        0.00
-                      </td>
+                        "></td>
+                  </tr>
+                </tbody>
+              </table>
+              <table class="billdetailstbody" id="billdetailstbody" cellspacing="0" border="0" cellpadding="0"
+                data-editor=".billdetailstbody td">
+                <colgroup>
+                  <col class="sr_no" style="width: 4%" data-column="0" />
+                  <col class="productname" style="width: 43%" data-column="1" />
+                  <col class="hsnsac" style="width: 13%" data-column="2" />
+                  <col class="qty" style="width: 12%" data-column="3" />
+                  <col class="rate" style="width: 14%" data-column="4" />
+                  <col class="total" style="width: 14%" data-column="11" />
+                </colgroup>
+                <tbody>
+                  <tr class="pageRow1">
+                    <td data-column="0" class="txt-center td-body-sr-no">
+                      1
+                    </td>
+                    <td data-column="1" class="txt-left td-body-product-name" data-editor=".billdetailstbody td b">
+                      <b>abc</b>
+                    </td>
+                    <td data-column="2" class="txt-center td-body-hsn-sac"></td>
+                    <td data-column="3" class="txt-center td-body-qty">
+                      1.00
+                    </td>
+                    <td data-column="4" class="txt-center td-body-rate isZero">
+                      0.00
+                    </td>
 
-                      <td
-                        data-column="11"
-                        class="txt-right td-body-item-total isZero"
-                        style=""
-                      >
-                        0.00
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <!-- HTML_page_footer -->
+                    <td data-column="11" class="txt-right td-body-item-total isZero" style="">
+                      0.00
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <!-- HTML_page_footer -->
 
-              <div class="page-footer">
-                <table
-                  class="invoicedataFooter pageFooter1"
-                  cellspacing="0"
-                  style="width: 100%"
-                  data-editor=".invoicedataFooter td"
-                >
-                  <colgroup>
-                    <col data-column="0" class="sr_no" style="width: 4%" />
-                    <col class="productname" style="width: 43%" />
-                    <col data-column="2" class="hsnsac" style="width: 13%" />
-                    <col data-column="3" class="qty" style="width: 12%" />
-                    <col data-column="4" class="rate" style="width: 14%" />
-                    <col data-column="11" class="total" style="width: 14%" />
-                  </colgroup>
-                  <tbody>
-                    <tr>
-                      <td
-                        data-column="0"
-                        class="txt-bold txt-right footer-total-heading"
-                        style="text-align: right"
-                        colspan="2"
-                      >
-                        Total
-                      </td>
+            <div class="page-footer">
+              <table class="invoicedataFooter pageFooter1" cellspacing="0" style="width: 100%"
+                data-editor=".invoicedataFooter td">
+                <colgroup>
+                  <col data-column="0" class="sr_no" style="width: 4%" />
+                  <col class="productname" style="width: 43%" />
+                  <col data-column="2" class="hsnsac" style="width: 13%" />
+                  <col data-column="3" class="qty" style="width: 12%" />
+                  <col data-column="4" class="rate" style="width: 14%" />
+                  <col data-column="11" class="total" style="width: 14%" />
+                </colgroup>
+                <tbody>
+                  <tr>
+                    <td data-column="0" class="txt-bold txt-right footer-total-heading" style="text-align: right"
+                      colspan="2">
+                      Total
+                    </td>
 
-                      <td
-                        data-column="2"
-                        class="txt-bold txt-right footer-hsnsac"
-                        style="text-align: right"
-                      ></td>
-                      <td
-                        data-column="3"
-                        class="txt-bold txt-center footer-total-qty hideonlyformat"
-                      >
-                        1.00 <span class="sameUOM-footer"></span>
-                      </td>
-                      <td
-                        data-column="4"
-                        class="txt-bold txt-right _rate_total"
-                      ></td>
-                      <td
-                        data-column="11"
-                        class="txt-bold txt-right hideonlyformat _footer_total isZero"
-                        style=""
-                      >
-                        0.00
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-                <table
-                  cellspacing="0"
-                  cellpadding="0"
-                  class="invoice pageFooter1"
-                >
-                  <tbody>
-                    <tr>
-                      <td
-                        class="main-border"
-                        style="width: 100%; border-top: none"
-                      >
-                        <br />
-                        <table cellspacing="0" style="width: 100%">
-                          <colgroup>
-                            <col style="width: 60%" />
-                            <col style="width: 40%" />
-                          </colgroup>
-                          <tbody>
-                            <tr>
-                              <td
-                                style="
+                    <td data-column="2" class="txt-bold txt-right footer-hsnsac" style="text-align: right"></td>
+                    <td data-column="3" class="txt-bold txt-center footer-total-qty hideonlyformat">
+                      1.00 <span class="sameUOM-footer"></span>
+                    </td>
+                    <td data-column="4" class="txt-bold txt-right _rate_total"></td>
+                    <td data-column="11" class="txt-bold txt-right hideonlyformat _footer_total isZero" style="">
+                      0.00
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <table cellspacing="0" cellpadding="0" class="invoice pageFooter1">
+                <tbody>
+                  <tr>
+                    <td class="main-border" style="width: 100%; border-top: none">
+                      <br />
+                      <table cellspacing="0" style="width: 100%">
+                        <colgroup>
+                          <col style="width: 60%" />
+                          <col style="width: 40%" />
+                        </colgroup>
+                        <tbody>
+                          <tr>
+                            <td style="
                                   border-top: none;
                                   border-right: none;
                                   border-left: none;
                                   vertical-align: top;
-                                "
-                              >
-                                <table
-                                  cellspacing="0"
-                                  style="width: 100%"
-                                  class="invoiceInfo footer_bank_detail"
-                                >
-                                  <colgroup>
-                                    <col style="width: 35%" />
-                                    <col style="width: 65%" />
-                                  </colgroup>
-                                  <tbody>
-                                    <tr>
-                                      <td
-                                        colspan="2"
-                                        data-editor=".invoiceInfo td.section_header"
-                                        class="section_header"
-                                        style="
+                                ">
+                              <table cellspacing="0" style="width: 100%" class="invoiceInfo footer_bank_detail">
+                                <colgroup>
+                                  <col style="width: 35%" />
+                                  <col style="width: 65%" />
+                                </colgroup>
+                                <tbody>
+                                  <tr>
+                                    <td colspan="2" data-editor=".invoiceInfo td.section_header" class="section_header"
+                                      style="
                                           width: 100%;
                                           text-align: center;
                                           border-bottom: none;
-                                        "
-                                      >
-                                        Total in words
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td
-                                        colspan="2"
-                                        class="amount_in_words"
-                                        data-editor=".invoiceInfo td.amount_in_words"
-                                      >
-                                        ZERO
-                                        <span class="cur_main">RUPEES </span
-                                        ><span class="cur_decimal_main">
-                                          <span> ONLY </span></span
-                                        >
-                                      </td>
-                                    </tr>
+                                        ">
+                                      Total in words
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <td colspan="2" class="amount_in_words"
+                                      data-editor=".invoiceInfo td.amount_in_words">
+                                      ZERO
+                                      <span class="cur_main">RUPEES </span><span class="cur_decimal_main">
+                                        <span> ONLY </span></span>
+                                    </td>
+                                  </tr>
 
-                                    <tr>
-                                      <td
-                                        colspan="2"
-                                        class="section_header"
-                                        style="
+                                  <tr>
+                                    <td colspan="2" class="section_header" style="
                                           width: 100%;
                                           text-align: center;
                                           border-bottom: none;
-                                        "
-                                      >
-                                        Terms and Conditions
-                                      </td>
-                                    </tr>
-                                    <tr class="terms_condition_section">
-                                      <td
-                                        colspan="2"
-                                        style="width: 100%; border-bottom: none"
-                                        data-editor=".invoiceInfo td .terms_condition_box"
-                                      >
-                                        <div class="terms_condition_box">
-                                          Subject to our home Jurisdiction.
-                                          <br />
-                                          Our Responsibility Ceases as soon as
-                                          goods leaves our Premises. <br />
-                                          Goods once sold will not taken back.
-                                          <br />
-                                          Delivery Ex-Premises.
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  </tbody>
-                                </table>
-                              </td>
-                              <td
-                                style="
+                                        ">
+                                      Terms and Conditions
+                                    </td>
+                                  </tr>
+                                  <tr class="terms_condition_section">
+                                    <td colspan="2" style="width: 100%; border-bottom: none"
+                                      data-editor=".invoiceInfo td .terms_condition_box">
+                                      <div class="terms_condition_box">
+                                        Subject to our home Jurisdiction.
+                                        <br />
+                                        Our Responsibility Ceases as soon as
+                                        goods leaves our Premises. <br />
+                                        Goods once sold will not taken back.
+                                        <br />
+                                        Delivery Ex-Premises.
+                                      </div>
+                                    </td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </td>
+                            <td style="
                                   border-top: none;
                                   vertical-align: top;
                                   position: relative;
                                   border-left: 1px solid #0070c0;
                                   padding-bottom: 20px;
-                                "
-                              >
-                                <table
-                                  cellspacing="0"
-                                  style="width: 100%"
-                                  class="invoiceTotal foot_table_signature_table"
-                                >
-                                  <colgroup>
-                                    <col style="width: 64%" />
-                                    <col style="width: 36%" />
-                                  </colgroup>
-                                  <tbody>
-                                    <tr class="_total_amount_after_tax_filed">
-                                      <td
-                                        class="txt-bg"
-                                        data-editor=".invoiceTotal td:not(.special)"
-                                      >
-                                        Total Amount
-                                      </td>
-                                      <td
-                                        class="txt-bg txt-right special hideonlyformat isZero"
-                                        data-editor=".invoiceTotal td.special"
-                                      >
-                                        ₹ 0.00
-                                      </td>
-                                    </tr>
+                                ">
+                              <table cellspacing="0" style="width: 100%"
+                                class="invoiceTotal foot_table_signature_table">
+                                <colgroup>
+                                  <col style="width: 64%" />
+                                  <col style="width: 36%" />
+                                </colgroup>
+                                <tbody>
+                                  <tr class="_total_amount_after_tax_filed">
+                                    <td class="txt-bg" data-editor=".invoiceTotal td:not(.special)">
+                                      Total Amount
+                                    </td>
+                                    <td class="txt-bg txt-right special hideonlyformat isZero"
+                                      data-editor=".invoiceTotal td.special">
+                                      ₹ 0.00
+                                    </td>
+                                  </tr>
 
-                                    <tr class="invoice-disclaimer">
-                                      <td colspan="2" class="txt-right">
-                                        (E &amp; O.E.)
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td colspan="2">&nbsp;</td>
-                                    </tr>
-                                    <tr class="cms-hide">
-                                      <td
-                                        colspan="2"
-                                        class="footer_seal_title"
-                                        data-editor=".invoiceTotal td.footer_seal_title"
-                                      >
-                                        Certified that the particulars given
-                                        above are true and correct.
-                                      </td>
-                                    </tr>
-                                    <tr class="cms-hide">
-                                      <td
-                                        colspan="2"
-                                        class="footer_seal_name"
-                                        data-editor=".invoiceTotal td.footer_seal_name"
-                                      >
-                                        For itcode
-                                      </td>
-                                    </tr>
-                                    <tr
-                                      class="cms-hide foot_table_signature"
-                                      style="height: 16px"
-                                    >
-                                      <td
-                                        colspan="2"
-                                        style="
+                                  <tr class="invoice-disclaimer">
+                                    <td colspan="2" class="txt-right">
+                                      (E &amp; O.E.)
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <td colspan="2">&nbsp;</td>
+                                  </tr>
+                                  <tr class="cms-hide">
+                                    <td colspan="2" class="footer_seal_title"
+                                      data-editor=".invoiceTotal td.footer_seal_title">
+                                      Certified that the particulars given
+                                      above are true and correct.
+                                    </td>
+                                  </tr>
+                                  <tr class="cms-hide">
+                                    <td colspan="2" class="footer_seal_name"
+                                      data-editor=".invoiceTotal td.footer_seal_name">
+                                      For itcode
+                                    </td>
+                                  </tr>
+                                  <tr class="cms-hide foot_table_signature" style="height: 16px">
+                                    <td colspan="2" style="
                                           border-left: none;
                                           border-bottom: none;
                                           height: 60px;
                                           text-align: center;
-                                        "
-                                      ></td>
-                                    </tr>
-                                  </tbody>
-                                </table>
-                                <table
-                                  cellspacing="0"
-                                  style="width: 100%"
-                                  class="invoiceTotalSign cms-hide"
-                                >
-                                  <tbody>
-                                    <tr>
-                                      <td
-                                        colspan="2"
-                                        class="footer_seal_signature"
-                                        data-editor=".invoiceTotalSign td.footer_seal_signature"
-                                      >
-                                        Authorised Signatory
-                                      </td>
-                                    </tr>
-                                  </tbody>
-                                </table>
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-                <table cellspacing="0" cellpadding="0" class="branding_table">
-                  <colgroup>
-                    <col style="width: 80%" />
-                    <col style="width: 20%" />
-                  </colgroup>
-                  <tbody>
-                    <tr class="branding_rt">
-                      <td
-                        class="footer-text"
-                        data-editor=".branding_table .branding_rt .footer-text"
-                        style="padding: 5px 0 0"
-                      ></td>
-                      <td
-                        style="
+                                        "></td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                              <table cellspacing="0" style="width: 100%" class="invoiceTotalSign cms-hide">
+                                <tbody>
+                                  <tr>
+                                    <td colspan="2" class="footer_seal_signature"
+                                      data-editor=".invoiceTotalSign td.footer_seal_signature">
+                                      Authorised Signatory
+                                    </td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <table cellspacing="0" cellpadding="0" class="branding_table">
+                <colgroup>
+                  <col style="width: 80%" />
+                  <col style="width: 20%" />
+                </colgroup>
+                <tbody>
+                  <tr class="branding_rt">
+                    <td class="footer-text" data-editor=".branding_table .branding_rt .footer-text"
+                      style="padding: 5px 0 0"></td>
+                    <td style="
                           text-align: left;
                           padding: 5px 0 0;
                           font-weight: bold;
@@ -1069,16 +849,16 @@
                           line-height: 20px;
                           text-transform: uppercase;
                           vertical-align: top;
-                        "
-                      ></td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+                        "></td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
       </div>
     </div>
-  </body>
+  </div>
+</body>
+
 </html>
