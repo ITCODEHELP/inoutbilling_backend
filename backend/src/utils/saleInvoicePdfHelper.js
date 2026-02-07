@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const cheerio = require('cheerio');
+const mongoose = require('mongoose');
 const { convertHtmlToPdf } = require('./puppeteerPdfHelper');
 const Business = require('../models/Login-Model/Business');
 const PrintOptions = require('../models/Setting-Model/PrintOptions');
@@ -50,9 +51,113 @@ const resolveTemplateFile = (templateName) => {
     return fullPath;
 };
 
-// generateGlobalHeader function removed as it caused duplication. 
-// Header data is now mapped directly to the template structure in generateSaleInvoicePDF.
+/**
+ * Generates the unified branding header (Top Section)
+ */
+const generateGlobalHeader = (businessData, userData, overrideLogoPath) => {
+    let logoSrc = '';
 
+    // Priority: Override Path > Business Logo
+    let rawLogoPath = overrideLogoPath || businessData.businessLogo || userData.businessLogo;
+
+    if (rawLogoPath) {
+        if (rawLogoPath.startsWith('http')) {
+            logoSrc = rawLogoPath;
+        } else if (rawLogoPath.startsWith('data:image')) {
+            logoSrc = rawLogoPath; // Render Base64 directly
+        } else {
+            try {
+                // Determine absolute path.
+                let logoPath = path.resolve(rawLogoPath);
+
+                if (!fs.existsSync(logoPath)) {
+                    // Try resolving relative to various possible roots
+                    const pathsToTry = [
+                        path.join(process.cwd(), 'backend', 'src', 'uploads', 'logo', rawLogoPath),
+                        path.join(process.cwd(), 'src', 'uploads', 'logo', rawLogoPath),
+                        path.join(__dirname, '..', 'uploads', 'logo', rawLogoPath),
+                        path.join(__dirname, '..', rawLogoPath)
+                    ];
+                    for (const p of pathsToTry) {
+                        if (fs.existsSync(p)) {
+                            logoPath = p;
+                            break;
+                        }
+                    }
+                }
+
+                if (fs.existsSync(logoPath)) {
+                    const bitmap = fs.readFileSync(logoPath);
+                    const ext = path.extname(logoPath).split('.').pop() || 'png';
+                    const base64 = bitmap.toString('base64');
+                    logoSrc = `data:image/${ext};base64,${base64}`;
+                } else {
+                    console.warn(`[PDF Generator] Logo file not found: ${rawLogoPath}`);
+                }
+            } catch (err) {
+                console.error('[PDF Generator] Error loading logo:', err);
+            }
+        }
+    }
+
+    return `
+        <div class="global-document-header" style="
+            width: 100%;
+            padding: 5px 0;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            background: #ffffff;
+            page-break-inside: avoid;
+            page-break-after: avoid;
+        ">
+            <!-- Left Section: Logo and Company Details -->
+            <div style="display: flex; align-items: flex-start; gap: 10px; flex: 1;">
+                ${logoSrc ? `
+                    <img src="${logoSrc}" alt="Company Logo" style="
+                        max-width: 60px;
+                        max-height: 60px;
+                        object-fit: contain;
+                    " onerror="this.style.display='none'">
+                ` : ''}
+                <div style="flex: 1;">
+                    <div style="
+                        font-family: Arial, Helvetica, sans-serif;
+                        font-size: 14px;
+                        font-weight: bold;
+                        color: #000000;
+                        margin-bottom: 2px;
+                    ">${businessData.companyName || ''}</div>
+                    <div style="
+                        font-family: Arial, Helvetica, sans-serif;
+                        font-size: 9px;
+                        color: #333333;
+                        line-height: 1.2;
+                    ">
+                        ${businessData.address || ''}<br>
+                        ${businessData.city || ''}, ${businessData.state || ''} - ${businessData.pincode || ''}
+                    </div>
+                </div>
+            </div>
+ 
+            <!-- Right Section: Contact Details -->
+            <div style="
+                text-align: right;
+                font-family: Arial, Helvetica, sans-serif;
+                font-size: 9px;
+                color: #333333;
+                line-height: 1.4;
+                min-width: 160px;
+            ">
+                <div><strong>Name:</strong> ${businessData.fullName || ''}</div>
+                <div><strong>Phone:</strong> ${userData.phone || ''}</div>
+                <div><strong>Email:</strong> ${businessData.email || ''}</div>
+                ${(businessData.showPan && userData.pan) ? `<div><strong>PAN:</strong> ${userData.pan}</div>` : ''}
+            </div>
+        </div>
+    `;
+};
 /**
  * Generates title section for specific templates (5-11)
  * Displays document type and copy type above the global header
@@ -95,71 +200,100 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
     let fullUser = {};
     let businessData = {};
     let printSettings = {};
+    let docOptionsData = {};
 
     // Header Data Objects (Strict Separation)
     let headerLeftData = {};
     let headerRightData = {};
 
+    // --- ROBUST HEADER DATA FETCHING ---
     try {
-        // Fetch full user data to ensure we have all fields for fallbacks
-        const userId = user.userId || user._id; // Handle both simplified and full user objects
-        fullUser = await User.findOne({ userId: userId }).lean() || {};
+        const rawUserId = user.userId || user._id;
 
-        // Fetch Business Data
-        businessData = await Business.findOne({ userId: userId }).lean();
-
-        // Fetch Print Settings
-        if (fullUser._id) {
-            printSettings = await PrintOptions.findOne({ userId: fullUser._id }).lean();
+        // 1. Resolve actual user profile (Check both String and ObjectId)
+        try {
+            fullUser = await User.findOne({
+                $or: [
+                    { userId: rawUserId },
+                    { _id: mongoose.Types.ObjectId.isValid(rawUserId) ? rawUserId : null }
+                ]
+            }).lean() || user;
+        } catch (e) {
+            console.error('[PDF Generator] User fetch failed:', e);
+            fullUser = user;
         }
 
-        // --- PREPARE LEFT HEADER DATA (Business Details) ---
-        if (businessData) {
-            headerLeftData = {
-                companyName: businessData.companyName || fullUser.companyName || '',
-                address: businessData.address || fullUser.address || '',
-                city: businessData.city || fullUser.city || '',
-                state: businessData.state || fullUser.state || '',
-                pincode: businessData.pincode || fullUser.pincode || '',
-                gstin: businessData.gstin || fullUser.gstin || fullUser.gstNumber || '', // Check valid gstin fields
-                businessLogo: businessData.businessLogo || fullUser.businessLogo || ''
-            };
-        } else {
-            // Fallback to User Data completely if Business Data missing
-            console.warn('[PDF Generator] Business data not found, using full user data as fallback');
-            headerLeftData = {
-                companyName: fullUser.companyName || '',
-                address: fullUser.address || '',
-                city: fullUser.city || '',
-                state: fullUser.state || '',
-                pincode: fullUser.pincode || '',
-                gstin: fullUser.gstin || fullUser.gstNumber || '',
-                businessLogo: fullUser.businessLogo || ''
-            };
+        // Use the definite string userId for all other related queries
+        const actualUserId = fullUser.userId || (typeof rawUserId === 'string' ? rawUserId : null);
+
+        // 2. Fetch Business Credentials (String userId)
+        if (actualUserId) {
+            try {
+                businessData = await Business.findOne({ userId: actualUserId }).lean() || {};
+            } catch (e) {
+                console.error('[PDF Generator] Business fetch failed:', e);
+                businessData = {};
+            }
         }
 
-        // --- PREPARE RIGHT HEADER DATA (User Contact w/ Conditional PAN) ---
-        headerRightData = {
-            fullName: fullUser.fullName || businessData?.fullName || '',
-            phone: fullUser.displayPhone || fullUser.phone || '', // Prioritize displayPhone
-            email: fullUser.email || businessData?.email || '',
-            pan: null // Default to null
+        // 3. Fetch Print Settings (ObjectId)
+        try {
+            const printSearchId = fullUser._id || businessData._id || null;
+            if (printSearchId && mongoose.Types.ObjectId.isValid(printSearchId)) {
+                printSettings = await PrintOptions.findOne({ userId: printSearchId }).lean() || {};
+            }
+        } catch (e) {
+            console.error('[PDF Generator] PrintOptions fetch failed:', e);
+            printSettings = {};
+        }
+
+        // 4. Resolve Document Options (Title Overrides)
+        const firstDoc = docList[0] || {};
+        const details = firstDoc.invoiceDetails || firstDoc.quotationDetails || firstDoc.deliveryChallanDetails || firstDoc.proformaDetails || {};
+        const seriesName = details.invoiceSeries || details.seriesName || details.invoicePrefix || null;
+
+        try {
+            const { fetchAndResolveDocumentOptions } = require('./documentOptionsHelper');
+            docOptionsData = await fetchAndResolveDocumentOptions(actualUserId || rawUserId, docType, seriesName);
+        } catch (err) {
+            console.error('[PDF Generator] Error resolving document options:', err);
+            docOptionsData = {};
+        }
+
+        if (!docOptionsData || Object.keys(docOptionsData).length === 0) {
+            docOptionsData = { title: docType.toUpperCase() };
+        }
+
+        // --- SHARED HEADER DATA BUILDER (Strict Mapping & Safe Defaults) ---
+        // Merge User and Business data for contact details as some users store Name/Email in Business table
+        headerLeftData = {
+            companyName: businessData.companyName || fullUser.companyName || '',
+            address: businessData.address || fullUser.address || '',
+            city: businessData.city || fullUser.city || '',
+            state: businessData.state || fullUser.state || '',
+            pincode: businessData.pincode || fullUser.pincode || '',
+            gstin: businessData.gstin || fullUser.gstin || '',
+            businessLogo: businessData.businessLogo || businessData.logo || fullUser.businessLogo || ''
         };
 
-        // Conditional PAN Logic: Only if enabled in Print Settings
-        if (printSettings && printSettings.headerPrintSettings && printSettings.headerPrintSettings.showPan) {
-            // Check user PAN first, then potentially business PAN if user PAN missing? 
-            // Request said "User PAN", usually in User model.
+        headerRightData = {
+            fullName: fullUser.fullName || businessData.fullName || fullUser.name || '',
+            email: fullUser.email || businessData.email || '',
+            phone: fullUser.displayPhone || fullUser.phone || '',
+            pan: null
+        };
+
+        // Conditional PAN Logic
+        if (printSettings?.headerPrintSettings?.showPan) {
             if (fullUser.pan) {
                 headerRightData.pan = fullUser.pan;
             }
         }
 
     } catch (error) {
-        console.error('[PDF Generator] Error fetching data for header:', error);
-        // Emergency Fallback
-        headerLeftData = { companyName: 'Error Loading Data' };
-        headerRightData = { fullName: 'Error Loading Data' };
+        console.error('[PDF Generator] Critical error in header builder:', error);
+        headerLeftData = headerLeftData && Object.keys(headerLeftData).length ? headerLeftData : { companyName: '' };
+        headerRightData = headerRightData && Object.keys(headerRightData).length ? headerRightData : { fullName: '' };
     }
 
     // Support legacy string templateName or new config object
@@ -187,36 +321,65 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
         copies.forEach((copyType, copyIdx) => {
             const $ = cheerio.load(baseHtml);
 
-            // --- GLOBAL STYLE OVERRIDE: ENFORCE WHITE BACKGROUND ---
+            // --- PRINT CSS OVERRIDE: STRIP BACKGROUNDS BUT PRESERVE BOX STRUCTURE ---
             $('head').append(`
                 <style>
-                    body, .page-copy-container-wrapper, .page-copy-container-wrapper-letter, 
-                    .page-wrapper-table, .page-wrapper-tr, .page-wrapper-tr-letter {
-                        background-color: #ffffff !important;
-                        background: #ffffff !important;
-                        box-shadow: none !important;
-                        -webkit-box-shadow: none !important;
-                    }
-                    .page-wrapper-tr, .page-wrapper-tr-letter {
-                        margin: 0 !important;
-                        border: none !important;
-                    }
-                    /* Reduce outer padding and margins for compact layout */
-                    .page-wrapper, .page-wrapper-letter {
-                        padding: 10px !important;
-                    }
-                    .page-wrapper-table {
-                        margin: 0 auto !important;
-                    }
-                    body {
-                        margin: 0 !important;
-                        padding: 0 !important;
+                    @media print {
+                        * {
+                            background-color: transparent !important;
+                            background-image: none !important;
+                            box-shadow: none !important;
+                        }
+                        body, .page-copy-container-wrapper, .page-wrapper, .page-wrapper-table {
+                            background: none !important;
+                            background-color: transparent !important;
+                        }
+                        /* Lock layout width to 800px and clear print-specific margins */
+                        body { width: 800px !important; margin: 0 !important; padding: 0 !important; }
+                        * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                     }
                 </style>
             `);
 
-            // --- REMOVED EXPLICIT GLOBAL HEADER INJECTION TO FIX DUPLICATION ---
-            // The template already has a header section (.branding table). We will populate THAT instead.
+            // Resolve Logo (Must be done before generating branding HTML)
+            let logoSrc = '';
+            const invoiceDetails = doc.invoiceDetails || doc.quotationDetails || doc.deliveryChallanDetails || doc.proformaDetails || {};
+            let rawLogoPath = options.overrideLogoPath || invoiceDetails.logo || headerLeftData.businessLogo || '';
+
+            if (rawLogoPath) {
+                if (rawLogoPath.startsWith('http')) {
+                    logoSrc = rawLogoPath;
+                } else if (rawLogoPath.startsWith('data:image')) {
+                    logoSrc = rawLogoPath;
+                } else {
+                    try {
+                        let logoPath = path.resolve(rawLogoPath);
+                        if (!fs.existsSync(logoPath)) {
+                            // Try resolving relative to various possible roots
+                            const pathsToTry = [
+                                path.join(__dirname, '..', rawLogoPath),
+                                path.join(__dirname, '..', '..', rawLogoPath),
+                                path.join(process.cwd(), rawLogoPath),
+                                path.join(process.cwd(), 'backend', rawLogoPath)
+                            ];
+                            for (const p of pathsToTry) {
+                                if (fs.existsSync(p)) {
+                                    logoPath = p;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (fs.existsSync(logoPath)) {
+                            const bitmap = fs.readFileSync(logoPath);
+                            const ext = path.extname(logoPath).split('.').pop() || 'png';
+                            logoSrc = `data:image/${ext};base64,${bitmap.toString('base64')}`;
+                        }
+                    } catch (e) {
+                        console.error('[PDF Generator] Logo resolution error:', e);
+                    }
+                }
+            }
 
             // Map copy type to proper label
             const copyLabels = {
@@ -227,25 +390,98 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
             };
             const copyLabel = copyLabels[copyType] || `${copyType.toUpperCase()} COPY`;
 
+            // Determine Title
+            // Priority: Options Override > Document Options (DB) > Default 'SALE INVOICE'
+            const resolvedDocumentTitle = options.titleLabel || docOptionsData.title || (docType === 'Sale Invoice' ? 'SALE INVOICE' : docType.toUpperCase());
+            const titleToUse = resolvedDocumentTitle;
+
             // Check if template requires title section (templates 5-11)
             const templatesWithTitle = ['Template-5', 'Template-6', 'Template-7', 'Template-8', 'Template-9', 'Template-10', 'Template-11'];
             const shouldShowTitle = templatesWithTitle.includes(templateName);
 
-            // Generate combined header (title only if needed)
+            // --- INJECT DATA INTO EXISTING TEMPLATE HEADER ---
+            // We favor populating the template's own elements to respect its structure.
+
+            // 1. SET DOCUMENT INFO
+            $('.invoice-title').text(titleToUse);
+
             if (shouldShowTitle) {
-                const titleSectionHtml = generateTitleSection(docType, copyLabel);
-                // Try to inject inside .page-wrapper first, fallback to .page-header, then body
+                $('.copyname').text('');
+                $('#headersec h3, .page-header h3').each(function () {
+                    if ($(this).text().trim() === 'TAX INVOICE') {
+                        $(this).text('');
+                    }
+                });
+            } else {
+                $('.copyname').text(copyLabel);
+            }
+
+            // 2. POPULATE BRANDING (Populate existing template elements if present)
+            // LEFT SECTION: Business Details
+            $('.org_orgname').text(headerLeftData.companyName || "").css('text-align', 'left');
+
+            let addressHtml = headerLeftData.address || "";
+            if (headerLeftData.city || headerLeftData.state || headerLeftData.pincode) {
+                addressHtml += `<br>${headerLeftData.city || ""}, ${headerLeftData.state || ""} - ${headerLeftData.pincode || ""}`;
+            }
+            if (headerLeftData.gstin) {
+                addressHtml += `<br><strong>GSTIN:</strong> ${headerLeftData.gstin}`;
+            }
+            $('.org_address').html(addressHtml).css('text-align', 'left');
+
+            // RIGHT SECTION: User Contact Details (Include labels to prevent them being wiped)
+            $('.org_contact_name').html(headerRightData.fullName ? `<b>Name</b> : ${headerRightData.fullName}` : "").css('text-align', 'right');
+            $('.org_phone').html(headerRightData.phone ? `<b>Phone</b> : ${headerRightData.phone}` : "").css('text-align', 'right');
+            $('.org_email').html(headerRightData.email ? `<b>Email</b> : ${headerRightData.email}` : "").css('text-align', 'right');
+
+            if (headerRightData.pan) {
+                const $rightCont = $('.org_phone').parent();
+                if ($rightCont.find('.org_pan_row').length === 0) {
+                    $rightCont.append(`<div class="org_pan_row" style="text-align: right;"><b>PAN</b> : ${headerRightData.pan}</div>`);
+                }
+            }
+
+            // Handle Logo Substitution
+            if (logoSrc) {
+                if ($('.company-logo').length > 0) {
+                    $('.company-logo').attr('src', logoSrc);
+                } else if ($('.org_orgname').length > 0) {
+                    $('.org_orgname').before(`<img src="${logoSrc}" class="company-logo" alt="Logo" style="max-height: 50px; display: block; margin-bottom: 5px;">`);
+                }
+            }
+
+            // --- OPTIONAL INJECTION (Only if template is bare) ---
+            if ($('.org_orgname').length === 0 && $('.branding').length === 0) {
+                const brandingHtml = generateGlobalHeader(headerLeftData, headerRightData, logoSrc);
+
+                if (shouldShowTitle) {
+                    const titleSectionHtml = generateTitleSection(titleToUse, copyLabel);
+                    if ($('.page-wrapper').length > 0) {
+                        $('.page-wrapper').prepend(titleSectionHtml);
+                        $('.page-wrapper').prepend(brandingHtml);
+                    } else {
+                        $('body').prepend(titleSectionHtml);
+                        $('body').prepend(brandingHtml);
+                    }
+                } else {
+                    if ($('.page-wrapper').length > 0) {
+                        $('.page-wrapper').prepend(brandingHtml);
+                    } else {
+                        $('body').prepend(brandingHtml);
+                    }
+                }
+            } else if (shouldShowTitle) {
+                const titleSectionHtml = generateTitleSection(titleToUse, copyLabel);
+                // Just inject Title box if needed, branding already handled by population above
                 if ($('.page-wrapper').length > 0) {
                     $('.page-wrapper').prepend(titleSectionHtml);
-                } else if ($('.page-header').length > 0) {
-                    $('.page-header').before(titleSectionHtml);
                 } else {
                     $('body').prepend(titleSectionHtml);
                 }
             }
 
-            // --- 1. SET METADATA ---
-            $('.invoice-title').text(docType.toUpperCase());
+            // --- 2. SET DOCUMENT INFO ---
+            $('.invoice-title').text(titleToUse);
 
             if (shouldShowTitle) {
                 $('.copyname').text('');
@@ -256,102 +492,6 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                 });
             } else {
                 $('.copyname').text(copyLabel);
-            }
-
-            // --- 2. INJECT DATA INTO EXISTING TEMPLATE HEADER (Strict Separation) ---
-
-            // LEFT SECTION: Business Details
-            // Company Name
-            $('.org_orgname').text(headerLeftData.companyName || "").css('text-align', 'left');
-
-            // Address (Multi-line)
-            let addressHtml = headerLeftData.address || "";
-            if (headerLeftData.city || headerLeftData.state || headerLeftData.pincode) {
-                addressHtml += `<br>${headerLeftData.city || ""}, ${headerLeftData.state || ""} - ${headerLeftData.pincode || ""}`;
-            }
-            if (headerLeftData.gstin) {
-                addressHtml += `<br><strong>GSTIN:</strong> ${headerLeftData.gstin}`;
-            }
-            $('.org_address').html(addressHtml).css('text-align', 'left');
-
-
-            // RIGHT SECTION: User Contact Details
-            // We map these to the existing right-aligned table cells in the template
-
-            // Owner Name
-            $('.org_contact_name').html(`<b>Name</b> : ${headerRightData.fullName || ""}`).css('text-align', 'right');
-
-            // Phone
-            $('.org_phone').html(`<b>Phone</b> : ${headerRightData.phone || ""}`).css('text-align', 'right');
-
-            // Email & PAN (Injecting if not present in template or reusing existing structure if flexible)
-            // The default template has row for Name and Phone. We can append Email/PAN rows to the parent table body.
-            const $rightTableBody = $('.branding td[style*="text-align: right"] tbody');
-
-            // Clear existing Email/PAN rows to avoid duplication on re-runs (though cheerio load is fresh per loop)
-            $rightTableBody.find('.dynamic-contact-row').remove();
-
-            if (headerRightData.email) {
-                $rightTableBody.append(`
-                    <tr class="dynamic-contact-row">
-                        <td class="contact_details" style="text-align: right;">
-                            <b>Email</b> : ${headerRightData.email}
-                        </td>
-                    </tr>
-                `);
-            }
-
-            if (headerRightData.pan) {
-                $rightTableBody.append(`
-                    <tr class="dynamic-contact-row">
-                        <td class="contact_details" style="text-align: right;">
-                            <b>PAN</b> : ${headerRightData.pan}
-                        </td>
-                    </tr>
-                `);
-            }
-
-            // Handle Logo Substitution (If override or business logo exists)
-            // The template doesn't explicitly have an img tag for logo in strict default, 
-            // but we can inject it into the Left Section before company name if needed, 
-            // OR if the user meant "use HTML structure", we should see if HTML has a logo placeholder.
-            // HTML has no <img> in .org_orgname. We can prepend it if a logo exists.
-
-            let logoSrc = '';
-            let rawLogoPath = options.overrideLogoPath || headerLeftData.businessLogo;
-            if (rawLogoPath) {
-                if (rawLogoPath.startsWith('http')) {
-                    logoSrc = rawLogoPath;
-                } else {
-                    try {
-                        let logoPath = path.resolve(rawLogoPath);
-                        if (!fs.existsSync(logoPath)) {
-                            const fallbackPath = path.join(__dirname, '..', rawLogoPath);
-                            if (fs.existsSync(fallbackPath)) { logoPath = fallbackPath; }
-                        }
-                        if (fs.existsSync(logoPath)) {
-                            const bitmap = fs.readFileSync(logoPath);
-                            const ext = path.extname(logoPath).split('.').pop() || 'png';
-                            logoSrc = `data:image/${ext};base64,${bitmap.toString('base64')}`;
-                        }
-                    } catch (e) { /* ignore */ }
-                }
-            }
-
-            if (logoSrc) {
-                // Check if valid img alias exists or prepend to company name container
-                const $logoContainer = $('.org_orgname').parent().parent().parent(); // Moving up to main left table cell
-                // Actually, best to prepend to the .org_orgname's container or just before .org_orgname text
-                // Let's wrap .org_orgname text in a div and prepend img
-
-                // Ideally, we place it to the left of company name. The HTML structure is a table. 
-                // We can add a new cell/column for logo if we want side-by-side, or just block image above name.
-                // User wants "same structure as HTML". HTML has name top-left.
-                // let's put logo above name for now if not present.
-
-                if ($('.company-logo').length === 0) {
-                    $('.org_orgname').before(`<img src="${logoSrc}" class="company-logo" alt="Logo" style="max-height: 50px; display: block; margin-bottom: 5px;">`);
-                }
             }
 
             // Customer Info
@@ -430,12 +570,14 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
         fullPageHtml = fullPageHtml.replace('<html>', `<html><head>${backgroundOverrideStyle}</head>`);
     }
 
-    // Convert to PDF using Puppeteer
+    // Force rendering with high-fidelity layout parameters to prevent line breaks
     return await convertHtmlToPdf(fullPageHtml, {
-        format: printSize === 'Thermal-2inch' || printSize === 'Thermal-3inch' ? 'A4' : printSize, // Map thermal to A4 for now or handle specifically
+        format: printSize === 'Thermal-2inch' || printSize === 'Thermal-3inch' ? 'A4' : printSize,
         landscape: orientation === 'landscape',
         printBackground: true,
-        margin: { top: '2mm', right: '2mm', bottom: '2mm', left: '2mm' }
+        width: 800, // Force match to template layout width
+        scale: 0.95, // Re-apply 0.95 scaling for single-page fit
+        margin: { top: '0', right: '0', bottom: '0', left: '0' } // Clear default margins
     });
 };
 
