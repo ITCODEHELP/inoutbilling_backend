@@ -137,6 +137,11 @@ const getProductStats = async (req, res) => {
 const createProduct = async (req, res) => {
     try {
         const body = { ...req.body };
+        
+        // Ensure itemType is properly set
+        if (!body.itemType) {
+            body.itemType = 'Product';
+        }
 
         // Handle images
         if (req.files && req.files.length > 0) {
@@ -232,7 +237,10 @@ const getProducts = async (req, res) => {
         const total = await Product.countDocuments(query);
 
         res.status(200).json({
-            data: products,
+            data: products.map(p => ({
+                ...p.toObject(),
+                category: p.productGroup // Map productGroup to category for frontend consistency
+            })),
             pagination: {
                 total,
                 page,

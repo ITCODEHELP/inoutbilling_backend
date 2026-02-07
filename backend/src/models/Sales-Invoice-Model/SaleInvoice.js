@@ -85,6 +85,17 @@ const saleInvoiceSchema = new mongoose.Schema({
         index: true
     },
 
+    paidAmount: {
+        type: Number,
+        default: 0
+    },
+
+    status: {
+        type: String,
+        enum: ['Paid', 'Unpaid', 'Partial', 'Draft'],
+        default: 'Unpaid'
+    },
+
     // Conversions
     conversions: {
         convertedTo: [{
@@ -135,8 +146,19 @@ const saleInvoiceSchema = new mongoose.Schema({
 
     transportDetails: {
         lrNo: { type: String, index: true },
+        documentNo: { type: String },
+        documentDate: { type: Date },
+        dispatchThrough: { type: String },
+        transportName: { type: String },
+        transportIdGstin: { type: String },
         vehicleNo: { type: String },
-        transportName: { type: String }
+        station: { type: String },
+        distance: { type: String }
+    },
+
+    customFields: {
+        type: mongoose.Schema.Types.Mixed,
+        default: {}
     },
 
     deliveryChallanId: {

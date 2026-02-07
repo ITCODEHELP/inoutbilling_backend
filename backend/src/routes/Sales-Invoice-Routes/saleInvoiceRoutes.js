@@ -29,6 +29,7 @@ router.post('/:id/share-whatsapp', protect, SaleInvoiceController.shareWhatsApp)
 router.post('/:id/share-sms', protect, SaleInvoiceController.shareSMS);
 router.post('/:id/duplicate', protect, SaleInvoiceController.duplicateInvoice);
 router.post('/:id/cancel', protect, SaleInvoiceController.cancelInvoice);
+router.post('/:id/restore', protect, SaleInvoiceController.restoreInvoice);
 router.post('/:id/attach', protect, invoiceAttachment.array('attachments', 5), SaleInvoiceController.attachFileToInvoice);
 router.post('/:id/generate-barcode', protect, SaleInvoiceController.generateBarcodeForInvoice);
 

@@ -275,7 +275,7 @@ const handleCreateInvoiceLogic = async (req) => {
         // Parse individual nested fields if they are strings (for backward compatibility or direct form-data fields)
         const nestedFields = [
             'customerInformation', 'invoiceDetails', 'items', 'additionalCharges',
-            'totals', 'conversions', 'eWayBill', 'termsAndConditions'
+            'totals', 'conversions', 'eWayBill', 'termsAndConditions', 'customFields'
         ];
         nestedFields.forEach(field => {
             if (bodyData[field] && typeof bodyData[field] === 'string') {
@@ -310,6 +310,11 @@ const handleCreateInvoiceLogic = async (req) => {
                 normalizedItem.price = Number(item.rate);
             } else if (item.price) {
                 normalizedItem.price = Number(item.price);
+            }
+
+            // Normalize HSN/SAC
+            if (item.hsnCode && !item.hsnSac) {
+                normalizedItem.hsnSac = item.hsnCode;
             }
 
             return normalizedItem;
@@ -417,6 +422,15 @@ const handleCreateInvoiceLogic = async (req) => {
     const userData = await User.findById(req.user._id);
     const options = getCopyOptions(req);
     const printConfig = await getSelectedPrintTemplate(req.user._id, 'Sale Invoice', bodyData.branch);
+
+    // Check for attached logo (first image file)
+    if (req.files && req.files.length > 0) {
+        const imageFile = req.files.find(f => f.mimetype.startsWith('image/'));
+        if (imageFile) {
+            options.overrideLogoPath = imageFile.path;
+        }
+    }
+
     const pdfBuffer = await generateSaleInvoicePDF(invoice, userData, options, 'Sale Invoice', printConfig);
 
     // Save PDF to disk (optional but recommended for persistence)
@@ -451,6 +465,19 @@ const createInvoice = async (req, res) => {
         });
 
     } catch (error) {
+        // Cleanup: Delete uploaded files if creation fails
+        if (req.files && req.files.length > 0) {
+            req.files.forEach(file => {
+                if (file.path && fs.existsSync(file.path)) {
+                    try {
+                        fs.unlinkSync(file.path);
+                    } catch (unlinkErr) {
+                        console.error(`[Cleanup] Failed to delete file ${file.path}:`, unlinkErr);
+                    }
+                }
+            });
+        }
+
         if (error.code === 11000) {
             return res.status(400).json({ success: false, message: "Invoice number must be unique" });
         }
@@ -473,6 +500,19 @@ const createInvoiceAndPrint = async (req, res) => {
         return res.status(200).send(pdfBuffer);
 
     } catch (error) {
+        // Cleanup: Delete uploaded files if creation fails
+        if (req.files && req.files.length > 0) {
+            req.files.forEach(file => {
+                if (file.path && fs.existsSync(file.path)) {
+                    try {
+                        fs.unlinkSync(file.path);
+                    } catch (unlinkErr) {
+                        console.error(`[Cleanup] Failed to delete file ${file.path}:`, unlinkErr);
+                    }
+                }
+            });
+        }
+
         if (error.code === 11000) {
             return res.status(400).setHeader('Content-Type', 'application/json').json({ success: false, message: "Invoice number must be unique" });
         }
@@ -489,14 +529,15 @@ const resolveItemLogic = async (userId, itemInput) => {
         product = await Product.findOne({ _id: itemInput.productId, userId });
     } else if (itemInput.productName) {
         product = await Product.findOne({ name: itemInput.productName, userId });
-    } else if (itemInput.hsnSac) {
-        product = await Product.findOne({ hsnSac: itemInput.hsnSac, userId });
+    } else if (itemInput.hsnSac || itemInput.hsnCode) {
+        product = await Product.findOne({ hsnSac: itemInput.hsnSac || itemInput.hsnCode, userId });
     }
 
     if (!product) {
         // If no product found, return the item as is (manual entry)
         return {
             ...itemInput,
+            hsnSac: itemInput.hsnSac || itemInput.hsnCode || '',
             qty: Number(itemInput.qty || 1),
             price: Number(itemInput.price || 0),
             discountValue: Number(itemInput.discountValue || 0),
@@ -513,7 +554,7 @@ const resolveItemLogic = async (userId, itemInput) => {
         ...itemInput,
         productId: product._id,
         productName: itemInput.productName || product.name,
-        hsnSac: itemInput.hsnSac || product.hsnSac,
+        hsnSac: itemInput.hsnSac || itemInput.hsnCode || product.hsnSac,
         uom: itemInput.uom || product.unitOfMeasurement,
         productGroup: itemInput.productGroup || product.productGroup,
         qty: Number(itemInput.qty || 1),
@@ -756,7 +797,7 @@ const handleCreateDynamicInvoiceLogic = async (req) => {
         bodyData = { ...req.body };
         const nestedFields = [
             'customerInformation', 'invoiceDetails', 'items', 'additionalCharges',
-            'totals', 'conversions', 'eWayBill', 'termsAndConditions'
+            'totals', 'conversions', 'eWayBill', 'termsAndConditions', 'customFields'
         ];
         nestedFields.forEach(field => {
             if (bodyData[field] && typeof bodyData[field] === 'string') {
@@ -1141,6 +1182,17 @@ const downloadInvoicePDF = async (req, res) => {
         const userData = await User.findById(req.user._id);
         const options = getCopyOptions(req);
         const printConfig = await getSelectedPrintTemplate(req.user._id, 'Sale Invoice', invoices[0].branch);
+
+        // --- Fix for Logo Persistence ---
+        // Check if the first invoice has an image attachment (Logo)
+        if (invoices.length > 0 && invoices[0].attachments && invoices[0].attachments.length > 0) {
+            const logoAttachment = invoices[0].attachments.find(att => att.mimeType && att.mimeType.startsWith('image/'));
+            if (logoAttachment) {
+                options.overrideLogoPath = logoAttachment.filePath;
+            }
+        }
+        // -------------------------------
+
         const pdfBuffer = await generateSaleInvoicePDF(invoices, userData, options, 'Sale Invoice', printConfig);
 
         const filename = invoices.length === 1 ? `Invoice_${invoices[0].invoiceDetails.invoiceNumber}.pdf` : `Merged_Invoices.pdf`;
@@ -1227,6 +1279,36 @@ const cancelInvoice = async (req, res) => {
         );
 
         res.status(200).json({ success: true, message: "Invoice cancelled successfully", data: invoice });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const restoreInvoice = async (req, res) => {
+    try {
+        const invoice = await SaleInvoice.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+
+        // Determine status based on payments
+        let newStatus = 'Unpaid';
+        if (invoice.paidAmount >= invoice.totals.grandTotal && invoice.totals.grandTotal > 0) {
+            newStatus = 'Paid';
+        } else if (invoice.paidAmount > 0) {
+            newStatus = 'Partial';
+        }
+
+        invoice.status = newStatus;
+        await invoice.save();
+
+        await recordActivity(
+            req,
+            'Restore',
+            'Sale Invoice',
+            `Invoice restored: ${invoice.invoiceDetails.invoiceNumber}`,
+            invoice.invoiceDetails.invoiceNumber
+        );
+
+        res.status(200).json({ success: true, message: "Invoice restored successfully", data: invoice });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -1387,7 +1469,7 @@ const convertToProformaInvoice = async (req, res) => {
         invoice.conversions.convertedTo.push({ docType: 'Proforma', docId: proforma._id });
         await invoice.save();
 
-        res.status(201).json({ success: true, message: "Converted to Proforma Invoice", data: proforma });
+        res.status(201).json({ success: true, message: "Converted to Proforma ", data: proforma });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -1539,7 +1621,7 @@ const updateInvoice = async (req, res) => {
             // Parse individual nested fields if they are strings
             const nestedFields = [
                 'customerInformation', 'invoiceDetails', 'items', 'additionalCharges',
-                'totals', 'conversions', 'eWayBill', 'termsAndConditions'
+                'totals', 'conversions', 'eWayBill', 'termsAndConditions', 'customFields', 'transportDetails'
             ];
             nestedFields.forEach(field => {
                 if (bodyData[field] && typeof bodyData[field] === 'string') {
@@ -1574,6 +1656,11 @@ const updateInvoice = async (req, res) => {
                     normalizedItem.price = Number(item.rate);
                 } else if (item.price) {
                     normalizedItem.price = Number(item.price);
+                }
+
+                // Normalize HSN/SAC
+                if (item.hsnCode && !item.hsnSac) {
+                    normalizedItem.hsnSac = item.hsnCode;
                 }
 
                 return normalizedItem;
@@ -1741,5 +1828,6 @@ module.exports = {
     viewInvoicePublic,
     updateInvoice,
     createDynamicInvoice,
-    resolveInvoiceItem
+    resolveInvoiceItem,
+    restoreInvoice
 };

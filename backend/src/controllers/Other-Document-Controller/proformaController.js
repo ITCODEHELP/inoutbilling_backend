@@ -962,6 +962,48 @@ const convertToPurchaseOrderData = async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
+// @route   GET /api/proformas/:id/convert-to-sale-order
+const convertToSaleOrderData = async (req, res) => {
+    try {
+        const proforma = await Proforma.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!proforma) return res.status(404).json({ success: false, message: 'Proforma not found' });
+
+        const data = proforma.toObject();
+        const mappedData = {
+            customerInformation: data.customerInformation,
+            shippingAddress: data.shippingAddress,
+            useSameShippingAddress: data.useSameShippingAddress,
+            items: data.items.map(item => ({
+                productName: item.productName,
+                productGroup: item.productGroup,
+                itemNote: item.itemNote,
+                hsnSac: item.hsnSac,
+                qty: item.qty,
+                uom: item.uom,
+                price: item.price,
+                discount: item.discount, // Proforma items usually have amount or % discount
+                igst: item.igst,
+                cgst: item.cgst,
+                sgst: item.sgst,
+                total: item.total
+            })),
+            additionalCharges: data.additionalCharges || [],
+            totals: data.totals,
+            staff: data.staff,
+            branch: data.branch,
+            bankDetails: data.bankDetails,
+            termsTitle: data.termsTitle,
+            termsDetails: data.termsDetails,
+            documentRemarks: data.documentRemarks,
+            customFields: data.customFields || {},
+            conversions: {
+                convertedFrom: { docType: 'Proforma', docId: proforma._id }
+            }
+        };
+        res.status(200).json({ success: true, message: 'Proforma data for Sale Order conversion retrieved', data: mappedData });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
 // @desc    Cancel Proforma
 // @route   POST /api/proformas/:id/cancel
 const cancelProforma = async (req, res) => {
@@ -1162,9 +1204,34 @@ const deleteProformaAttachment = async (req, res) => {
     }
 };
 
+// @desc    Get Next Proforma Number
+// @route   GET /api/proformas/next-number
+const getNextProformaNumber = async (req, res) => {
+    try {
+        const lastProforma = await Proforma.findOne({ userId: req.user._id })
+            .sort({ createdAt: -1 })
+            .select('proformaDetails.proformaNumber');
+
+        let nextNumber = 1;
+
+        if (lastProforma?.proformaDetails?.proformaNumber) {
+            const match = lastProforma.proformaDetails.proformaNumber.match(/\d+$/);
+            if (match) {
+                nextNumber = parseInt(match[0], 10) + 1;
+            }
+        }
+
+        const nextNo = `PI-${String(nextNumber).padStart(3, '0')}`;
+        res.status(200).json({ success: true, data: { nextNo } });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 module.exports = {
     createProforma,
     getProformas,
+    getNextProformaNumber,
     getProformaSummary,
     getProformaById,
     updateProforma,
@@ -1187,6 +1254,7 @@ module.exports = {
     convertToPurchaseInvoiceData,
     convertToChallanData,
     convertToPurchaseOrderData,
+    convertToSaleOrderData,
     cancelProforma,
     restoreProforma,
     attachProformaFile,

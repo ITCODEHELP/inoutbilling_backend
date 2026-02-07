@@ -73,7 +73,18 @@ const sendOtp = async (req, res) => {
         }
 
         const fullMobile = `91${mobile}`;
-        // console.log(`[Auth] SendOtp → ${fullMobile}`);
+        
+        // --- TEST USER BYPASS ---
+        if (mobile === '9876543210') {
+            await OTP.create({
+                mobile: fullMobile,
+                otp: 1111,
+                type: 'login', // or signup, doesn't matter for verify
+                expiryTime: new Date(Date.now() + 10 * 60 * 1000)
+            });
+            return res.status(200).json({ message: 'OTP sent successfully (Demo)' });
+        }
+        // ------------------------
 
         // Rate limit: Max 6 OTPs/24h (use lean() for speed)
         const since = new Date(Date.now() - 24 * 60 * 60 * 1000);

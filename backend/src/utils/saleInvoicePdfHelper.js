@@ -3,70 +3,44 @@ const path = require('path');
 const cheerio = require('cheerio');
 const { convertHtmlToPdf } = require('./puppeteerPdfHelper');
 const Business = require('../models/Login-Model/Business');
+const PrintOptions = require('../models/Setting-Model/PrintOptions');
 const User = require('../models/User-Model/User');
-const { fetchAndResolveDocumentOptions } = require('./documentOptionsHelper');
 
 /**
  * Centralized Template Mapping
  */
 const TEMPLATE_MAP = {
-    'Sale Invoice': {
-        'Default': 'saleinvoicedefault.html',
-        'Designed': 'saleinvoicedefault.html',
-        'Letterpad': 'saleinvoicedefault.html',
-        'Template-1': 'saleinvoice_1.html',
-        'Template-2': 'saleinvoice_2.html',
-        'Template-3': 'saleinvoice_3.html',
-        'Template-4': 'saleinvoice_4.html',
-        'Template-5': 'saleinvoice_5.html',
-        'Template-6': 'saleinvoice_6.html',
-        'Template-7': 'saleinvoice_7.html',
-        'Template-8': 'saleinvoice_8.html',
-        'Template-9': 'saleinvoice_9.html',
-        'Template-10': 'saleinvoice_10.html',
-        'Template-11': 'saleinvoice_11.html',
-        'Template-12': 'saleinvoice_12.html',
-        'Template-13': 'saleinvoice_13.html',
-        'A5-Default': 'saleinvoice_A5_1.html',
-        'A5-Designed': 'saleinvoice_A5_2_1.html',
-        'A5-Letterpad': 'saleinvoice_A5_3_1.html',
-        'Template-A5-4': 'saleinvoice_A5_4_1.html',
-        'Template-A5-5': 'saleinvoice_A5_5_1.html',
-        'Thermal-2inch': 'saleinvoice_thermal_1.html',
-        'Thermal-3inch': 'saleinvoice_thermal_2.html',
-        'Thermal-4inch': 'saleinvoice_thermal_3.html',
-    },
-    'Delivery Challan': { 'Default': 'saleinvoicedefault.html' },
-    'Quotation': { 'Default': 'saleinvoicedefault.html' },
-    'Purchase Invoice': { 'Default': 'saleinvoicedefault.html' },
-    'Proforma Invoice': { 'Default': 'saleinvoicedefault.html' },
-    'Purchase Order': { 'Default': 'saleinvoicedefault.html' },
-    'Sale Order': { 'Default': 'saleinvoicedefault.html' },
-    'Job Work': { 'Default': 'saleinvoicedefault.html' },
-    'Packing List': { 'Default': 'saleinvoicedefault.html' },
-    'Inward Payment': { 'Default': 'saleinvoicedefault.html' },
-    'Outward Payment': { 'Default': 'saleinvoicedefault.html' },
-    'Daily Expense': { 'Default': 'saleinvoicedefault.html' },
-    'Other Income': { 'Default': 'saleinvoicedefault.html' },
-    'Bank Ledger': { 'Default': 'saleinvoicedefault.html' },
+    'Default': 'saleinvoicedefault.html',
+    'Designed': 'saleinvoicedefault.html',
+    'Letterpad': 'saleinvoicedefault.html',
+    'Template-1': 'saleinvoice_1.html',
+    'Template-2': 'saleinvoice_2.html',
+    'Template-3': 'saleinvoice_3.html',
+    'Template-4': 'saleinvoice_4.html',
+    'Template-5': 'saleinvoice_5.html',
+    'Template-6': 'saleinvoice_6.html',
+    'Template-7': 'saleinvoice_7.html',
+    'Template-8': 'saleinvoice_8.html',
+    'Template-9': 'saleinvoice_9.html',
+    'Template-10': 'saleinvoice_10.html',
+    'Template-11': 'saleinvoice_11.html',
+    'Template-12': 'saleinvoice_12.html',
+    'Template-13': 'saleinvoice_13.html',
+    'A5-Default': 'saleinvoice_A5_1.html',
+    'A5-Designed': 'saleinvoice_A5_2_1.html',
+    'A5-Letterpad': 'saleinvoice_A5_3_1.html',
+    'Template-A5-4': 'saleinvoice_A5_4_1.html',
+    'Template-A5-5': 'saleinvoice_A5_5_1.html',
+    'Thermal-2inch': 'saleinvoice_thermal_1.html',
+    'Thermal-3inch': 'saleinvoice_thermal_2.html',
+    'Thermal-4inch': 'saleinvoice_thermal_3.html',
 };
 
 /**
  * Resolves template filename and validates existence
  */
-const resolveTemplateFile = (templateName, docType = 'Sale Invoice') => {
-    // 1. Try specific module map
-    let filename = '';
-    if (TEMPLATE_MAP[docType] && TEMPLATE_MAP[docType][templateName]) {
-        filename = TEMPLATE_MAP[docType][templateName];
-    } else if (TEMPLATE_MAP['Sale Invoice'] && TEMPLATE_MAP['Sale Invoice'][templateName]) {
-        // 2. Fallback to Sale Invoice map (reusing templates)
-        filename = TEMPLATE_MAP['Sale Invoice'][templateName];
-    } else {
-        filename = 'saleinvoicedefault.html';
-    }
-
-    // Construct full path
+const resolveTemplateFile = (templateName) => {
+    const filename = TEMPLATE_MAP[templateName] || 'saleinvoicedefault.html';
     const fullPath = path.join(__dirname, '..', 'Template', 'Sale-Invoice-Template', filename);
 
     if (!fs.existsSync(fullPath)) {
@@ -76,116 +50,14 @@ const resolveTemplateFile = (templateName, docType = 'Sale Invoice') => {
     return fullPath;
 };
 
-/**
- * Validates that required sections exist in the render payload and provides fallbacks.
- * Ensures strict separation of Header User Contact from other data sections.
- */
-const validateDocumentPayload = (normalized) => {
-    // 1. Ensure headerUserContact exists (Strict User Context)
-    if (!normalized.headerUserContact) {
-        normalized.headerUserContact = {
-            name: normalized.ownerName || "",
-            phone: normalized.companyPhone || "",
-            email: normalized.companyEmail || ""
-        };
-    }
-
-    // 2. Ensure customerSection (party) exists
-    // Fallback to module-specific data if available to preserve legacy template bindings
-    if (!normalized.party || !normalized.party.name) {
-        const recipient = normalized.customerInformation || normalized.vendorInformation || normalized.partyDetails || {};
-        normalized.party = {
-            name: recipient.ms || recipient.companyName || recipient.name || "N/A",
-            address: recipient.address || "",
-            gstin: recipient.gstin || "",
-            phone: recipient.phone || "",
-            email: recipient.email || ""
-        };
-    }
-
-    // 3. Ensure documentTitle exists in header
-    if (!normalized.header || !normalized.header.title) {
-        normalized.header = normalized.header || {};
-        normalized.header.title = normalized.invoiceTitle || normalized.challanTitle || normalized.documentTitle || "DOCUMENT";
-    }
-
-    return normalized;
-};
-
-/**
- * Generates a global document header with company logo and details.
- * Right Section: Logged-in User Contact (strictly from Auth User Profile)
- */
-const generateGlobalHeader = (header, userContact) => {
-    const logoSrc = header.businessLogo
-        ? (header.businessLogo.startsWith('http')
-            ? header.businessLogo
-            : `file://${path.join(__dirname, '..', header.businessLogo)}`)
-        : '';
-
-    return `
-        <div class="global-document-header" style="
-            width: 100%;
-            padding: 5px 0;
-            margin-bottom: 8px;
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            background: #ffffff;
-            page-break-inside: avoid;
-            page-break-after: avoid;
-        ">
-            <!-- Left Section: Company Master Data -->
-            <div style="display: flex; align-items: flex-start; gap: 10px; flex: 1;">
-                ${logoSrc ? `
-                    <img src="${logoSrc}" alt="Company Logo" style="
-                        max-width: 60px;
-                        max-height: 60px;
-                        object-fit: contain;
-                    " onerror="this.style.display='none'">
-                ` : ''}
-                <div style="flex: 1;">
-                    <div style="
-                        font-family: Arial, Helvetica, sans-serif;
-                        font-size: 14px;
-                        font-weight: bold;
-                        color: #000000;
-                        margin-bottom: 2px;
-                    ">${header.companyName || ''}</div>
-                    <div style="
-                        font-family: Arial, Helvetica, sans-serif;
-                        font-size: 9px;
-                        color: #333333;
-                        line-height: 1.2;
-                    ">
-                        ${header.companyAddress || ''}<br>
-                        ${header.companyCity || ''}, ${header.companyState || ''} - ${header.companyPincode || ''}
-                    </div>
-                </div>
-            </div>
-
-            <!-- Right Section: Logged-in User Contact -->
-            <div style="
-                text-align: right;
-                font-family: Arial, Helvetica, sans-serif;
-                font-size: 9px;
-                color: #333333;
-                line-height: 1.4;
-                min-width: 160px;
-            ">
-                <div><strong>Name:</strong> ${userContact.name || ''}</div>
-                <div><strong>Phone:</strong> ${userContact.phone || ''}</div>
-                <div><strong>Email:</strong> ${userContact.email || ''}</div>
-            </div>
-        </div>
-    `;
-};
+// generateGlobalHeader function removed as it caused duplication. 
+// Header data is now mapped directly to the template structure in generateSaleInvoicePDF.
 
 /**
  * Generates title section for specific templates (5-11)
  * Displays document type and copy type above the global header
  */
-const generateTitleSection = (title, copyLabel) => {
+const generateTitleSection = (docType, copyLabel) => {
     return `
         <div class="document-title-section" style="
             width: 100%;
@@ -203,7 +75,7 @@ const generateTitleSection = (title, copyLabel) => {
                 font-size: 16px;
                 font-weight: bold;
                 color: #0070c0;
-            ">${title}</div>
+            ">${docType.toUpperCase()}</div>
             <div style="
                 font-family: Arial, Helvetica, sans-serif;
                 font-size: 14px;
@@ -215,178 +87,80 @@ const generateTitleSection = (title, copyLabel) => {
 };
 
 /**
- * Normalizes varied document data structures into a unified render payload.
- */
-const normalizeDocumentData = (doc, docType, user, businessData, documentTitle, options = {}) => {
-    // 1. Recipient Normalization
-    const recipient = doc.customerInformation || doc.vendorInformation || doc.partyDetails || doc.vendorDetails || doc.target || {};
-
-    // 2. Document Details Normalization
-    const details = doc.invoiceDetails || doc.quotationDetails || doc.deliveryChallanDetails || doc.proformaDetails || doc.purchaseOrderDetails || doc.saleOrderDetails || doc.receiptDetails || doc.paymentDetails || doc.jobWorkDetails || doc.expenseDetails || {};
-
-    // Attempt to find document number in various nested structures
-    const docNum = details.invoiceNumber || details.quotationNumber || details.challanNumber || details.proformaNumber || details.orderNumber || details.receiptNumber || details.voucherNumber || details.jobWorkNumber || details.no || doc.no || "";
-
-    // Attempt to find date
-    const rawDate = details.date || doc.date || (doc.invoiceDetails && doc.invoiceDetails.date);
-    const docDate = rawDate ? new Date(rawDate).toLocaleDateString() : "";
-
-    // 3. Transport Details
-    const transport = doc.transportDetails || {};
-
-    // 4. Item Normalization
-    const items = (doc.items || doc.rows || []).map((item, index) => ({
-        srNo: index + 1,
-        productName: item.productName || item.productDescription || item.description || item.particulars || item.name || "N/A",
-        itemNote: item.itemNote || item.remarks || "",
-        hsnSac: item.hsnSac || "",
-        qty: item.qty || item.quantity || item.amount || 0,
-        uom: item.uom || "",
-        price: Number(item.price || item.rate || item.amount) || 0,
-        total: Number(item.total || item.amount) || 0,
-        debit: Number(item.debit) || 0,
-        credit: Number(item.credit) || 0,
-        balance: Number(item.balance) || 0,
-        date: item.date ? new Date(item.date).toLocaleDateString() : ""
-    }));
-
-    // 5. Totals Normalization
-    const totals = doc.totals || doc;
-    const normalizedTotals = {
-        totalTaxable: Number(totals.totalTaxable) || 0,
-        totalCGST: Number(totals.totalCGST) || 0,
-        totalSGST: Number(totals.totalSGST) || 0,
-        totalIGST: Number(totals.totalIGST) || 0,
-        grandTotal: Number(totals.grandTotal || totals.totalAmount || totals.totalAmountAfterTax || 0),
-        totalInWords: totals.totalInWords || totals.amountInWords || "",
-        totalQty: items.reduce((sum, item) => sum + (Number(item.qty) || 0), 0)
-    };
-
-    // 5.5 Custom Fields
-    const rawCF = doc.customFields || [];
-    let customFields = {};
-    if (Array.isArray(rawCF)) {
-        rawCF.forEach(cf => { if (cf.name) customFields[cf.name] = cf.value; });
-    } else if (rawCF instanceof Map) {
-        customFields = Object.fromEntries(rawCF);
-    } else {
-        customFields = rawCF;
-    }
-
-    // Dynamic Labels resolution
-    const labelTitle = options.titleLabel || documentTitle;
-    const labelNo = options.numLabel || (docType === 'Purchase Invoice' ? 'Purchase No.' : (docType === 'Delivery Challan' ? 'Challan No.' : (docType.includes('Payment') || docType.includes('Receipt') ? 'Voucher No.' : 'Invoice No.')));
-    const labelDate = options.dateLabel || 'Date';
-
-    // 6. Final Payload Assembly
-    // We merge into a copy of the original doc to ensure No fields are lost (Title, Customer section, etc.)
-    const normalized = {
-        ...doc,
-        header: {
-            title: labelTitle,
-            companyName: businessData.companyName || user.companyName || "",
-            companyAddress: businessData.address || user.address || "",
-            companyCity: businessData.city || user.city || "",
-            companyState: businessData.state || user.state || "",
-            companyPincode: businessData.pincode || user.pincode || "",
-            companyGstin: user.gstin || businessData.gstin || "",
-            ownerName: user.fullName || businessData.fullName || "",
-            businessLogo: user.businessLogo || businessData.businessLogo || ""
-        },
-        headerUserContact: {
-            name: user.fullName || businessData.fullName || "",
-            phone: user.displayPhone || user.phone || businessData.phone || "",
-            email: user.email || businessData.email || ""
-        },
-        party: {
-            name: recipient.ms || recipient.companyName || recipient.name || "",
-            address: recipient.address || (recipient.billingAddress ? recipient.billingAddress.street : ""),
-            gstin: recipient.gstinPan || recipient.gstin || recipient.gstNumber || "",
-            phone: recipient.phone || "",
-            email: recipient.email || "",
-            shipTo: recipient.shipTo || ""
-        },
-        details: {
-            docNo: docNum,
-            date: docDate,
-            docType: docType,
-            labelNo,
-            labelDate,
-            poNo: details.poNumber || doc.poNumber || "",
-            eWayBill: details.eWayBill || doc.eWayBill || "",
-            challanType: details.deliveryChallanType || "",
-            supplyType: details.supplyType || ""
-        },
-        transport: {
-            vehicleNo: transport.vehicleNo || "",
-            name: transport.transportName || "",
-            docNo: transport.documentNo || "",
-            mode: transport.dispatchThrough || transport.deliveryMode || "",
-            distance: transport.distance || ""
-        },
-        shippingAddress: doc.shippingAddress || {},
-        useSameShippingAddress: doc.useSameShippingAddress,
-        items,
-        totals: normalizedTotals,
-        customFields,
-        status: doc.status || "",
-        note: doc.documentRemarks || doc.remarks || "",
-        bankDetails: doc.bankDetails || {},
-        terms: {
-            title: doc.termsTitle || "Terms & Conditions",
-            details: doc.termsDetails || ""
-        }
-    };
-
-    return validateDocumentPayload(normalized);
-};
-
-/**
  * Main PDF Generation Logic using Puppeteer
  */
 const generateSaleInvoicePDF = async (documents, user, options = { original: true }, docType = 'Sale Invoice', printConfig = { selectedTemplate: 'Default', printSize: 'A4', printOrientation: 'Portrait' }) => {
     const docList = Array.isArray(documents) ? documents : [documents];
 
-    const userId = user.userId || user._id;
+    let fullUser = {};
     let businessData = {};
-    let fullUser = user;
+    let printSettings = {};
+
+    // Header Data Objects (Strict Separation)
+    let headerLeftData = {};
+    let headerRightData = {};
 
     try {
-        // Fetch full authenticated user profile for strict header contact mapping
-        const profile = await User.findOne({ userId }).lean();
-        if (profile) {
-            fullUser = { ...user, ...profile };
+        // Fetch full user data to ensure we have all fields for fallbacks
+        const userId = user.userId || user._id; // Handle both simplified and full user objects
+        fullUser = await User.findOne({ userId: userId }).lean() || {};
+
+        // Fetch Business Data
+        businessData = await Business.findOne({ userId: userId }).lean();
+
+        // Fetch Print Settings
+        if (fullUser._id) {
+            printSettings = await PrintOptions.findOne({ userId: fullUser._id }).lean();
         }
 
-        businessData = await Business.findOne({ userId }).lean();
-        if (!businessData) {
-            console.warn('[PDF Generator] Business data not found, using user data as fallback');
-            businessData = {
+        // --- PREPARE LEFT HEADER DATA (Business Details) ---
+        if (businessData) {
+            headerLeftData = {
+                companyName: businessData.companyName || fullUser.companyName || '',
+                address: businessData.address || fullUser.address || '',
+                city: businessData.city || fullUser.city || '',
+                state: businessData.state || fullUser.state || '',
+                pincode: businessData.pincode || fullUser.pincode || '',
+                gstin: businessData.gstin || fullUser.gstin || fullUser.gstNumber || '', // Check valid gstin fields
+                businessLogo: businessData.businessLogo || fullUser.businessLogo || ''
+            };
+        } else {
+            // Fallback to User Data completely if Business Data missing
+            console.warn('[PDF Generator] Business data not found, using full user data as fallback');
+            headerLeftData = {
                 companyName: fullUser.companyName || '',
-                fullName: fullUser.fullName || fullUser.username || '',
-                email: fullUser.email || '',
                 address: fullUser.address || '',
                 city: fullUser.city || '',
                 state: fullUser.state || '',
-                pincode: fullUser.pincode || ''
+                pincode: fullUser.pincode || '',
+                gstin: fullUser.gstin || fullUser.gstNumber || '',
+                businessLogo: fullUser.businessLogo || ''
             };
         }
-    } catch (error) {
-        console.error('[PDFGenerator] Error fetching data:', error);
-        businessData = {
-            companyName: fullUser.companyName || '',
-            fullName: fullUser.fullName || fullUser.username || '',
-            email: fullUser.email || '',
-            address: fullUser.address || '',
-            city: fullUser.city || '',
-            state: fullUser.state || '',
-            pincode: fullUser.pincode || ''
-        };
-    }
 
-    // Fetch Dynamic Document Options
-    const resolvedOptions = await fetchAndResolveDocumentOptions(userId, docType);
-    const documentTitle = resolvedOptions.title || docType.toUpperCase();
+        // --- PREPARE RIGHT HEADER DATA (User Contact w/ Conditional PAN) ---
+        headerRightData = {
+            fullName: fullUser.fullName || businessData?.fullName || '',
+            phone: fullUser.displayPhone || fullUser.phone || '', // Prioritize displayPhone
+            email: fullUser.email || businessData?.email || '',
+            pan: null // Default to null
+        };
+
+        // Conditional PAN Logic: Only if enabled in Print Settings
+        if (printSettings && printSettings.headerPrintSettings && printSettings.headerPrintSettings.showPan) {
+            // Check user PAN first, then potentially business PAN if user PAN missing? 
+            // Request said "User PAN", usually in User model.
+            if (fullUser.pan) {
+                headerRightData.pan = fullUser.pan;
+            }
+        }
+
+    } catch (error) {
+        console.error('[PDF Generator] Error fetching data for header:', error);
+        // Emergency Fallback
+        headerLeftData = { companyName: 'Error Loading Data' };
+        headerRightData = { fullName: 'Error Loading Data' };
+    }
 
     // Support legacy string templateName or new config object
     const config = typeof printConfig === 'string' ?
@@ -397,7 +171,7 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
     const printSize = config.printSize || 'A4';
     const orientation = (config.printOrientation || 'Portrait').toLowerCase();
 
-    const templatePath = resolveTemplateFile(templateName, docType);
+    const templatePath = resolveTemplateFile(templateName);
     let baseHtml = fs.readFileSync(templatePath, 'utf8');
 
     const copies = [];
@@ -409,7 +183,7 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
 
     let fullPageHtml = "";
 
-    docList.forEach((rawDoc, docIdx) => {
+    docList.forEach((doc, docIdx) => {
         copies.forEach((copyType, copyIdx) => {
             const $ = cheerio.load(baseHtml);
 
@@ -441,26 +215,8 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                 </style>
             `);
 
-            // --- Normalize Data ---
-            const doc = normalizeDocumentData(rawDoc, docType, fullUser, businessData, documentTitle, options);
-
-            // --- INJECT GLOBAL HEADER AT TOP OF PAGE WRAPPER ---
-            const globalHeaderHtml = generateGlobalHeader(doc.header, doc.headerUserContact);
-
-            // Deduplication: Surgical removal of branding only
-            // We remove .branding tables which usually hold seller info
-            // We DO NOT remove table.header if it's the only source of title/copyname for some templates
-            if ($('table.branding').length > 0) {
-                $('table.branding').remove();
-            } else if ($('.page-header').children('table').first().hasClass('header')) {
-                // If the first table is 'header', check if it has branding info
-                // If it ONLY has title/copyname, keep it. If it has branding, handle surgically.
-                const hasBranding = $('.org_orgname').length > 0 || $('.org_address').length > 0;
-                if (hasBranding && !templateName.includes('Template-3')) {
-                    // For most templates, if it has branding, we definitely want to hide the internal branding.
-                    $('.org_orgname').closest('table').hide();
-                }
-            }
+            // --- REMOVED EXPLICIT GLOBAL HEADER INJECTION TO FIX DUPLICATION ---
+            // The template already has a header section (.branding table). We will populate THAT instead.
 
             // Map copy type to proper label
             const copyLabels = {
@@ -475,43 +231,21 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
             const templatesWithTitle = ['Template-5', 'Template-6', 'Template-7', 'Template-8', 'Template-9', 'Template-10', 'Template-11'];
             const shouldShowTitle = templatesWithTitle.includes(templateName);
 
-            // Generate combined header (title + global header for specific templates)
-            let combinedHeader = globalHeaderHtml;
+            // Generate combined header (title only if needed)
             if (shouldShowTitle) {
-                const titleSectionHtml = generateTitleSection(doc.header.title, copyLabel);
-                combinedHeader = titleSectionHtml + globalHeaderHtml;
+                const titleSectionHtml = generateTitleSection(docType, copyLabel);
+                // Try to inject inside .page-wrapper first, fallback to .page-header, then body
+                if ($('.page-wrapper').length > 0) {
+                    $('.page-wrapper').prepend(titleSectionHtml);
+                } else if ($('.page-header').length > 0) {
+                    $('.page-header').before(titleSectionHtml);
+                } else {
+                    $('body').prepend(titleSectionHtml);
+                }
             }
-
-            // Inject into DOM
-            if ($('.page-wrapper').length > 0) {
-                $('.page-wrapper').prepend(combinedHeader);
-            } else if ($('.page-header').length > 0) {
-                $('.page-header').prepend(combinedHeader);
-            } else {
-                $('body').prepend(combinedHeader);
-            }
-
-            // Add CSS to prevent page breaks between header and content
-            $('head').append(`
-                <style>
-                    .global-document-header {
-                        width: 100% !important;
-                        page-break-inside: avoid !important;
-                        page-break-after: avoid !important;
-                    }
-                    .page-wrapper {
-                        page-break-inside: auto !important;
-                    }
-                </style>
-            `);
 
             // --- 1. SET METADATA ---
-            $('.invoice-title').text(doc.header.title);
-
-            // Bind User Contact specifically to right-side elements if they exist in legacy templates
-            $('.org_contact_name').html(`<b>Name</b> : ${doc.headerUserContact.name}`);
-            $('.org_phone').html(`<b>Phone</b> : ${doc.headerUserContact.phone}`);
-            $('.org_email').html(`<b>Email</b> : ${doc.headerUserContact.email}`);
+            $('.invoice-title').text(docType.toUpperCase());
 
             if (shouldShowTitle) {
                 $('.copyname').text('');
@@ -524,77 +258,143 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                 $('.copyname').text(copyLabel);
             }
 
-            // Centralized Dynamic Label mapping
-            $('.invoicedata_item_label').each(function () {
-                const text = $(this).text().trim();
-                if (text === 'Invoice No.' || text === 'Bill No.') {
-                    $(this).text(doc.details.labelNo);
-                } else if (text === 'Invoice Date' || text === 'Date') {
-                    $(this).text(doc.details.labelDate);
+            // --- 2. INJECT DATA INTO EXISTING TEMPLATE HEADER (Strict Separation) ---
+
+            // LEFT SECTION: Business Details
+            // Company Name
+            $('.org_orgname').text(headerLeftData.companyName || "").css('text-align', 'left');
+
+            // Address (Multi-line)
+            let addressHtml = headerLeftData.address || "";
+            if (headerLeftData.city || headerLeftData.state || headerLeftData.pincode) {
+                addressHtml += `<br>${headerLeftData.city || ""}, ${headerLeftData.state || ""} - ${headerLeftData.pincode || ""}`;
+            }
+            if (headerLeftData.gstin) {
+                addressHtml += `<br><strong>GSTIN:</strong> ${headerLeftData.gstin}`;
+            }
+            $('.org_address').html(addressHtml).css('text-align', 'left');
+
+
+            // RIGHT SECTION: User Contact Details
+            // We map these to the existing right-aligned table cells in the template
+
+            // Owner Name
+            $('.org_contact_name').html(`<b>Name</b> : ${headerRightData.fullName || ""}`).css('text-align', 'right');
+
+            // Phone
+            $('.org_phone').html(`<b>Phone</b> : ${headerRightData.phone || ""}`).css('text-align', 'right');
+
+            // Email & PAN (Injecting if not present in template or reusing existing structure if flexible)
+            // The default template has row for Name and Phone. We can append Email/PAN rows to the parent table body.
+            const $rightTableBody = $('.branding td[style*="text-align: right"] tbody');
+
+            // Clear existing Email/PAN rows to avoid duplication on re-runs (though cheerio load is fresh per loop)
+            $rightTableBody.find('.dynamic-contact-row').remove();
+
+            if (headerRightData.email) {
+                $rightTableBody.append(`
+                    <tr class="dynamic-contact-row">
+                        <td class="contact_details" style="text-align: right;">
+                            <b>Email</b> : ${headerRightData.email}
+                        </td>
+                    </tr>
+                `);
+            }
+
+            if (headerRightData.pan) {
+                $rightTableBody.append(`
+                    <tr class="dynamic-contact-row">
+                        <td class="contact_details" style="text-align: right;">
+                            <b>PAN</b> : ${headerRightData.pan}
+                        </td>
+                    </tr>
+                `);
+            }
+
+            // Handle Logo Substitution (If override or business logo exists)
+            // The template doesn't explicitly have an img tag for logo in strict default, 
+            // but we can inject it into the Left Section before company name if needed, 
+            // OR if the user meant "use HTML structure", we should see if HTML has a logo placeholder.
+            // HTML has no <img> in .org_orgname. We can prepend it if a logo exists.
+
+            let logoSrc = '';
+            let rawLogoPath = options.overrideLogoPath || headerLeftData.businessLogo;
+            if (rawLogoPath) {
+                if (rawLogoPath.startsWith('http')) {
+                    logoSrc = rawLogoPath;
+                } else {
+                    try {
+                        let logoPath = path.resolve(rawLogoPath);
+                        if (!fs.existsSync(logoPath)) {
+                            const fallbackPath = path.join(__dirname, '..', rawLogoPath);
+                            if (fs.existsSync(fallbackPath)) { logoPath = fallbackPath; }
+                        }
+                        if (fs.existsSync(logoPath)) {
+                            const bitmap = fs.readFileSync(logoPath);
+                            const ext = path.extname(logoPath).split('.').pop() || 'png';
+                            logoSrc = `data:image/${ext};base64,${bitmap.toString('base64')}`;
+                        }
+                    } catch (e) { /* ignore */ }
                 }
-            });
-
-            // --- 2. INJECT DATA ---
-            // Company Info
-            if (docType === 'Sale Invoice') {
-                $('.org_orgname').text(doc.header.companyName).css('text-align', 'left');
-                $('.org_address').text(`${doc.header.companyState} - ${doc.header.companyPincode}`).css('text-align', 'left');
-                $('.gstin span').text(`GSTIN: ${doc.header.companyGstin}`).css('text-align', 'left');
-                // Removed redundant org_contact_name and org_phone to prefer global header User Contact block
-            } else {
-                $('.org_orgname').text(doc.header.companyName);
-                $('.org_address').html(`${doc.header.companyAddress}<br>${doc.header.companyCity}, ${doc.header.companyState} - ${doc.header.companyPincode}`);
-                $('.gstin span').text(`GSTIN: ${doc.header.companyGstin}`);
             }
 
-            // Recipient Info
-            $('.company_name .special').text(doc.party.name);
-            $('.company_address td:last-child div').text(doc.party.address);
-            $('.cmp_gstno').text(doc.party.gstin);
-            if (doc.party.shipTo) $('.ship_to_address').text(doc.party.shipTo);
+            if (logoSrc) {
+                // Check if valid img alias exists or prepend to company name container
+                const $logoContainer = $('.org_orgname').parent().parent().parent(); // Moving up to main left table cell
+                // Actually, best to prepend to the .org_orgname's container or just before .org_orgname text
+                // Let's wrap .org_orgname text in a div and prepend img
 
-            // Document Details
-            $('.invoice_no .special').text(doc.details.docNo);
-            $('.invoice_date td:last-child').text(doc.details.date);
+                // Ideally, we place it to the left of company name. The HTML structure is a table. 
+                // We can add a new cell/column for logo if we want side-by-side, or just block image above name.
+                // User wants "same structure as HTML". HTML has name top-left.
+                // let's put logo above name for now if not present.
 
-            // Transport Details
-            const $infoTable = $('.invoicedata tbody');
-            if (doc.transport.vehicleNo || doc.transport.name) {
-                $infoTable.append(`<tr><td class="invoicedata_item_label">Transport Detail</td><td colspan="3">${doc.transport.name || ''} ${doc.transport.vehicleNo ? `(${doc.transport.vehicleNo})` : ''}</td></tr>`);
+                if ($('.company-logo').length === 0) {
+                    $('.org_orgname').before(`<img src="${logoSrc}" class="company-logo" alt="Logo" style="max-height: 50px; display: block; margin-bottom: 5px;">`);
+                }
             }
+
+            // Customer Info
+            if (doc.customerInformation) {
+                $('.company_name .special').text(doc.customerInformation.ms || "");
+                $('.company_address td:last-child div').text(doc.customerInformation.address || "");
+                $('.cmp_gstno').text(doc.customerInformation.gstinPan || "");
+            }
+
+            // Invoice Info
+            const details = doc.invoiceDetails || doc.quotationDetails || doc.deliveryChallanDetails || doc.proformaDetails || {};
+            const docNum = details.invoiceNumber || details.quotationNumber || details.challanNumber || details.proformaNumber || "";
+            const docDate = details.date ? new Date(details.date).toLocaleDateString() : "";
+
+            $('.invoice_no .special').text(docNum);
+            $('.invoice_date td:last-child').text(docDate);
 
             // Items Table
             const $tbody = $('#billdetailstbody tbody');
             const $rowTemplate = $tbody.find('tr').first().clone();
             $tbody.empty();
 
-            doc.items.forEach((item, index) => {
-                const $row = $rowTemplate.clone();
-                $row.find('.td-body-sr-no').text(index + 1);
-                let pName = item.productName;
-                if (item.itemNote) pName += `<br/><small style="font-size: 8px; color: #666;">${item.itemNote}</small>`;
-                $row.find('.td-body-product-name b').html(pName);
-                $row.find('.td-body-hsn-sac').text(item.hsnSac || "");
-                $row.find('.td-body-qty').text(item.qty + (item.uom ? ` ${item.uom}` : ''));
-                $row.find('.td-body-rate').text(item.price.toFixed(2));
-                $row.find('.td-body-item-total').text(item.total.toFixed(2));
-                $tbody.append($row);
-            });
-
-            // Totals
-            $('.footer-total-qty').text(doc.totals.totalQty.toFixed(2));
-            $('._footer_total').text(doc.totals.grandTotal.toFixed(2));
-            $('.amount_in_words').text(doc.totals.totalInWords);
-            if (doc.totals.totalCGST) $('.total_cgst').text(doc.totals.totalCGST.toFixed(2));
-            if (doc.totals.totalSGST) $('.total_sgst').text(doc.totals.totalSGST.toFixed(2));
-            if (doc.totals.totalIGST) $('.total_igst').text(doc.totals.totalIGST.toFixed(2));
-
-            // Status & Note
-            if (doc.status || doc.note) {
-                $('.footer-total-row').last().after(`<tr><td colspan="2" style="font-size: 10px; color: #666; padding: 5px;"><b>Status:</b> ${doc.status} ${doc.note ? `| <b>Note:</b> ${doc.note}` : ''}</td></tr>`);
+            if (doc.items && Array.isArray(doc.items)) {
+                doc.items.forEach((item, index) => {
+                    const $row = $rowTemplate.clone();
+                    $row.find('.td-body-sr-no').text(index + 1);
+                    $row.find('.td-body-product-name b').text(item.productName || item.productDescription || "N/A");
+                    $row.find('.td-body-hsn-sac').text(item.hsnSac || "");
+                    $row.find('.td-body-qty').text(item.qty || 0);
+                    $row.find('.td-body-rate').text((Number(item.price) || 0).toFixed(2));
+                    $row.find('.td-body-item-total').text((Number(item.total) || 0).toFixed(2));
+                    $tbody.append($row);
+                });
             }
 
-            $('.footer_seal_name').text(`For ${doc.header.companyName}`);
+            // Totals
+            if (doc.totals) {
+                const totalQty = (doc.items || []).reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
+                $('.footer-total-qty').text(totalQty.toFixed(2));
+                $('._footer_total').text((doc.totals.grandTotal || 0).toFixed(2));
+                $('.amount_in_words').text(doc.totals.totalInWords || "");
+            }
+            $('.footer_seal_name').text(`For ${user.companyName || "Company"}`);
 
             // Prepare for multi-page rendering
             const pageHtml = $.html();

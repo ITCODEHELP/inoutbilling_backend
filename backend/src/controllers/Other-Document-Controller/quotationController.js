@@ -10,6 +10,7 @@ const { getCopyOptions } = require('../../utils/pdfHelper');
 const { sendInvoiceEmail } = require('../../utils/emailHelper');
 const User = require('../../models/User-Model/User');
 const Customer = require('../../models/Customer-Vendor-Model/Customer');
+const { calculateShippingDistance } = require('../../utils/shippingHelper');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -205,8 +206,6 @@ const createQuotation = async (req, res) => {
             customFields,
             print
         } = req.body;
-
-        const { calculateShippingDistance } = require('../../utils/shippingHelper');
 
         // Distance Calculation
         let finalShippingAddress = req.body.shippingAddress || {};
@@ -521,7 +520,7 @@ const updateQuotation = async (req, res) => {
 
         const quotation = await Quotation.findOneAndUpdate(
             { _id: req.params.id, userId: req.user._id },
-            req.body,
+            { $set: req.body },
             { new: true, runValidators: true }
         ).populate('staff', 'fullName');
 
@@ -732,7 +731,7 @@ const convertToPurchaseInvoiceData = async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
-// @desc    Setup conversion to Proforma Invoice (Prefill Data)
+// @desc    Setup conversion to Proforma  (Prefill Data)
 // @route   GET /api/quotations/:id/convert-to-proforma
 const convertToProformaData = async (req, res) => {
     try {
@@ -1057,7 +1056,6 @@ const viewQuotationPublic = async (req, res) => {
     }
 };
 
-// @desc    Setup conversion to Sale Order (Prefill Data)
 // @route   GET /api/quotations/:id/convert-to-sale-order
 const convertToSaleOrderData = async (req, res) => {
     try {
@@ -1077,7 +1075,7 @@ const convertToSaleOrderData = async (req, res) => {
                 qty: item.qty,
                 uom: item.uom,
                 price: item.price,
-                discount: item.discount, // Quotation uses 'discount', Sale Order also uses 'discount'
+                discount: item.discount,
                 discountType: 'Percentage',
                 igst: item.igst,
                 cgst: item.cgst,
@@ -1102,9 +1100,34 @@ const convertToSaleOrderData = async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
+// @desc    Get Next Quotation Number
+// @route   GET /api/quotations/next-number
+const getNextQuotationNumber = async (req, res) => {
+    try {
+        const lastQuotation = await Quotation.findOne({ userId: req.user._id })
+            .sort({ createdAt: -1 })
+            .select('quotationDetails.quotationNumber');
+
+        let nextNumber = 1;
+
+        if (lastQuotation?.quotationDetails?.quotationNumber) {
+            const match = lastQuotation.quotationDetails.quotationNumber.match(/\d+$/);
+            if (match) {
+                nextNumber = parseInt(match[0], 10) + 1;
+            }
+        }
+
+        const nextNo = `QUO-${String(nextNumber).padStart(3, '0')}`;
+        res.status(200).json({ success: true, data: { nextNo } });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 module.exports = {
     createQuotation,
     getQuotations,
+    getNextQuotationNumber,
     getQuotationSummary,
     getQuotationById,
     updateQuotation,
