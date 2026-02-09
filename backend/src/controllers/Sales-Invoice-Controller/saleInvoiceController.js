@@ -1182,6 +1182,17 @@ const downloadInvoicePDF = async (req, res) => {
         const userData = await User.findById(req.user._id);
         const options = getCopyOptions(req);
         const printConfig = await getSelectedPrintTemplate(req.user._id, 'Sale Invoice', invoices[0].branch);
+
+        // --- Fix for Logo Persistence ---
+        // Check if the first invoice has an image attachment (Logo)
+        if (invoices.length > 0 && invoices[0].attachments && invoices[0].attachments.length > 0) {
+            const logoAttachment = invoices[0].attachments.find(att => att.mimeType && att.mimeType.startsWith('image/'));
+            if (logoAttachment) {
+                options.overrideLogoPath = logoAttachment.filePath;
+            }
+        }
+        // -------------------------------
+
         const pdfBuffer = await generateSaleInvoicePDF(invoices, userData, options, 'Sale Invoice', printConfig);
 
         const filename = invoices.length === 1 ? `Invoice_${invoices[0].invoiceDetails.invoiceNumber}.pdf` : `Merged_Invoices.pdf`;
