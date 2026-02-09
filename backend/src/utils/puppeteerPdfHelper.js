@@ -22,15 +22,34 @@ const convertHtmlToPdf = async (input, options = {}) => {
             format = 'A4',
             landscape = false,
             margin = { top: '10mm', right: '10mm', bottom: '10mm', left: '10mm' },
-            printBackground = true
+            printBackground = true,
+            executablePath,
+            width = 800,
+            scale = 1
         } = options;
 
-        browser = await puppeteer.launch({
+        const launchOptions = {
             headless: 'new',
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-        });
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--font-render-hinting=none']
+        };
+
+        // Use provided executablePath or fallback to common Windows locations if not found by Puppeteer
+        if (executablePath) {
+            launchOptions.executablePath = executablePath;
+        } else {
+            // Check common Windows Chrome path if Puppeteer doesn't find its own
+            const commonChromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+            if (fs.existsSync(commonChromePath)) {
+                launchOptions.executablePath = commonChromePath;
+            }
+        }
+
+        browser = await puppeteer.launch(launchOptions);
 
         const page = await browser.newPage();
+
+        // Match viewport to layout width to prevent line wrapping
+        await page.setViewport({ width: Number(width) || 800, height: 1123, deviceScaleFactor: 1 });
 
         if (input.startsWith('http') || (fs.existsSync(input) && path.isAbsolute(input))) {
             const url = input.startsWith('http') ? input : `file://${input}`;
@@ -39,11 +58,15 @@ const convertHtmlToPdf = async (input, options = {}) => {
             await page.setContent(input, { waitUntil: 'networkidle0', timeout: 30000 });
         }
 
+        // Ensure all fonts are loaded before rendering
+        await page.evaluateHandle(() => document.fonts.ready);
+
         const pdfBuffer = await page.pdf({
             format,
             landscape,
             margin,
             printBackground,
+            scale: Number(scale) || 1,
             displayHeaderFooter: false,
             preferCSSPageSize: true
         });

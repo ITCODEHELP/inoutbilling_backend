@@ -41,8 +41,11 @@ const AVAILABLE_TEMPLATES = [
     { name: 'A5-Default', category: 'a5', supportsPrintSettings: false },
     { name: 'A5-Designed', category: 'a5', supportsPrintSettings: false },
     { name: 'A5-Letterpad', category: 'a5', supportsPrintSettings: false },
+    { name: 'Template-A5-4', category: 'a5', supportsPrintSettings: false },
+    { name: 'Template-A5-5', category: 'a5', supportsPrintSettings: false },
     { name: 'Thermal-2inch', category: 'thermal', supportsPrintSettings: false },
-    { name: 'Thermal-3inch', category: 'thermal', supportsPrintSettings: false }
+    { name: 'Thermal-3inch', category: 'thermal', supportsPrintSettings: false },
+    { name: 'Thermal-4inch', category: 'thermal', supportsPrintSettings: false }
 ];
 
 /**

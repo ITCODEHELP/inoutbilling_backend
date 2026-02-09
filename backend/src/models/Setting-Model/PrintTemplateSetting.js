@@ -47,8 +47,11 @@ const templateConfigSchema = new mongoose.Schema({
             'A5-Default',
             'A5-Designed',
             'A5-Letterpad',
+            'Template-A5-4',
+            'Template-A5-5',
             'Thermal-2inch',
-            'Thermal-3inch'
+            'Thermal-3inch',
+            'Thermal-4inch'
         ],
         default: 'Default'
     },

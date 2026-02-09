@@ -155,9 +155,11 @@ const createJobWork = async (req, res) => {
             finalShippingAddress.distance = 0;
         }
 
-        // 🔹 Generate Job Work Number
-        const jobWorkNumber = await generateJobWorkNumber(req.user._id);
-        jobWorkDetails.jobWorkNumber = jobWorkNumber;
+        // 🔹 Generate Job Work Number if not provided
+        if (!jobWorkDetails.jobWorkNumber) {
+            const jobWorkNumber = await generateJobWorkNumber(req.user._id);
+            jobWorkDetails.jobWorkNumber = jobWorkNumber;
+        }
 
         // No Map conversion needed, using plain objects
         let parsedItems = Array.isArray(items) ? items : (typeof items === 'string' ? JSON.parse(items) : []);
@@ -222,14 +224,12 @@ const searchJobWorks = async (req, res) => {
             staffName,
             jobWorkNumber,
             total,
-            lrNo,
             itemNote,
             remarks,
             gstin,
             status,
             jobWorkType,
             shippingAddress,
-            advanceFilters, // Array of { field, operator, value }
             page = 1, limit = 10, sort = 'createdAt', order = 'desc'
         } = req.query;
 
@@ -277,12 +277,14 @@ const searchJobWorks = async (req, res) => {
         }
 
         // Status Mapping
+        // Status Mapping
         if (status) {
             const statusMap = {
-                'new': 'PENDING',
-                'pending': 'PENDING',
-                'in-work': 'IN PROGRESS',
-                'completed': 'COMPLETED'
+                'new': 'New',
+                'pending': 'Pending',
+                'in-work': 'In-Work',
+                'completed': 'Completed',
+                'cancelled': 'Cancelled'
             };
             const dbStatus = statusMap[status.toLowerCase()] || status;
             andFilters.push({ 'jobWorkDetails.status': dbStatus });
@@ -319,11 +321,7 @@ const searchJobWorks = async (req, res) => {
             andFilters.push({ staff: { $in: staffs.map(s => s._id) } });
         }
 
-        // LR No (from customFields if specified)
-        if (lrNo) {
-            // User requested mapping: lrNo -> customFields.lr_no
-            andFilters.push({ 'customFields.lr_no': { $regex: lrNo, $options: 'i' } });
-        }
+
 
         // Shipping Address
         if (shippingAddress) {
@@ -336,43 +334,7 @@ const searchJobWorks = async (req, res) => {
             });
         }
 
-        // 3. Advance Filters Array
-        let parsedAdvanceFilters = advanceFilters;
-        if (typeof advanceFilters === 'string') {
-            try { parsedAdvanceFilters = JSON.parse(advanceFilters); } catch (e) { parsedAdvanceFilters = []; }
-        }
 
-        if (Array.isArray(parsedAdvanceFilters)) {
-            parsedAdvanceFilters.forEach(af => {
-                if (af.field && af.operator) {
-                    const condition = {};
-                    let val = af.value;
-
-                    switch (af.operator) {
-                        case 'equals': condition[af.field] = val; break;
-                        case 'contains': condition[af.field] = { $regex: val, $options: 'i' }; break;
-                        case 'startsWith': condition[af.field] = { $regex: '^' + val, $options: 'i' }; break;
-                        case 'endsWith': condition[af.field] = { $regex: val + '$', $options: 'i' }; break;
-                        case 'gt': condition[af.field] = { $gt: isNaN(val) ? val : Number(val) }; break;
-                        case 'lt': condition[af.field] = { $lt: isNaN(val) ? val : Number(val) }; break;
-                        case 'between':
-                            if (val && typeof val === 'string' && val.includes(',')) {
-                                const [v1, v2] = val.split(',').map(v => isNaN(v.trim()) ? v.trim() : Number(v.trim()));
-                                condition[af.field] = { $gte: v1, $lte: v2 };
-                            }
-                            break;
-                        case 'in':
-                            if (Array.isArray(val)) {
-                                condition[af.field] = { $in: val };
-                            } else if (typeof val === 'string') {
-                                condition[af.field] = { $in: val.split(',').map(v => v.trim()) };
-                            }
-                            break;
-                    }
-                    if (Object.keys(condition).length > 0) andFilters.push(condition);
-                }
-            });
-        }
 
         if (andFilters.length > 0) {
             query.$and = andFilters;
@@ -574,9 +536,10 @@ const getJobWorkSummary = async (req, res) => {
         const summary = await getSummaryAggregation(req.user._id, query, JobWork);
 
         // Fetch status counts specifically for Job Work
+        // Dynamic approach: Pending = Not Completed AND Not Cancelled
         const pendingCount = await JobWork.countDocuments({
             ...query,
-            'jobWorkDetails.status': { $in: ['New', 'Pending', 'In-Work'] }
+            'jobWorkDetails.status': { $nin: ['Completed', 'Cancelled'] }
         });
         const completedCount = await JobWork.countDocuments({
             ...query,
