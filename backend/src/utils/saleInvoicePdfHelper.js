@@ -1,9 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 const cheerio = require('cheerio');
+const mongoose = require('mongoose');
 const { convertHtmlToPdf } = require('./puppeteerPdfHelper');
 const Business = require('../models/Login-Model/Business');
 const PrintOptions = require('../models/Setting-Model/PrintOptions');
+const User = require('../models/User-Model/User');
 
 /**
  * Centralized Template Mapping
@@ -50,31 +52,37 @@ const resolveTemplateFile = (templateName) => {
 };
 
 /**
- * Generates a global document header with company logo and details from Business table
- * This header is injected before template content for consistent branding
+ * Generates the unified branding header (Top Section)
  */
 const generateGlobalHeader = (businessData, userData, overrideLogoPath) => {
     let logoSrc = '';
 
     // Priority: Override Path > Business Logo
-    let rawLogoPath = overrideLogoPath || userData.businessLogo;
+    let rawLogoPath = overrideLogoPath || businessData.businessLogo || userData.businessLogo;
 
     if (rawLogoPath) {
         if (rawLogoPath.startsWith('http')) {
             logoSrc = rawLogoPath;
+        } else if (rawLogoPath.startsWith('data:image')) {
+            logoSrc = rawLogoPath; // Render Base64 directly
         } else {
             try {
-                // Determine absolute path. 
-                // userData.businessLogo is often relative to 'src' (e.g. 'uploads/...')
-                // overrideLogoPath (from multer) is relative to CWD (e.g. 'src/uploads/...')
-
-                let logoPath = path.resolve(rawLogoPath); // Try absolute/CWD relative first (Works for overrideLogoPath)
+                // Determine absolute path.
+                let logoPath = path.resolve(rawLogoPath);
 
                 if (!fs.existsSync(logoPath)) {
-                    // Fallback for old style relative paths relative to src/utils/.. -> src/
-                    const fallbackPath = path.join(__dirname, '..', rawLogoPath);
-                    if (fs.existsSync(fallbackPath)) {
-                        logoPath = fallbackPath;
+                    // Try resolving relative to various possible roots
+                    const pathsToTry = [
+                        path.join(process.cwd(), 'backend', 'src', 'uploads', 'logo', rawLogoPath),
+                        path.join(process.cwd(), 'src', 'uploads', 'logo', rawLogoPath),
+                        path.join(__dirname, '..', 'uploads', 'logo', rawLogoPath),
+                        path.join(__dirname, '..', rawLogoPath)
+                    ];
+                    for (const p of pathsToTry) {
+                        if (fs.existsSync(p)) {
+                            logoPath = p;
+                            break;
+                        }
                     }
                 }
 
@@ -84,7 +92,7 @@ const generateGlobalHeader = (businessData, userData, overrideLogoPath) => {
                     const base64 = bitmap.toString('base64');
                     logoSrc = `data:image/${ext};base64,${base64}`;
                 } else {
-                    console.warn(`[PDF Generator] Logo file not found. Tried: \n1. ${path.resolve(rawLogoPath)}\n2. ${path.join(__dirname, '..', rawLogoPath)}`);
+                    console.warn(`[PDF Generator] Logo file not found: ${rawLogoPath}`);
                 }
             } catch (err) {
                 console.error('[PDF Generator] Error loading logo:', err);
@@ -132,7 +140,7 @@ const generateGlobalHeader = (businessData, userData, overrideLogoPath) => {
                     </div>
                 </div>
             </div>
-
+ 
             <!-- Right Section: Contact Details -->
             <div style="
                 text-align: right;
@@ -150,7 +158,6 @@ const generateGlobalHeader = (businessData, userData, overrideLogoPath) => {
         </div>
     `;
 };
-
 /**
  * Generates title section for specific templates (5-11)
  * Displays document type and copy type above the global header
@@ -190,49 +197,103 @@ const generateTitleSection = (docType, copyLabel) => {
 const generateSaleInvoicePDF = async (documents, user, options = { original: true }, docType = 'Sale Invoice', printConfig = { selectedTemplate: 'Default', printSize: 'A4', printOrientation: 'Portrait' }) => {
     const docList = Array.isArray(documents) ? documents : [documents];
 
-    // Fetch Business data AND Print Settings
+    let fullUser = {};
     let businessData = {};
     let printSettings = {};
-    try {
-        // Business model uses String userId (custom ID)
-        businessData = await Business.findOne({ userId: user.userId || user._id }).lean();
+    let docOptionsData = {};
 
-        // PrintOptions model uses ObjectId userId (ref to User._id)
-        // Ensure we pass the ObjectId, not the String custom ID, to avoid CastError
-        if (user._id) {
-            printSettings = await PrintOptions.findOne({ userId: user._id }).lean();
+    // Header Data Objects (Strict Separation)
+    let headerLeftData = {};
+    let headerRightData = {};
+
+    // --- ROBUST HEADER DATA FETCHING ---
+    try {
+        const rawUserId = user.userId || user._id;
+
+        // 1. Resolve actual user profile (Check both String and ObjectId)
+        try {
+            fullUser = await User.findOne({
+                $or: [
+                    { userId: rawUserId },
+                    { _id: mongoose.Types.ObjectId.isValid(rawUserId) ? rawUserId : null }
+                ]
+            }).lean() || user;
+        } catch (e) {
+            console.error('[PDF Generator] User fetch failed:', e);
+            fullUser = user;
         }
 
+        // Use the definite string userId for all other related queries
+        const actualUserId = fullUser.userId || (typeof rawUserId === 'string' ? rawUserId : null);
 
-        if (!businessData) {
-            console.warn('[PDF Generator] Business data not found, using user data as fallback');
-            businessData = {
-                companyName: user.companyName || '',
-                fullName: user.fullName || user.username || '',
-                email: user.email || '',
-                address: user.address || '',
-                city: user.city || '',
-                state: user.state || '',
-                pincode: user.pincode || '',
-                showPan: false
-            };
-        } else {
-            // Attach showPan flag from PrintOptions to businessData for easier access in header
-            if (printSettings && printSettings.headerPrintSettings && printSettings.headerPrintSettings.showPan) {
-                businessData.showPan = true;
+        // 2. Fetch Business Credentials (String userId)
+        if (actualUserId) {
+            try {
+                businessData = await Business.findOne({ userId: actualUserId }).lean() || {};
+            } catch (e) {
+                console.error('[PDF Generator] Business fetch failed:', e);
+                businessData = {};
             }
         }
-    } catch (error) {
-        console.error('[PDF Generator] Error fetching Business data:', error);
-        businessData = {
-            companyName: user.companyName || '',
-            fullName: user.fullName || user.username || '',
-            email: user.email || '',
-            address: user.address || '',
-            city: user.city || '',
-            state: user.state || '',
-            pincode: user.pincode || ''
+
+        // 3. Fetch Print Settings (ObjectId)
+        try {
+            const printSearchId = fullUser._id || businessData._id || null;
+            if (printSearchId && mongoose.Types.ObjectId.isValid(printSearchId)) {
+                printSettings = await PrintOptions.findOne({ userId: printSearchId }).lean() || {};
+            }
+        } catch (e) {
+            console.error('[PDF Generator] PrintOptions fetch failed:', e);
+            printSettings = {};
+        }
+
+        // 4. Resolve Document Options (Title Overrides)
+        const firstDoc = docList[0] || {};
+        const details = firstDoc.invoiceDetails || firstDoc.quotationDetails || firstDoc.deliveryChallanDetails || firstDoc.proformaDetails || {};
+        const seriesName = details.invoiceSeries || details.seriesName || details.invoicePrefix || null;
+
+        try {
+            const { fetchAndResolveDocumentOptions } = require('./documentOptionsHelper');
+            docOptionsData = await fetchAndResolveDocumentOptions(actualUserId || rawUserId, docType, seriesName);
+        } catch (err) {
+            console.error('[PDF Generator] Error resolving document options:', err);
+            docOptionsData = {};
+        }
+
+        if (!docOptionsData || Object.keys(docOptionsData).length === 0) {
+            docOptionsData = { title: docType.toUpperCase() };
+        }
+
+        // --- SHARED HEADER DATA BUILDER (Strict Mapping & Safe Defaults) ---
+        // Merge User and Business data for contact details as some users store Name/Email in Business table
+        headerLeftData = {
+            companyName: businessData.companyName || fullUser.companyName || '',
+            address: businessData.address || fullUser.address || '',
+            city: businessData.city || fullUser.city || '',
+            state: businessData.state || fullUser.state || '',
+            pincode: businessData.pincode || fullUser.pincode || '',
+            gstin: businessData.gstin || fullUser.gstin || '',
+            businessLogo: businessData.businessLogo || businessData.logo || fullUser.businessLogo || ''
         };
+
+        headerRightData = {
+            fullName: fullUser.fullName || businessData.fullName || fullUser.name || '',
+            email: fullUser.email || businessData.email || '',
+            phone: fullUser.displayPhone || fullUser.phone || '',
+            pan: null
+        };
+
+        // Conditional PAN Logic
+        if (printSettings?.headerPrintSettings?.showPan) {
+            if (fullUser.pan) {
+                headerRightData.pan = fullUser.pan;
+            }
+        }
+
+    } catch (error) {
+        console.error('[PDF Generator] Critical error in header builder:', error);
+        headerLeftData = headerLeftData && Object.keys(headerLeftData).length ? headerLeftData : { companyName: '' };
+        headerRightData = headerRightData && Object.keys(headerRightData).length ? headerRightData : { fullName: '' };
     }
 
     // Support legacy string templateName or new config object
@@ -260,36 +321,65 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
         copies.forEach((copyType, copyIdx) => {
             const $ = cheerio.load(baseHtml);
 
-            // --- GLOBAL STYLE OVERRIDE: ENFORCE WHITE BACKGROUND ---
+            // --- PRINT CSS OVERRIDE: STRIP BACKGROUNDS BUT PRESERVE BOX STRUCTURE ---
             $('head').append(`
                 <style>
-                    body, .page-copy-container-wrapper, .page-copy-container-wrapper-letter, 
-                    .page-wrapper-table, .page-wrapper-tr, .page-wrapper-tr-letter {
-                        background-color: #ffffff !important;
-                        background: #ffffff !important;
-                        box-shadow: none !important;
-                        -webkit-box-shadow: none !important;
-                    }
-                    .page-wrapper-tr, .page-wrapper-tr-letter {
-                        margin: 0 !important;
-                        border: none !important;
-                    }
-                    /* Reduce outer padding and margins for compact layout */
-                    .page-wrapper, .page-wrapper-letter {
-                        padding: 10px !important;
-                    }
-                    .page-wrapper-table {
-                        margin: 0 auto !important;
-                    }
-                    body {
-                        margin: 0 !important;
-                        padding: 0 !important;
+                    @media print {
+                        * {
+                            background-color: transparent !important;
+                            background-image: none !important;
+                            box-shadow: none !important;
+                        }
+                        body, .page-copy-container-wrapper, .page-wrapper, .page-wrapper-table {
+                            background: none !important;
+                            background-color: transparent !important;
+                        }
+                        /* Lock layout width to 800px and clear print-specific margins */
+                        body { width: 800px !important; margin: 0 !important; padding: 0 !important; }
+                        * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                     }
                 </style>
             `);
 
-            // --- INJECT GLOBAL HEADER AT TOP OF PAGE WRAPPER ---
-            const globalHeaderHtml = generateGlobalHeader(businessData, user, options.overrideLogoPath);
+            // Resolve Logo (Must be done before generating branding HTML)
+            let logoSrc = '';
+            const invoiceDetails = doc.invoiceDetails || doc.quotationDetails || doc.deliveryChallanDetails || doc.proformaDetails || {};
+            let rawLogoPath = options.overrideLogoPath || invoiceDetails.logo || headerLeftData.businessLogo || '';
+
+            if (rawLogoPath) {
+                if (rawLogoPath.startsWith('http')) {
+                    logoSrc = rawLogoPath;
+                } else if (rawLogoPath.startsWith('data:image')) {
+                    logoSrc = rawLogoPath;
+                } else {
+                    try {
+                        let logoPath = path.resolve(rawLogoPath);
+                        if (!fs.existsSync(logoPath)) {
+                            // Try resolving relative to various possible roots
+                            const pathsToTry = [
+                                path.join(__dirname, '..', rawLogoPath),
+                                path.join(__dirname, '..', '..', rawLogoPath),
+                                path.join(process.cwd(), rawLogoPath),
+                                path.join(process.cwd(), 'backend', rawLogoPath)
+                            ];
+                            for (const p of pathsToTry) {
+                                if (fs.existsSync(p)) {
+                                    logoPath = p;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (fs.existsSync(logoPath)) {
+                            const bitmap = fs.readFileSync(logoPath);
+                            const ext = path.extname(logoPath).split('.').pop() || 'png';
+                            logoSrc = `data:image/${ext};base64,${bitmap.toString('base64')}`;
+                        }
+                    } catch (e) {
+                        console.error('[PDF Generator] Logo resolution error:', e);
+                    }
+                }
+            }
 
             // Map copy type to proper label
             const copyLabels = {
@@ -300,44 +390,98 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
             };
             const copyLabel = copyLabels[copyType] || `${copyType.toUpperCase()} COPY`;
 
+            // Determine Title
+            // Priority: Options Override > Document Options (DB) > Default 'SALE INVOICE'
+            const resolvedDocumentTitle = options.titleLabel || docOptionsData.title || (docType === 'Sale Invoice' ? 'SALE INVOICE' : docType.toUpperCase());
+            const titleToUse = resolvedDocumentTitle;
+
             // Check if template requires title section (templates 5-11)
             const templatesWithTitle = ['Template-5', 'Template-6', 'Template-7', 'Template-8', 'Template-9', 'Template-10', 'Template-11'];
             const shouldShowTitle = templatesWithTitle.includes(templateName);
 
-            // Generate combined header (title + global header for specific templates)
-            let combinedHeader = globalHeaderHtml;
+            // --- INJECT DATA INTO EXISTING TEMPLATE HEADER ---
+            // We favor populating the template's own elements to respect its structure.
+
+            // 1. SET DOCUMENT INFO
+            $('.invoice-title').text(titleToUse);
+
             if (shouldShowTitle) {
-                const titleSectionHtml = generateTitleSection(docType, copyLabel);
-                combinedHeader = titleSectionHtml + globalHeaderHtml;
-            }
-
-            // Try to inject inside .page-wrapper first, fallback to .page-header, then body
-            if ($('.page-wrapper').length > 0) {
-                $('.page-wrapper').prepend(combinedHeader);
-            } else if ($('.page-header').length > 0) {
-                $('.page-header').before(combinedHeader);
+                $('.copyname').text('');
+                $('#headersec h3, .page-header h3').each(function () {
+                    if ($(this).text().trim() === 'TAX INVOICE') {
+                        $(this).text('');
+                    }
+                });
             } else {
-                $('body').prepend(combinedHeader);
+                $('.copyname').text(copyLabel);
             }
 
-            // Add CSS to prevent page breaks between header and content
-            $('head').append(`
-                <style>
-                    .global-document-header {
-                        page-break-inside: avoid !important;
-                        page-break-after: avoid !important;
-                    }
-                    .page-wrapper {
-                        page-break-inside: auto !important;
-                    }
-                    .page-wrapper-tr {
-                        page-break-before: avoid !important;
-                    }
-                </style>
-            `);
+            // 2. POPULATE BRANDING (Populate existing template elements if present)
+            // LEFT SECTION: Business Details
+            $('.org_orgname').text(headerLeftData.companyName || "").css('text-align', 'left');
 
-            // --- 1. SET METADATA ---
-            $('.invoice-title').text(docType.toUpperCase());
+            let addressHtml = headerLeftData.address || "";
+            if (headerLeftData.city || headerLeftData.state || headerLeftData.pincode) {
+                addressHtml += `<br>${headerLeftData.city || ""}, ${headerLeftData.state || ""} - ${headerLeftData.pincode || ""}`;
+            }
+            if (headerLeftData.gstin) {
+                addressHtml += `<br><strong>GSTIN:</strong> ${headerLeftData.gstin}`;
+            }
+            $('.org_address').html(addressHtml).css('text-align', 'left');
+
+            // RIGHT SECTION: User Contact Details (Include labels to prevent them being wiped)
+            $('.org_contact_name').html(headerRightData.fullName ? `<b>Name</b> : ${headerRightData.fullName}` : "").css('text-align', 'right');
+            $('.org_phone').html(headerRightData.phone ? `<b>Phone</b> : ${headerRightData.phone}` : "").css('text-align', 'right');
+            $('.org_email').html(headerRightData.email ? `<b>Email</b> : ${headerRightData.email}` : "").css('text-align', 'right');
+
+            if (headerRightData.pan) {
+                const $rightCont = $('.org_phone').parent();
+                if ($rightCont.find('.org_pan_row').length === 0) {
+                    $rightCont.append(`<div class="org_pan_row" style="text-align: right;"><b>PAN</b> : ${headerRightData.pan}</div>`);
+                }
+            }
+
+            // Handle Logo Substitution
+            if (logoSrc) {
+                if ($('.company-logo').length > 0) {
+                    $('.company-logo').attr('src', logoSrc);
+                } else if ($('.org_orgname').length > 0) {
+                    $('.org_orgname').before(`<img src="${logoSrc}" class="company-logo" alt="Logo" style="max-height: 50px; display: block; margin-bottom: 5px;">`);
+                }
+            }
+
+            // --- OPTIONAL INJECTION (Only if template is bare) ---
+            if ($('.org_orgname').length === 0 && $('.branding').length === 0) {
+                const brandingHtml = generateGlobalHeader(headerLeftData, headerRightData, logoSrc);
+
+                if (shouldShowTitle) {
+                    const titleSectionHtml = generateTitleSection(titleToUse, copyLabel);
+                    if ($('.page-wrapper').length > 0) {
+                        $('.page-wrapper').prepend(titleSectionHtml);
+                        $('.page-wrapper').prepend(brandingHtml);
+                    } else {
+                        $('body').prepend(titleSectionHtml);
+                        $('body').prepend(brandingHtml);
+                    }
+                } else {
+                    if ($('.page-wrapper').length > 0) {
+                        $('.page-wrapper').prepend(brandingHtml);
+                    } else {
+                        $('body').prepend(brandingHtml);
+                    }
+                }
+            } else if (shouldShowTitle) {
+                const titleSectionHtml = generateTitleSection(titleToUse, copyLabel);
+                // Just inject Title box if needed, branding already handled by population above
+                if ($('.page-wrapper').length > 0) {
+                    $('.page-wrapper').prepend(titleSectionHtml);
+                } else {
+                    $('body').prepend(titleSectionHtml);
+                }
+            }
+
+            // --- 2. SET DOCUMENT INFO ---
+            $('.invoice-title').text(titleToUse);
 
             if (shouldShowTitle) {
                 $('.copyname').text('');
@@ -348,36 +492,6 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                 });
             } else {
                 $('.copyname').text(copyLabel);
-            }
-
-            // --- 2. INJECT DATA ---
-            // Company Info
-            if (docType === 'Sale Invoice') {
-                // Specific header for Sale Invoice as requested (Top-Left: Company, State, Pincode | Top-Right: Owner, Email, Phone)
-                $('.org_orgname').text(user.companyName || "").css('text-align', 'left');
-                $('.org_address').text(`${user.state || ""} - ${user.pincode || ""}`).css('text-align', 'left');
-                $('.gstin span').text(`GSTIN: ${user.gstin || ""}`).css('text-align', 'left');
-
-                $('.org_contact_name').html(`<b>Owner</b> : ${user.fullName || ""}`).css('text-align', 'right');
-                $('.org_phone').html(`<b>Phone</b> : ${user.phone || ""}`).css('text-align', 'right');
-
-                // Add email to the top-right branding table
-                const $rightTable = $('.branding td[style*="text-align: right"] tbody');
-                // Check if email row already exists to avoid duplication if multiple passes
-                if ($rightTable.find('.contact_details').length === 0) {
-                    $rightTable.append(`
-                        <tr>
-                            <td class="contact_details" style="text-align: right;">
-                                <b>Email</b> : ${user.email || ""}
-                            </td>
-                        </tr>
-                    `);
-                }
-            } else {
-                // Default header for other documents
-                $('.org_orgname').text(user.companyName || "");
-                $('.org_address').html(`${user.address || ""}<br>${user.city || ""}, ${user.state || ""} - ${user.pincode || ""}`);
-                $('.gstin span').text(`GSTIN: ${user.gstin || ""}`);
             }
 
             // Customer Info
@@ -456,12 +570,14 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
         fullPageHtml = fullPageHtml.replace('<html>', `<html><head>${backgroundOverrideStyle}</head>`);
     }
 
-    // Convert to PDF using Puppeteer
+    // Force rendering with high-fidelity layout parameters to prevent line breaks
     return await convertHtmlToPdf(fullPageHtml, {
-        format: printSize === 'Thermal-2inch' || printSize === 'Thermal-3inch' ? 'A4' : printSize, // Map thermal to A4 for now or handle specifically
+        format: printSize === 'Thermal-2inch' || printSize === 'Thermal-3inch' ? 'A4' : printSize,
         landscape: orientation === 'landscape',
         printBackground: true,
-        margin: { top: '2mm', right: '2mm', bottom: '2mm', left: '2mm' }
+        width: 800, // Force match to template layout width
+        scale: 0.95, // Re-apply 0.95 scaling for single-page fit
+        margin: { top: '0', right: '0', bottom: '0', left: '0' } // Clear default margins
     });
 };
 
