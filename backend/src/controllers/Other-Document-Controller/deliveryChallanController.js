@@ -986,10 +986,18 @@ const convertToSaleInvoiceData = async (req, res) => {
 
         const data = challan.toObject();
 
+        // Try to find the customer ID
+        const customer = await Customer.findOne({
+            userId: req.user._id,
+            companyName: data.customerInformation.ms
+        });
+
         const mappedData = {
+            customerId: customer ? customer._id : null,
             customerInformation: data.customerInformation,
             shippingAddress: data.shippingAddress,
             useSameShippingAddress: data.useSameShippingAddress,
+            deliveryMode: data.deliveryChallanDetails?.deliveryMode || 'HAND DELIVERY',
 
             items: data.items.map(item => ({
                 productName: item.productName,

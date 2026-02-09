@@ -123,14 +123,11 @@ const saveTemplateSettings = async (req, res) => {
             }
 
             // Check if template is A5 or Thermal, printSize and printOrientation should not be provided
+            // To be robust, we simply remove them if present instead of throwing an error
             const template = AVAILABLE_TEMPLATES.find(t => t.name === config.selectedTemplate);
             if (template && !template.supportsPrintSettings) {
-                if (config.printSize || config.printOrientation) {
-                    return res.status(400).json({
-                        success: false,
-                        message: `Template "${config.selectedTemplate}" does not support print size or orientation settings`
-                    });
-                }
+                if (config.printSize) delete config.printSize;
+                if (config.printOrientation) delete config.printOrientation;
             }
         }
 

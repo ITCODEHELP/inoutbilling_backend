@@ -11,6 +11,7 @@ const { getCopyOptions } = require('../../utils/pdfHelper');
 const { calculateShippingDistance } = require('../../utils/shippingHelper');
 const { sendProformaEmail, sendInvoiceEmail } = require('../../utils/emailHelper');
 const Customer = require('../../models/Customer-Vendor-Model/Customer');
+const Vendor = require('../../models/Customer-Vendor-Model/Vendor');
 const { recordActivity } = require('../../utils/activityLogHelper');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -803,10 +804,19 @@ const convertToSaleInvoiceData = async (req, res) => {
         if (!proforma) return res.status(404).json({ success: false, message: 'Proforma not found' });
 
         const data = proforma.toObject();
+
+        // Try to find the customer ID
+        const customer = await Customer.findOne({
+            userId: req.user._id,
+            companyName: data.customerInformation.ms
+        });
+
         const mappedData = {
+            customerId: customer ? customer._id : null,
             customerInformation: data.customerInformation,
             shippingAddress: data.shippingAddress,
             useSameShippingAddress: data.useSameShippingAddress,
+            deliveryMode: data.proformaDetails?.deliveryMode || 'HAND DELIVERY',
             items: data.items,
             additionalCharges: data.additionalCharges || [],
             totals: data.totals,
@@ -834,10 +844,18 @@ const convertToPurchaseInvoiceData = async (req, res) => {
         if (!proforma) return res.status(404).json({ success: false, message: 'Proforma not found' });
 
         const data = proforma.toObject();
+
+        const vendor = await Vendor.findOne({
+            userId: req.user._id,
+            companyName: data.customerInformation.ms
+        });
+
         const mappedData = {
+            vendorId: vendor ? vendor._id : null,
             vendorInformation: data.customerInformation, // Map Customer to Vendor
             shippingAddress: data.shippingAddress,
             useSameShippingAddress: data.useSameShippingAddress,
+            deliveryMode: data.proformaDetails?.deliveryMode || 'HAND DELIVERY',
             items: data.items,
             additionalCharges: data.additionalCharges || [],
             totals: data.totals,
@@ -864,10 +882,18 @@ const convertToChallanData = async (req, res) => {
         if (!proforma) return res.status(404).json({ success: false, message: 'Proforma not found' });
 
         const data = proforma.toObject();
+
+        const customer = await Customer.findOne({
+            userId: req.user._id,
+            companyName: data.customerInformation.ms
+        });
+
         const mappedData = {
+            customerId: customer ? customer._id : null,
             customerInformation: data.customerInformation,
             shippingAddress: data.shippingAddress,
             useSameShippingAddress: data.useSameShippingAddress,
+            deliveryMode: data.proformaDetails?.deliveryMode || 'HAND DELIVERY',
             items: data.items,
             additionalCharges: data.additionalCharges || [],
             totals: data.totals,
@@ -940,10 +966,22 @@ const convertToPurchaseOrderData = async (req, res) => {
         if (!proforma) return res.status(404).json({ success: false, message: 'Proforma not found' });
 
         const data = proforma.toObject();
+
+        // Try to find if this customer is also a vendor
+        const vendor = await Vendor.findOne({
+            userId: req.user._id,
+            $or: [
+                { companyName: data.customerInformation.ms },
+                { gstin: data.customerInformation.gstinPan }
+            ]
+        });
+
         const mappedData = {
+            vendorId: vendor ? vendor._id : null,
             vendorInformation: data.customerInformation, // Map Customer to Vendor
             shippingAddress: data.shippingAddress,
             useSameShippingAddress: data.useSameShippingAddress,
+            deliveryMode: data.proformaDetails?.deliveryMode || 'HAND DELIVERY',
             items: data.items,
             additionalCharges: data.additionalCharges || [],
             totals: data.totals,

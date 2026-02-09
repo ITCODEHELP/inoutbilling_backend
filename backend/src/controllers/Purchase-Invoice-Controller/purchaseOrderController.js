@@ -6,6 +6,7 @@ const Vendor = require('../../models/Customer-Vendor-Model/Vendor');
 const Quotation = require('../../models/Other-Document-Model/Quotation');
 const PurchaseInvoice = require('../../models/Purchase-Invoice-Model/PurchaseInvoice');
 const DeliveryChallan = require('../../models/Other-Document-Model/DeliveryChallan');
+const Proforma = require('../../models/Other-Document-Model/Proforma');
 const mongoose = require('mongoose');
 const { calculateDocumentTotals, getSummaryAggregation, getSelectedPrintTemplate } = require('../../utils/documentHelper');
 const numberToWords = require('../../utils/numberToWords');
@@ -285,20 +286,24 @@ const createPurchaseOrder = async (req, res) => {
 
         await newPurchaseOrder.save();
 
-        // Update source document if converted (e.g., Quotation)
+        // Update source document if converted
         if (req.body.conversions && req.body.conversions.convertedFrom) {
             const { docType, docId } = req.body.conversions.convertedFrom;
-            if (docType === 'Quotation' && docId) {
-                await Quotation.findByIdAndUpdate(docId, {
-                    $push: {
-                        'conversions.convertedTo': {
-                            docType: 'Purchase Order',
-                            docId: newPurchaseOrder._id,
-                            docNo: newPurchaseOrder.purchaseOrderDetails.poNumber,
-                            convertedAt: new Date()
-                        }
-                    }
-                });
+            const conversionData = {
+                docType: 'Purchase Order',
+                docId: newPurchaseOrder._id,
+                docNo: newPurchaseOrder.purchaseOrderDetails.poNumber,
+                convertedAt: new Date()
+            };
+
+            if (docId) {
+                if (docType === 'Quotation') {
+                    await Quotation.findByIdAndUpdate(docId, { $push: { 'conversions.convertedTo': conversionData } });
+                } else if (docType === 'Proforma') {
+                    await Proforma.findByIdAndUpdate(docId, { $push: { 'conversions.convertedTo': conversionData } });
+                } else if (docType === 'PurchaseInvoice') {
+                    await PurchaseInvoice.findByIdAndUpdate(docId, { $push: { 'conversions.convertedTo': conversionData } });
+                }
             }
         }
 
@@ -446,7 +451,11 @@ const updatePurchaseOrder = async (req, res) => {
             { new: true, runValidators: true }
         );
 
-        res.status(200).json({ success: true, data: po });
+        if (!purchaseOrder) {
+            return res.status(404).json({ success: false, message: 'Purchase Order not found' });
+        }
+
+        res.status(200).json({ success: true, data: purchaseOrder });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -1276,9 +1285,34 @@ const deleteItemColumn = async (req, res) => {
     }
 };
 
+// @desc    Get Next Purchase Order Number
+// @route   GET /api/purchase-orders/next-number
+const getNextPurchaseOrderNumber = async (req, res) => {
+    try {
+        const lastPO = await PurchaseOrder.findOne({ userId: req.user._id })
+            .sort({ createdAt: -1 })
+            .select('purchaseOrderDetails.poNumber');
+
+        let nextNumber = 1;
+
+        if (lastPO?.purchaseOrderDetails?.poNumber) {
+            const match = lastPO.purchaseOrderDetails.poNumber.match(/\d+$/);
+            if (match) {
+                nextNumber = parseInt(match[0], 10) + 1;
+            }
+        }
+
+        const nextNo = `PO-${String(nextNumber).padStart(3, '0')}`;
+        res.status(200).json({ success: true, data: { nextNo } });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 module.exports = {
     createPurchaseOrder,
     getPurchaseOrders,
+    getNextPurchaseOrderNumber,
     getPurchaseOrderSummary,
     getPurchaseOrderById,
     updatePurchaseOrder,

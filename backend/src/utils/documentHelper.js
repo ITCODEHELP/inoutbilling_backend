@@ -265,6 +265,9 @@ const calculateExportInvoiceTotals = async (userId, documentData, invoiceType, c
  */
 const getSelectedPrintTemplate = async (userId, docType, branchId = 'main') => {
     try {
+        // Ensure branchId defaults to 'main' if falsy (e.g. null or empty string)
+        const branch = branchId || 'main';
+
         const defaultSettings = {
             selectedTemplate: 'Default',
             printSize: 'A4',
