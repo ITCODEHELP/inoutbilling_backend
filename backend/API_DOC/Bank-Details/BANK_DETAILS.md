@@ -15,7 +15,10 @@ Content-Type: application/json
   "bankName": "SBI",
   "accountNumber": "123456",
   "ifscCode": "SBIN0001234",
-  "upiId": "john@sbi"
+  "ifscCode": "SBIN0001234",
+  "upiId": "john@sbi",
+  "printUpiQrOnInvoice": true,
+  "upiQrOnInvoiceWithAmount": false
 }
 ```
 
@@ -30,7 +33,9 @@ Content-Type: application/json
 {
   "accountName": "John Doe Updated",
   "bankName": "SBI",
-  "accountNumber": "123456"
+  "bankName": "SBI",
+  "accountNumber": "123456",
+  "printUpiQrOnInvoice": true
 }
 ```
 

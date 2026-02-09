@@ -6,35 +6,37 @@ const { convertHtmlToPdf } = require('./puppeteerPdfHelper');
 const Business = require('../models/Login-Model/Business');
 const PrintOptions = require('../models/Setting-Model/PrintOptions');
 const User = require('../models/User-Model/User');
+const BankDetails = require('../models/Other-Document-Model/BankDetail');
+const QRCode = require('qrcode');
 
 /**
  * Centralized Template Mapping
  */
 const TEMPLATE_MAP = {
-    'Default': 'saleinvoicedefault.html',
-    'Designed': 'saleinvoicedefault.html',
-    'Letterpad': 'saleinvoicedefault.html',
-    'Template-1': 'saleinvoice_1.html',
-    'Template-2': 'saleinvoice_2.html',
-    'Template-3': 'saleinvoice_3.html',
-    'Template-4': 'saleinvoice_4.html',
-    'Template-5': 'saleinvoice_5.html',
-    'Template-6': 'saleinvoice_6.html',
-    'Template-7': 'saleinvoice_7.html',
-    'Template-8': 'saleinvoice_8.html',
-    'Template-9': 'saleinvoice_9.html',
-    'Template-10': 'saleinvoice_10.html',
-    'Template-11': 'saleinvoice_11.html',
-    'Template-12': 'saleinvoice_12.html',
-    'Template-13': 'saleinvoice_13.html',
-    'A5-Default': 'saleinvoice_A5_1.html',
-    'A5-Designed': 'saleinvoice_A5_2_1.html',
-    'A5-Letterpad': 'saleinvoice_A5_3_1.html',
-    'Template-A5-4': 'saleinvoice_A5_4_1.html',
-    'Template-A5-5': 'saleinvoice_A5_5_1.html',
-    'Thermal-2inch': 'saleinvoice_thermal_1.html',
-    'Thermal-3inch': 'saleinvoice_thermal_2.html',
-    'Thermal-4inch': 'saleinvoice_thermal_3.html',
+    'Default': 'Template-Default.html',
+    'Designed': 'Template-Default.html',
+    'Letterpad': 'Template-Default.html',
+    'Template-1': 'Template-1.html',
+    'Template-2': 'Template-2.html',
+    'Template-3': 'Template-3.html',
+    'Template-4': 'Template-4.html',
+    'Template-5': 'Template-5.html',
+    'Template-6': 'Template-6.html',
+    'Template-7': 'Template-7.html',
+    'Template-8': 'Template-8.html',
+    'Template-9': 'Template-9.html',
+    'Template-10': 'Template-10.html',
+    'Template-11': 'Template-11.html',
+    'Template-12': 'Template-12.html',
+    'Template-13': 'Template-13.html',
+    'A5-Default': 'Template-A5.html',
+    'A5-Designed': 'Template-A5-2.html',
+    'A5-Letterpad': 'Template-A5-3.html',
+    'Template-A5-4': 'Template-A5-4.html',
+    'Template-A5-5': 'Template-A5-5.html',
+    'Thermal-2inch': 'Thermal-Template-1.html',
+    'Thermal-3inch': 'Thermal-Template-2.html',
+    'Thermal-4inch': 'Thermal-Template-3.html',
 };
 
 /**
@@ -207,6 +209,9 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
     let headerRightData = {};
 
     // --- ROBUST HEADER DATA FETCHING ---
+    // Defined outside try-catch to ensure availability in the loop
+    let bankDetailsMap = {};
+
     try {
         const rawUserId = user.userId || user._id;
 
@@ -224,12 +229,14 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
         }
 
         // Use the definite string userId for all other related queries
-        const actualUserId = fullUser.userId || (typeof rawUserId === 'string' ? rawUserId : null);
+        // logic: favor string userId if available (for Business/Settings), but keep implicit _id for refs
+        const actualUserIdString = fullUser.userId || (typeof rawUserId === 'string' ? rawUserId : null);
+        const actualObjectId = fullUser._id && mongoose.Types.ObjectId.isValid(fullUser._id) ? fullUser._id : null;
 
-        // 2. Fetch Business Credentials (String userId)
-        if (actualUserId) {
+        // 2. Fetch Business Credentials (String userId usually)
+        if (actualUserIdString) {
             try {
-                businessData = await Business.findOne({ userId: actualUserId }).lean() || {};
+                businessData = await Business.findOne({ userId: actualUserIdString }).lean() || {};
             } catch (e) {
                 console.error('[PDF Generator] Business fetch failed:', e);
                 businessData = {};
@@ -238,7 +245,7 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
 
         // 3. Fetch Print Settings (ObjectId)
         try {
-            const printSearchId = fullUser._id || businessData._id || null;
+            const printSearchId = actualObjectId || businessData._id || null;
             if (printSearchId && mongoose.Types.ObjectId.isValid(printSearchId)) {
                 printSettings = await PrintOptions.findOne({ userId: printSearchId }).lean() || {};
             }
@@ -254,7 +261,7 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
 
         try {
             const { fetchAndResolveDocumentOptions } = require('./documentOptionsHelper');
-            docOptionsData = await fetchAndResolveDocumentOptions(actualUserId || rawUserId, docType, seriesName);
+            docOptionsData = await fetchAndResolveDocumentOptions(actualUserIdString || rawUserId, docType, seriesName);
         } catch (err) {
             console.error('[PDF Generator] Error resolving document options:', err);
             docOptionsData = {};
@@ -262,6 +269,21 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
 
         if (!docOptionsData || Object.keys(docOptionsData).length === 0) {
             docOptionsData = { title: docType.toUpperCase() };
+        }
+
+        // 5. Fetch All Bank Details for User (Optimization: Fetch once)
+        // BankDetails model uses ObjectId ref for userId
+        if (actualObjectId) {
+            try {
+                const banks = await BankDetails.find({ userId: actualObjectId }).lean();
+                banks.forEach(b => {
+                    bankDetailsMap[b.bankId] = b;
+                    // Heuristic for default: first one or explicitly marked (if schema supported it)
+                    if (!bankDetailsMap['default']) bankDetailsMap['default'] = b;
+                });
+            } catch (e) {
+                console.error('[PDF Generator] BankDetails fetch failed:', e);
+            }
         }
 
         // --- SHARED HEADER DATA BUILDER (Strict Mapping & Safe Defaults) ---
@@ -317,8 +339,9 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
 
     let fullPageHtml = "";
 
-    docList.forEach((doc, docIdx) => {
-        copies.forEach((copyType, copyIdx) => {
+    // Converted to for...of loop to support async/await for QR Code generation
+    for (const [docIdx, doc] of docList.entries()) {
+        for (const [copyIdx, copyType] of copies.entries()) {
             const $ = cheerio.load(baseHtml);
 
             // --- PRINT CSS OVERRIDE: STRIP BACKGROUNDS BUT PRESERVE BOX STRUCTURE ---
@@ -536,6 +559,82 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
             }
             $('.footer_seal_name').text(`For ${user.companyName || "Company"}`);
 
+            // --- BANK DETAILS & QR CODE INJECTION ---
+            if (!invoiceDetails.hideBankDetails) {
+                const selectedBank = bankDetailsMap[invoiceDetails.bankSelection] || bankDetailsMap['default'];
+
+                if (selectedBank) {
+                    let bankHtml = `
+                        <tr>
+                            <td colspan="2" style="font-weight: bold; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-bottom: 4px;">Bank Details</td>
+                        </tr>
+                        <tr><td><strong>Bank Name:</strong></td><td>${selectedBank.bankName || ''}</td></tr>
+                        <tr><td><strong>A/c No:</strong></td><td>${selectedBank.accountNumber || ''}</td></tr>
+                        <tr><td><strong>IFSC:</strong></td><td>${selectedBank.ifscCode || ''}</td></tr>
+                        <tr><td><strong>A/c Holder:</strong></td><td>${selectedBank.accountName || ''}</td></tr>
+                    `;
+
+                    // Generate QR Code if enabled and UPI ID is present
+                    // Logic: Valid UPI ID && printUpiQrOnInvoice is true
+                    if (selectedBank.upiId && selectedBank.printUpiQrOnInvoice) {
+                        try {
+                            // Format: upi://pay?pa=<UPI_ID>&pn=<ACCOUNT_NAME>&cu=INR
+                            // Optional: &am=<AMOUNT>&tn=<NOTE>
+                            let upiString = `upi://pay?pa=${selectedBank.upiId}&pn=${encodeURIComponent(selectedBank.accountName)}&cu=INR`;
+
+                            if (selectedBank.upiQrOnInvoiceWithAmount && doc.totals && doc.totals.grandTotal) {
+                                upiString += `&am=${doc.totals.grandTotal}`;
+                                if (docNum) {
+                                    upiString += `&tn=${encodeURIComponent(docNum)}`;
+                                }
+                            }
+
+                            const qrDataUrl = await QRCode.toDataURL(upiString, {
+                                errorCorrectionLevel: 'M',
+                                margin: 1,
+                                width: 100,
+                                color: {
+                                    dark: '#000000',
+                                    light: '#ffffff'
+                                }
+                            });
+
+                            // Inject QR Image into Bank Details (Side-by-side layout)
+                            bankHtml = `
+                                <tr>
+                                    <td colspan="2" style="font-weight: bold; border-bottom: 1px solid #0070c0; padding-bottom: 4px; margin-bottom: 4px;">Bank Details</td>
+                                </tr>
+                                <tr>
+                                    <td style="vertical-align: top;">
+                                        <table cellspacing="0" cellpadding="2" style="width: 100%; font-size: 10px;">
+                                            <tr><td style="width: 70px;"><strong>Bank Name:</strong></td><td>${selectedBank.bankName || ''}</td></tr>
+                                            <tr><td><strong>A/c No:</strong></td><td>${selectedBank.accountNumber || ''}</td></tr>
+                                            <tr><td><strong>IFSC:</strong></td><td>${selectedBank.ifscCode || ''}</td></tr>
+                                            <tr><td><strong>A/c Holder:</strong></td><td>${selectedBank.accountName || ''}</td></tr>
+                                        </table>
+                                    </td>
+                                    ${qrDataUrl ? `
+                                    <td style="vertical-align: top; text-align: right; width: 100px;">
+                                        <img src="${qrDataUrl}" style="width: 80px; height: 80px;" alt="UPI QR">
+                                        <div style="font-size: 8px; text-align: center; margin-top: 2px;">Scan to Pay</div>
+                                    </td>
+                                    ` : ''}
+                                </tr>
+                            `;
+                        } catch (qrErr) {
+                            console.error('[PDF Generator] QR Generation Failed:', qrErr);
+                        }
+                    }
+
+                    // Inject into .bankInfo
+                    const $bankInfo = $('.bankInfo');
+                    if ($bankInfo.length > 0) {
+                        $bankInfo.find('tbody').html(bankHtml);
+                        $bankInfo.css('display', 'table');
+                    }
+                }
+            }
+
             // Prepare for multi-page rendering
             const pageHtml = $.html();
             if (fullPageHtml) {
@@ -543,8 +642,8 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
             } else {
                 fullPageHtml = pageHtml;
             }
-        });
-    });
+        }
+    }
 
     // Wrap in full document structure if needed and enforce white background globally
     if (!fullPageHtml.includes('<body')) {

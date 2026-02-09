@@ -224,12 +224,14 @@ const searchJobWorks = async (req, res) => {
             staffName,
             jobWorkNumber,
             total,
+            lrNo,
             itemNote,
             remarks,
             gstin,
             status,
             jobWorkType,
             shippingAddress,
+            advanceFilters, // Array of { field, operator, value }
             page = 1, limit = 10, sort = 'createdAt', order = 'desc'
         } = req.query;
 
@@ -321,7 +323,11 @@ const searchJobWorks = async (req, res) => {
             andFilters.push({ staff: { $in: staffs.map(s => s._id) } });
         }
 
-
+        // LR No (from customFields if specified)
+        if (lrNo) {
+            // User requested mapping: lrNo -> customFields.lr_no
+            andFilters.push({ 'customFields.lr_no': { $regex: lrNo, $options: 'i' } });
+        }
 
         // Shipping Address
         if (shippingAddress) {
@@ -334,7 +340,43 @@ const searchJobWorks = async (req, res) => {
             });
         }
 
+        // 3. Advance Filters Array
+        let parsedAdvanceFilters = advanceFilters;
+        if (typeof advanceFilters === 'string') {
+            try { parsedAdvanceFilters = JSON.parse(advanceFilters); } catch (e) { parsedAdvanceFilters = []; }
+        }
 
+        if (Array.isArray(parsedAdvanceFilters)) {
+            parsedAdvanceFilters.forEach(af => {
+                if (af.field && af.operator) {
+                    const condition = {};
+                    let val = af.value;
+
+                    switch (af.operator) {
+                        case 'equals': condition[af.field] = val; break;
+                        case 'contains': condition[af.field] = { $regex: val, $options: 'i' }; break;
+                        case 'startsWith': condition[af.field] = { $regex: '^' + val, $options: 'i' }; break;
+                        case 'endsWith': condition[af.field] = { $regex: val + '$', $options: 'i' }; break;
+                        case 'gt': condition[af.field] = { $gt: isNaN(val) ? val : Number(val) }; break;
+                        case 'lt': condition[af.field] = { $lt: isNaN(val) ? val : Number(val) }; break;
+                        case 'between':
+                            if (val && typeof val === 'string' && val.includes(',')) {
+                                const [v1, v2] = val.split(',').map(v => isNaN(v.trim()) ? v.trim() : Number(v.trim()));
+                                condition[af.field] = { $gte: v1, $lte: v2 };
+                            }
+                            break;
+                        case 'in':
+                            if (Array.isArray(val)) {
+                                condition[af.field] = { $in: val };
+                            } else if (typeof val === 'string') {
+                                condition[af.field] = { $in: val.split(',').map(v => v.trim()) };
+                            }
+                            break;
+                    }
+                    if (Object.keys(condition).length > 0) andFilters.push(condition);
+                }
+            });
+        }
 
         if (andFilters.length > 0) {
             query.$and = andFilters;
@@ -589,10 +631,8 @@ const updateJobWorkStatus = async (req, res) => {
         const { status } = req.body;
         if (!status) return res.status(400).json({ success: false, message: 'Status is required' });
 
-        const validStatuses = ['New', 'Pending', 'In-Work', 'Completed', 'Cancelled'];
-        if (!validStatuses.includes(status)) {
-            return res.status(400).json({ success: false, message: `Invalid status: ${status}` });
-        }
+        // Validated against user settings in frontend/service layer if needed
+        // Allowing dynamic string to support custom statuses
 
         const jobWork = await JobWork.findOneAndUpdate(
             { _id: req.params.id, userId: req.user._id },

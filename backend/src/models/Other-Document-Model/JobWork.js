@@ -57,7 +57,6 @@ const jobWorkSchema = new mongoose.Schema({
         date: { type: Date, required: [false, 'date is required'] },
         status: {
             type: String,
-            enum: ['New', 'Pending', 'In-Work', 'Completed', 'Cancelled'],
             default: 'New'
         }
     },
