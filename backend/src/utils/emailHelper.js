@@ -51,7 +51,9 @@ const sendInvoiceEmail = async (invoices, email, isPurchase = false, options = {
         const isDeliveryChallan = docType === 'Delivery Challan';
         const isSaleOrder = docType === 'Sale Order';
         const isJobWork = docType === 'Job Work';
-        const invoiceType = isJobWork ? 'Job Work' : (isDeliveryChallan ? 'Delivery Challan' : (isQuotation ? 'Quotation' : (isProforma ? 'Proforma ' : (isPurchase ? 'Purchase Invoice' : (isSaleOrder ? 'Sale Order' : 'Tax Invoice')))));
+        const isCreditNote = docType === 'Credit Note';
+        const isDebitNote = docType === 'Debit Note';
+        const invoiceType = isJobWork ? 'Job Work' : (isDeliveryChallan ? 'Delivery Challan' : (isQuotation ? 'Quotation' : (isProforma ? 'Proforma ' : (isPurchase ? 'Purchase Invoice' : (isSaleOrder ? 'Sale Order' : (isCreditNote ? 'Credit Note' : (isDebitNote ? 'Debit Note' : 'Tax Invoice')))))));
         const senderLabel = isPurchase ? 'Vendor' : 'Customer';
 
         const firstDoc = items[0];
@@ -65,6 +67,9 @@ const sendInvoiceEmail = async (invoices, email, isPurchase = false, options = {
         } else if (isJobWork) {
             details = firstDoc.jobWorkDetails;
             invoiceNo = items.length === 1 ? details?.jobWorkNumber : 'Multiple';
+        } else if (isCreditNote) {
+            details = firstDoc.creditNoteDetails;
+            invoiceNo = items.length === 1 ? details?.cnNumber : 'Multiple';
         } else {
             details = firstDoc.invoiceDetails;
             invoiceNo = items.length === 1 ? details?.invoiceNumber : 'Multiple';

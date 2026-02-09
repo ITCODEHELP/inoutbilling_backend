@@ -253,10 +253,44 @@ const searchManufactures = async (req, res) => {
     }
 };
 
+/**
+ * @desc    Delete Manufacture record
+ * @route   DELETE /api/manufacture/:id
+ */
+const deleteManufacture = async (req, res) => {
+    try {
+        const manufacture = await Manufacture.findOne({
+            _id: req.params.id,
+            userId: req.user._id,
+            isDeleted: false
+        });
+
+        if (!manufacture) {
+            return res.status(404).json({
+                success: false,
+                message: 'Manufacture not found'
+            });
+        }
+
+        await Manufacture.findByIdAndDelete(req.params.id);
+
+        res.status(200).json({
+            success: true,
+            message: 'Manufacture deleted successfully'
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
 module.exports = {
     createManufacture,
     getManufactures,
     getManufactureById,
     updateManufacture,
-    searchManufactures
+    searchManufactures,
+    deleteManufacture
 };

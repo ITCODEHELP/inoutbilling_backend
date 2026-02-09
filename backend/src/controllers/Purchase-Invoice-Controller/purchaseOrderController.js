@@ -544,7 +544,7 @@ const downloadPurchaseOrderPDF = async (req, res) => {
             return mapped;
         });
 
-        const pdfBuffer = await generateSaleInvoicePDF(mappedPOs, userData, options, 'Delivery Challan');
+        const pdfBuffer = await generateSaleInvoicePDF(mappedPOs, userData, options, 'Purchase Order');
 
         const filename = pos.length === 1 ? `PurchaseOrder_${pos[0].purchaseOrderDetails.poNumber}.pdf` : `Merged_PurchaseOrders.pdf`;
 
@@ -585,8 +585,8 @@ const sharePurchaseOrderEmail = async (req, res) => {
             return mapped;
         });
 
-        // Use sendInvoiceEmail with 'Delivery Challan' type
-        await sendInvoiceEmail(mappedPOs, email, false, options, 'Delivery Challan');
+        // Use sendInvoiceEmail with 'Purchase Order' type
+        await sendInvoiceEmail(mappedPOs, email, false, options, 'Purchase Order');
         res.status(200).json({ success: true, message: `Purchase Order(s) sent to ${email} successfully` });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -697,7 +697,7 @@ const viewPurchaseOrderPublic = async (req, res) => {
             return mapped;
         });
 
-        const pdfBuffer = await generateSaleInvoicePDF(mappedPOs, userData, options, 'Delivery Challan');
+        const pdfBuffer = await generateSaleInvoicePDF(mappedPOs, userData, options, 'Purchase Order');
 
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename=purchase-order.pdf`);

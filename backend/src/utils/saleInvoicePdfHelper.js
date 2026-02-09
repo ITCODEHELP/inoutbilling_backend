@@ -5,6 +5,7 @@ const mongoose = require('mongoose');
 const { convertHtmlToPdf } = require('./puppeteerPdfHelper');
 const Business = require('../models/Login-Model/Business');
 const PrintOptions = require('../models/Setting-Model/PrintOptions');
+const GeneralSettings = require('../models/Setting-Model/GeneralSetting');
 const User = require('../models/User-Model/User');
 
 /**
@@ -51,14 +52,10 @@ const resolveTemplateFile = (templateName) => {
     return fullPath;
 };
 
-/**
- * Generates the unified branding header (Top Section)
- */
 const generateGlobalHeader = (businessData, userData, overrideLogoPath) => {
+    // Priority: Explicit Override (Passed as Resolved Source)
     let logoSrc = '';
-
-    // Priority: Override Path > Business Logo
-    let rawLogoPath = overrideLogoPath || businessData.businessLogo || userData.businessLogo;
+    let rawLogoPath = overrideLogoPath;
 
     if (rawLogoPath) {
         if (rawLogoPath.startsWith('http')) {
@@ -75,6 +72,8 @@ const generateGlobalHeader = (businessData, userData, overrideLogoPath) => {
                     const pathsToTry = [
                         path.join(process.cwd(), 'backend', 'src', 'uploads', 'logo', rawLogoPath),
                         path.join(process.cwd(), 'src', 'uploads', 'logo', rawLogoPath),
+                        path.join(process.cwd(), 'uploads', 'business_logos', rawLogoPath),
+                        path.join(process.cwd(), 'backend', 'uploads', 'business_logos', rawLogoPath),
                         path.join(__dirname, '..', 'uploads', 'logo', rawLogoPath),
                         path.join(__dirname, '..', rawLogoPath)
                     ];
@@ -150,14 +149,78 @@ const generateGlobalHeader = (businessData, userData, overrideLogoPath) => {
                 line-height: 1.4;
                 min-width: 160px;
             ">
-                <div><strong>Name:</strong> ${businessData.fullName || ''}</div>
-                <div><strong>Phone:</strong> ${userData.phone || ''}</div>
-                <div><strong>Email:</strong> ${businessData.email || ''}</div>
-                ${(businessData.showPan && userData.pan) ? `<div><strong>PAN:</strong> ${userData.pan}</div>` : ''}
+                <div><strong>Name:</strong> ${userData.fullName || businessData.fullName || userData.name || ''}</div>
+                <div><strong>Phone:</strong> ${userData.displayPhone || userData.phone || ''}</div>
+                <div><strong>Email:</strong> ${userData.email || businessData.email || ''}</div>
+                ${((businessData.showPan || userData.showPan) && userData.pan) ? `<div><strong>PAN:</strong> ${userData.pan}</div>` : ''}
             </div>
         </div>
     `;
 };
+
+/**
+ * Resolves branding images from GeneralSettings
+ */
+const resolveBrandingImages = async (userId) => {
+    const branding = {
+        logo: null,
+        background: null,
+        footer: null,
+        signature: null
+    };
+
+    if (!userId) return branding;
+
+    try {
+        // Ensure we are using the string representation of the ID
+        const searchId = userId.toString();
+        const settings = await GeneralSettings.findOne({ userId: searchId }).lean();
+        if (!settings) return branding;
+
+        const imageFields = [
+            { field: 'logoPath', key: 'logo' },
+            { field: 'invoiceBackgroundPath', key: 'background' },
+            { field: 'invoiceFooterPath', key: 'footer' },
+            { field: 'signaturePath', key: 'signature' }
+        ];
+
+        for (const { field, key } of imageFields) {
+            const rawPath = settings[field];
+            if (rawPath) {
+                try {
+                    let fullPath = path.resolve(rawPath);
+                    if (!fs.existsSync(fullPath)) {
+                        const pathsToTry = [
+                            path.join(process.cwd(), rawPath),
+                            path.join(process.cwd(), 'backend', rawPath),
+                            path.join(__dirname, '..', '..', rawPath),
+                            path.join(__dirname, '..', rawPath)
+                        ];
+                        for (const p of pathsToTry) {
+                            if (fs.existsSync(p)) {
+                                fullPath = p;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (fs.existsSync(fullPath)) {
+                        const bitmap = fs.readFileSync(fullPath);
+                        const ext = path.extname(fullPath).split('.').pop() || 'png';
+                        branding[key] = `data:image/${ext};base64,${bitmap.toString('base64')}`;
+                    }
+                } catch (e) {
+                    console.error(`[PDF Generator] Error resolving branding ${key}:`, e);
+                }
+            }
+        }
+    } catch (e) {
+        console.error('[PDF Generator] Error fetching GeneralSettings:', e);
+    }
+
+    return branding;
+};
+
 /**
  * Generates title section for specific templates (5-11)
  * Displays document type and copy type above the global header
@@ -205,6 +268,7 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
     // Header Data Objects (Strict Separation)
     let headerLeftData = {};
     let headerRightData = {};
+    let brandingAssets = { logo: null, background: null, footer: null, signature: null };
 
     // --- ROBUST HEADER DATA FETCHING ---
     try {
@@ -247,10 +311,40 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
             printSettings = {};
         }
 
-        // 4. Resolve Document Options (Title Overrides)
+        // 4. Fetch General Settings (Branding)
+        // CRITICAL: GeneralSettings are keyed by the MongoDB _id (stringified)
+        const brandingSearchId = fullUser._id || rawUserId;
+        brandingAssets = await resolveBrandingImages(brandingSearchId);
+
+        // 5. Resolve Document Options (Title Overrides)
         const firstDoc = docList[0] || {};
-        const details = firstDoc.invoiceDetails || firstDoc.quotationDetails || firstDoc.deliveryChallanDetails || firstDoc.proformaDetails || {};
-        const seriesName = details.invoiceSeries || details.seriesName || details.invoicePrefix || null;
+        const details = firstDoc.invoiceDetails ||
+            firstDoc.quotationDetails ||
+            firstDoc.deliveryChallanDetails ||
+            firstDoc.proformaDetails ||
+            firstDoc.creditNoteDetails ||
+            firstDoc.debitNoteDetails ||
+            firstDoc.saleOrderDetails ||
+            firstDoc.purchaseOrderDetails ||
+            firstDoc.purchaseInvoiceDetails ||
+            firstDoc.jobWorkDetails ||
+            firstDoc.multiCurrencyInvoiceDetails ||
+            firstDoc.packingListDetails ||
+            firstDoc.inwardPaymentDetails ||
+            firstDoc.outwardPaymentDetails ||
+            {};
+
+        // Extract Series Identifier (Used to find specific title/prefix/postfix overrides in DocumentOptions)
+        const seriesName = details.invoiceSeries ||
+            details.seriesName ||
+            details.invoicePrefix ||
+            details.poPrefix ||
+            details.soPrefix ||
+            details.dnPrefix ||
+            details.cnSeries ||
+            details.quotationPrefix ||
+            details.challanPrefix ||
+            null;
 
         try {
             const { fetchAndResolveDocumentOptions } = require('./documentOptionsHelper');
@@ -273,7 +367,7 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
             state: businessData.state || fullUser.state || '',
             pincode: businessData.pincode || fullUser.pincode || '',
             gstin: businessData.gstin || fullUser.gstin || '',
-            businessLogo: businessData.businessLogo || businessData.logo || fullUser.businessLogo || ''
+            businessLogo: brandingAssets.logo || '' // Mandatory Global Source
         };
 
         headerRightData = {
@@ -321,32 +415,92 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
         copies.forEach((copyType, copyIdx) => {
             const $ = cheerio.load(baseHtml);
 
-            // --- PRINT CSS OVERRIDE: STRIP BACKGROUNDS BUT PRESERVE BOX STRUCTURE ---
+            // --- PRINT CSS OVERRIDE: PRESERVE BRANDING BUT PREVENT PAGE BREAKS ---
             $('head').append(`
                 <style>
                     @media print {
-                        * {
+                        /* Strip most backgrounds but preserve branding */
+                        *:not(.page-wrapper):not(.page-content):not(.branding-footer-image):not(.branding-signature-image) {
                             background-color: transparent !important;
-                            background-image: none !important;
                             box-shadow: none !important;
                         }
-                        body, .page-copy-container-wrapper, .page-wrapper, .page-wrapper-table {
-                            background: none !important;
+                        
+                        /* Allow branding background images */
+                        .page-wrapper, .page-content {
+                            /* Background will be set inline if branding exists */
+                        }
+                        
+                        /* Ensure body and containers don't add extra backgrounds */
+                        body, .page-copy-container-wrapper, .page-wrapper-table {
                             background-color: transparent !important;
                         }
-                        /* Lock layout width to 800px and clear print-specific margins */
-                        body { width: 800px !important; margin: 0 !important; padding: 0 !important; }
-                        * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                        
+                        /* Lock layout width, center content, and prevent page breaks */
+                        body { 
+                            width: 210mm !important; 
+                            margin: 0 auto !important; 
+                            padding: 0 !important; 
+                        }
+                        
+                        /* Center the page wrapper */
+                        .page-wrapper-table,
+                        .page-copy-container-wrapper {
+                            margin: 0 auto !important;
+                        }
+                        
+                        /* CRITICAL: Prevent page breaks on ALL key elements */
+                        .page-wrapper, 
+                        .page-content, 
+                        .page-wrapper-tr,
+                        .page-wrapper-letter,
+                        .page-copy-container-wrapper,
+                        .invoice,
+                        table,
+                        tbody,
+                        .branding-footer-image, 
+                        .branding-signature-image,
+                        .branding-footer-container,
+                        .branding-signature-container,
+                        .invoiceTotal,
+                        .footer_seal_title,
+                        .footer_seal_name,
+                        .footer_seal_signature,
+                        .foot_table_signature {
+                            page-break-inside: avoid !important;
+                            page-break-before: avoid !important;
+                            page-break-after: avoid !important;
+                        }
+                        
+                        /* Force single page layout */
+                        html, body {
+                            height: auto !important;
+                            overflow: visible !important;
+                        }
+                        
+                        /* Ensure branding images render properly */
+                        .branding-footer-image, .branding-signature-image {
+                            -webkit-print-color-adjust: exact !important;
+                            print-color-adjust: exact !important;
+                            display: block !important;
+                        }
+                        
+                        * { 
+                            -webkit-print-color-adjust: exact; 
+                            print-color-adjust: exact; 
+                        }
                     }
                 </style>
             `);
 
             // Resolve Logo (Must be done before generating branding HTML)
-            let logoSrc = '';
-            const invoiceDetails = doc.invoiceDetails || doc.quotationDetails || doc.deliveryChallanDetails || doc.proformaDetails || {};
-            let rawLogoPath = options.overrideLogoPath || invoiceDetails.logo || headerLeftData.businessLogo || '';
+            // MANDATORY GLOBAL SOURCE: Prioritize GeneralSettings Logo (Base64)
+            let logoSrc = brandingAssets.logo;
 
-            if (rawLogoPath) {
+            // Only allow explicit override from options (e.g. for specific dynamic prints), 
+            // but ignore module-level (invoiceDetails.logo) or legacy fields.
+            let rawLogoPath = (!logoSrc && options.overrideLogoPath) ? options.overrideLogoPath : '';
+
+            if (rawLogoPath && !logoSrc) {
                 if (rawLogoPath.startsWith('http')) {
                     logoSrc = rawLogoPath;
                 } else if (rawLogoPath.startsWith('data:image')) {
@@ -360,7 +514,9 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                                 path.join(__dirname, '..', rawLogoPath),
                                 path.join(__dirname, '..', '..', rawLogoPath),
                                 path.join(process.cwd(), rawLogoPath),
-                                path.join(process.cwd(), 'backend', rawLogoPath)
+                                path.join(process.cwd(), 'backend', rawLogoPath),
+                                path.join(process.cwd(), 'uploads', 'business_logos', rawLogoPath),
+                                path.join(process.cwd(), 'backend', 'uploads', 'business_logos', rawLogoPath)
                             ];
                             for (const p of pathsToTry) {
                                 if (fs.existsSync(p)) {
@@ -392,7 +548,7 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
 
             // Determine Title
             // Priority: Options Override > Document Options (DB) > Default 'SALE INVOICE'
-            const resolvedDocumentTitle = options.titleLabel || docOptionsData.title || (docType === 'Sale Invoice' ? 'SALE INVOICE' : docType.toUpperCase());
+            const resolvedDocumentTitle = docOptionsData.title || options.titleLabel || (docType === 'Sale Invoice' ? 'SALE INVOICE' : docType.toUpperCase());
             const titleToUse = resolvedDocumentTitle;
 
             // Check if template requires title section (templates 5-11)
@@ -418,7 +574,7 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
 
             // 2. POPULATE BRANDING (Populate existing template elements if present)
             // LEFT SECTION: Business Details
-            $('.org_orgname').text(headerLeftData.companyName || "").css('text-align', 'left');
+            $('.org_orgname, .company_name_org').text(headerLeftData.companyName || "").css('text-align', 'left');
 
             let addressHtml = headerLeftData.address || "";
             if (headerLeftData.city || headerLeftData.state || headerLeftData.pincode) {
@@ -427,26 +583,142 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
             if (headerLeftData.gstin) {
                 addressHtml += `<br><strong>GSTIN:</strong> ${headerLeftData.gstin}`;
             }
-            $('.org_address').html(addressHtml).css('text-align', 'left');
+            $('.org_address, .company_address_org').html(addressHtml).css('text-align', 'left');
 
             // RIGHT SECTION: User Contact Details (Include labels to prevent them being wiped)
-            $('.org_contact_name').html(headerRightData.fullName ? `<b>Name</b> : ${headerRightData.fullName}` : "").css('text-align', 'right');
+            $('.org_contact_name, .company_contact_name').html(headerRightData.fullName ? `<b>Name</b> : ${headerRightData.fullName}` : "").css('text-align', 'right');
             $('.org_phone').html(headerRightData.phone ? `<b>Phone</b> : ${headerRightData.phone}` : "").css('text-align', 'right');
-            $('.org_email').html(headerRightData.email ? `<b>Email</b> : ${headerRightData.email}` : "").css('text-align', 'right');
 
-            if (headerRightData.pan) {
-                const $rightCont = $('.org_phone').parent();
-                if ($rightCont.find('.org_pan_row').length === 0) {
-                    $rightCont.append(`<div class="org_pan_row" style="text-align: right;"><b>PAN</b> : ${headerRightData.pan}</div>`);
+            // Handle Email Injection (Append row if missing)
+            if (headerRightData.email) {
+                if ($('.org_email').length > 0) {
+                    $('.org_email').html(`<b>Email</b> : ${headerRightData.email}`).css('text-align', 'right').css('display', 'block');
+                } else {
+                    const $phoneRow = $('.org_phone').closest('tr');
+                    const $tbody = $phoneRow.parent();
+                    if ($tbody.length > 0) {
+                        $tbody.append(`<tr><td class="contact_details org_email" style="text-align: right;"><b>Email</b> : ${headerRightData.email}</td></tr>`);
+                    }
                 }
             }
 
+            // Handle PAN Injection (Append row if missing)
+            if (headerRightData.pan) {
+                if ($('.org_pan_row').length > 0) {
+                    $('.org_pan_row').html(`<b>PAN</b> : ${headerRightData.pan}`).css('text-align', 'right');
+                } else {
+                    const $phoneRow = $('.org_phone').closest('tr');
+                    const $tbody = $phoneRow.parent();
+                    if ($tbody.length > 0) {
+                        $tbody.append(`<tr><td class="contact_details org_pan_row" style="text-align: right;"><b>PAN</b> : ${headerRightData.pan}</td></tr>`);
+                    }
+                }
+            }
+
+            // Explicitly hide redundant contact fields in blue-box area if they exist
+            $('.company_contact_no, .company_email').css('display', 'none');
+
             // Handle Logo Substitution
             if (logoSrc) {
-                if ($('.company-logo').length > 0) {
-                    $('.company-logo').attr('src', logoSrc);
-                } else if ($('.org_orgname').length > 0) {
-                    $('.org_orgname').before(`<img src="${logoSrc}" class="company-logo" alt="Logo" style="max-height: 50px; display: block; margin-bottom: 5px;">`);
+                const logoSelectors = [
+                    '.company-logo',
+                    '.business-logo',
+                    '.org_logo',
+                    '#logo',
+                    '.logo img',
+                    'img[alt*="logo" i]',
+                    'img[src*="logo" i]',
+                    '.company_name_org img'
+                ];
+
+                let logoReplaced = false;
+                for (const selector of logoSelectors) {
+                    if ($(selector).length > 0) {
+                        $(selector).attr('src', logoSrc);
+                        logoReplaced = true;
+                    }
+                }
+
+                // If no logo placeholder found but we have a company name anchor, prepend it and ensure side-by-side layout (Logo Left, Details Right)
+                if (!logoReplaced && ($('.org_orgname, .company_name_org').length > 0)) {
+                    const $anchor = $('.org_orgname, .company_name_org').first();
+                    const $target = $anchor.closest('table').length > 0 ? $anchor.closest('table') : $anchor;
+
+                    $target.wrap('<div class="branding-flex-container" style="display: flex; align-items: flex-start; gap: 15px; text-align: left;"></div>');
+                    $target.before(`<img src="${logoSrc}" class="company-logo business-logo" alt="Logo" style="max-height: 70px; max-width: 200px; object-fit: contain; flex-shrink: 0;">`);
+                }
+            }
+
+            // Handle Background Injection
+            if (brandingAssets.background) {
+                // Background applied as fixed position overlay - doesn't affect layout
+                $('head').append(`
+                    <style>
+                        body::before {
+                            content: "";
+                            position: fixed;
+                            top: 0;
+                            left: 0;
+                            width: 100%;
+                            height: 100%;
+                            background-image: url("${brandingAssets.background}") !important;
+                            background-size: cover !important;
+                            background-position: center !important;
+                            background-repeat: no-repeat !important;
+                            z-index: -1;
+                            pointer-events: none;
+                        }
+                    </style>
+                `);
+            }
+
+            // Handle Footer Injection - using fixed position to prevent overflow
+            if (brandingAssets.footer) {
+                $('head').append(`
+                    <style>
+                        body::after {
+                            content: "";
+                            position: fixed;
+                            bottom: 0;
+                            left: 0;
+                            width: 100%;
+                            height: 60px;
+                            background-image: url("${brandingAssets.footer}") !important;
+                            background-size: contain !important;
+                            background-position: center bottom !important;
+                            background-repeat: no-repeat !important;
+                            z-index: -1;
+                            pointer-events: none;
+                        }
+                    </style>
+                `);
+            }
+
+            // Handle Signature Injection
+            if (brandingAssets.signature) {
+                // Priority order: blank space in foot_table_signature > footer_seal_signature > footer_seal_name > fallback
+                if ($('.foot_table_signature td').length > 0) {
+                    // This is the blank space between "For Company" and "Authorised Signatory"
+                    $('.foot_table_signature td').html(`<img src="${brandingAssets.signature}" class="branding-signature-image" style="max-height: 40px; max-width: 150px; display: block; margin: 0 auto; object-fit: contain; page-break-inside: avoid;">`);
+                } else if ($('.footer_seal_signature').length > 0) {
+                    // Fallback to dedicated signature area
+                    $('.footer_seal_signature').html(`<img src="${brandingAssets.signature}" class="branding-signature-image" style="max-height: 35px; max-width: 120px; display: block; margin: 0 auto; object-fit: contain; page-break-inside: avoid;">`);
+                } else if ($('.footer_seal_name').length > 0) {
+                    // Some templates use seal name area
+                    $('.footer_seal_name').prepend(`<img src="${brandingAssets.signature}" class="branding-signature-image" style="max-height: 50px; max-width: 150px; display: block; margin: 0 auto 5px; object-fit: contain; page-break-inside: avoid;">`);
+                } else if ($('.page-footer').length > 0) {
+                    // If no seal area but footer exists, add to footer
+                    $('.page-footer').prepend(`<div style="text-align: right; margin-bottom: 5px; page-break-inside: avoid;"><img src="${brandingAssets.signature}" class="branding-signature-image" style="max-height: 50px; max-width: 150px; object-fit: contain;"></div>`);
+                } else {
+                    // Fallback: add signature before footer or at end of page wrapper
+                    const signatureHtml = `<div class="branding-signature-container" style="text-align: right; margin-top: 10px; margin-bottom: 5px; page-break-inside: avoid;"><img src="${brandingAssets.signature}" class="branding-signature-image" style="max-height: 50px; max-width: 150px; object-fit: contain;"></div>`;
+                    if ($('.branding-footer-container').length > 0) {
+                        $('.branding-footer-container').before(signatureHtml);
+                    } else if ($('.page-wrapper').length > 0) {
+                        $('.page-wrapper').append(signatureHtml);
+                    } else {
+                        $('body').append(signatureHtml);
+                    }
                 }
             }
 
@@ -502,12 +774,24 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
             }
 
             // Invoice Info
-            const details = doc.invoiceDetails || doc.quotationDetails || doc.deliveryChallanDetails || doc.proformaDetails || {};
-            const docNum = details.invoiceNumber || details.quotationNumber || details.challanNumber || details.proformaNumber || "";
-            const docDate = details.date ? new Date(details.date).toLocaleDateString() : "";
+            const details = doc.invoiceDetails || doc.quotationDetails || doc.deliveryChallanDetails || doc.proformaDetails || doc.creditNoteDetails || {};
+            const docNum = options.numValue || details.invoiceNumber || details.quotationNumber || details.challanNumber || details.proformaNumber || details.cnNumber || "";
+            const docDate = options.dateValue || (details.date || details.cnDate ? new Date(details.date || details.cnDate).toLocaleDateString() : "");
 
             $('.invoice_no .special').text(docNum);
             $('.invoice_date td:last-child').text(docDate);
+
+            // Dynamic Labels for Number and Date
+            if (docType === 'Credit Note') {
+                $('.invoice_no b').text(options.numLabel || 'C.N. No.');
+                $('.invoice_date b').text(options.dateLabel || 'C.N. Date');
+            } else if (docType === 'Debit Note') {
+                $('.invoice_no b').text(options.numLabel || 'D.N. No.');
+                $('.invoice_date b').text(options.dateLabel || 'D.N. Date');
+            } else if (options.numLabel || options.dateLabel) {
+                if (options.numLabel) $('.invoice_no b').text(options.numLabel);
+                if (options.dateLabel) $('.invoice_date b').text(options.dateLabel);
+            }
 
             // Items Table
             const $tbody = $('#billdetailstbody tbody');
