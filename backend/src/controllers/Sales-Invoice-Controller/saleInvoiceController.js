@@ -421,7 +421,7 @@ const handleCreateInvoiceLogic = async (req) => {
     // 7️⃣ Generate PDF Buffer
     const userData = await User.findById(req.user._id);
     const options = getCopyOptions(req);
-    const printConfig = await getSelectedPrintTemplate(req.user._id, 'Sale Invoice', bodyData.branch);
+    const printConfig = await getSelectedPrintTemplate(req.user._id, 'Sale Invoice', bodyData.branch || 'main');
     const pdfBuffer = await generateSaleInvoicePDF(invoice, userData, options, 'Sale Invoice', printConfig);
 
     // Save PDF to disk (optional but recommended for persistence)
@@ -1146,7 +1146,8 @@ const downloadInvoicePDF = async (req, res) => {
 
         const userData = await User.findById(req.user._id);
         const options = getCopyOptions(req);
-        const printConfig = await getSelectedPrintTemplate(req.user._id, 'Sale Invoice', invoices[0].branch);
+        // Ensure accurate branchId is passed or defaults to 'main'
+        const printConfig = await getSelectedPrintTemplate(req.user._id, 'Sale Invoice', invoices[0].branch || 'main');
         const pdfBuffer = await generateSaleInvoicePDF(invoices, userData, options, 'Sale Invoice', printConfig);
 
         const filename = invoices.length === 1 ? `Invoice_${invoices[0].invoiceDetails.invoiceNumber}.pdf` : `Merged_Invoices.pdf`;
@@ -1741,7 +1742,7 @@ const viewInvoicePublic = async (req, res) => {
 
         const userData = await User.findById(invoices[0].userId);
         const options = getCopyOptions(req);
-        const printConfig = await getSelectedPrintTemplate(invoices[0].userId, 'Sale Invoice', invoices[0].branch);
+        const printConfig = await getSelectedPrintTemplate(invoices[0].userId, 'Sale Invoice', invoices[0].branch || 'main');
         const pdfBuffer = await generateSaleInvoicePDF(invoices, userData || {}, options, 'Sale Invoice', printConfig);
 
         res.setHeader('Content-Type', 'application/pdf');

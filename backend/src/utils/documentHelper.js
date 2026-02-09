@@ -265,13 +265,16 @@ const calculateExportInvoiceTotals = async (userId, documentData, invoiceType, c
  */
 const getSelectedPrintTemplate = async (userId, docType, branchId = 'main') => {
     try {
+        // Ensure branchId defaults to 'main' if falsy (e.g. null or empty string)
+        const branch = branchId || 'main';
+
         const defaultSettings = {
             selectedTemplate: 'Default',
             printSize: 'A4',
             printOrientation: 'Portrait'
         };
 
-        const settings = await PrintTemplateSettings.findOne({ userId, branchId });
+        const settings = await PrintTemplateSettings.findOne({ userId, branchId: branch });
         if (!settings || !settings.templateConfigurations) return defaultSettings;
 
         const config = settings.templateConfigurations.find(c => c.documentType === docType);
