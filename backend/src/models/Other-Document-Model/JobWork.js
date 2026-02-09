@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const PerformanceOptimization = require('../../utils/performanceOptimization');
 
 const jobWorkItemSchema = new mongoose.Schema({
     productName: { type: String, required: true },
@@ -111,5 +112,106 @@ const jobWorkSchema = new mongoose.Schema({
 });
 
 jobWorkSchema.index({ userId: 1, 'jobWorkDetails.jobWorkNumber': 1 }, { unique: true });
+
+// Static methods for optimized queries
+jobWorkSchema.statics = {
+    /**
+     * Find Job Works by user with lean projection
+     * @param {string} userId - User ID
+     * @param {Object} filters - Additional filters
+     * @param {Array} fields - Fields to include
+     * @returns {Promise<Array>} Job Work documents
+     */
+    async findByUserLean(userId, filters = {}, fields = []) {
+        const query = this.find({ userId, ...filters });
+        return PerformanceOptimization.buildLeanQuery(query, fields);
+    },
+
+    /**
+     * Create optimized aggregation pipeline for reports
+     * @param {Object} filters - Filter criteria
+     * @param {Object} options - Query options
+     * @returns {Array} Optimized aggregation pipeline
+     */
+    buildOptimizedReportPipeline(filters, options) {
+        const pipeline = [
+            { $match: { userId: filters.userId } }
+        ];
+
+        if (filters.customerName) {
+            pipeline.push({
+                $match: { 'customerInformation.ms': { $regex: filters.customerName, $options: 'i' } }
+            });
+        }
+
+        if (filters.dateRange) {
+            const dateFilter = {};
+            if (filters.dateRange.from) dateFilter.$gte = new Date(filters.dateRange.from);
+            if (filters.dateRange.to) dateFilter.$lte = new Date(filters.dateRange.to);
+            pipeline.push({ $match: { 'jobWorkDetails.date': dateFilter } });
+        }
+
+        if (options.sortBy) {
+            const sort = {};
+            sort[options.sortBy] = options.sortOrder === 'desc' ? -1 : 1;
+            pipeline.push({ $sort: sort });
+        }
+
+        if (options.page && options.limit) {
+            const skip = (options.page - 1) * options.limit;
+            pipeline.push({ $skip: skip }, { $limit: options.limit });
+        }
+
+        return PerformanceOptimization.buildOptimizedPipeline(pipeline, { allowDiskUse: true });
+    },
+
+    /**
+     * Create optimized indexes for scale
+     */
+    async createOptimizedIndexes() {
+        const indexDefinitions = [
+            { fields: { userId: 1 } },
+            { fields: { userId: 1, 'jobWorkDetails.date': -1 } },
+            { fields: { userId: 1, 'customerInformation.ms': 1 } },
+            { fields: { userId: 1, 'jobWorkDetails.jobWorkNumber': 1 } },
+            { fields: { userId: 1, 'jobWorkDetails.status': 1 } },
+            { fields: { 'jobWorkDetails.jobWorkNumber': 1 }, options: { unique: true } },
+            {
+                fields: {
+                    'customerInformation.ms': 'text',
+                    'jobWorkDetails.jobWorkNumber': 'text',
+                    'items.productName': 'text'
+                },
+                options: { name: 'jobwork_text_search' }
+            }
+        ];
+
+        return PerformanceOptimization.createOptimizedIndexes(this, indexDefinitions);
+    }
+};
+
+// Instance methods for optimized operations
+jobWorkSchema.methods = {
+    toLeanObject(fields = []) {
+        const docObj = this.toObject();
+        if (fields.length > 0) {
+            const leanObj = {};
+            fields.forEach(field => {
+                if (docObj[field] !== undefined) leanObj[field] = docObj[field];
+            });
+            return leanObj;
+        }
+        delete docObj.__v;
+        return docObj;
+    }
+};
+
+// Post-save middleware for cache invalidation
+jobWorkSchema.post('save', function (doc) {
+    if (global.cacheManager) {
+        global.cacheManager.invalidatePattern(`jobwork:${doc.userId}:*`);
+        global.cacheManager.invalidatePattern(`jobwork:${doc._id}:*`);
+    }
+});
 
 module.exports = mongoose.model('JobWork', jobWorkSchema);

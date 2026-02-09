@@ -37,8 +37,12 @@ const statusOptionSchema = new mongoose.Schema({
     },
     color: {
         type: String,
-        enum: ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple', 'Grey'],
-        default: 'Grey'
+        enum: ['Red-Wood', 'Burnt umber', 'Russet', 'Coyote', 'Raw-Umber', 'Olive',
+            'Moss-Green', 'Old-Gold', 'Fern-Green', 'Avocado', 'Jungle-Green', 'Kelly-Green',
+            'Viridian', 'Verdigris', 'Steel-Blue', 'Light-Coyote', "Davy's-Gray",
+            'Mountbatten pink', 'Red', 'Orange', 'Yellow', 'Green'
+        ],
+        default: "Davy's-Gray"
     }
 }, { _id: false });
 
