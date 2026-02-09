@@ -5,7 +5,8 @@ const {
     getManufactures,
     getManufactureById,
     updateManufacture,
-    searchManufactures
+    searchManufactures,
+    deleteManufacture
 } = require('../../controllers/Other-Document-Controller/manufactureController');
 const { protect } = require('../../middlewares/authMiddleware');
 
@@ -19,6 +20,7 @@ router.route('/')
 
 router.route('/:id')
     .get(getManufactureById)
-    .put(updateManufacture);
+    .put(updateManufacture)
+    .delete(deleteManufacture);
 
 module.exports = router;
