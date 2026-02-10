@@ -421,7 +421,7 @@ const handleCreateInvoiceLogic = async (req) => {
     // 7️⃣ Generate PDF Buffer
     const userData = await User.findById(req.user._id);
     const options = getCopyOptions(req);
-    const printConfig = await getSelectedPrintTemplate(req.user._id, 'Sale Invoice', bodyData.branch);
+    const printConfig = await getSelectedPrintTemplate(req.user._id, 'Sale Invoice', bodyData.branch || 'main');
 
     // Check for attached logo (first image file)
     if (req.files && req.files.length > 0) {
@@ -1787,7 +1787,7 @@ const viewInvoicePublic = async (req, res) => {
 
         const userData = await User.findById(invoices[0].userId);
         const options = getCopyOptions(req);
-        const printConfig = await getSelectedPrintTemplate(invoices[0].userId, 'Sale Invoice', invoices[0].branch);
+        const printConfig = await getSelectedPrintTemplate(invoices[0].userId, 'Sale Invoice', invoices[0].branch || 'main');
         const pdfBuffer = await generateSaleInvoicePDF(invoices, userData || {}, options, 'Sale Invoice', printConfig);
 
         res.setHeader('Content-Type', 'application/pdf');

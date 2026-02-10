@@ -1,7 +1,25 @@
 const CreditNote = require('../../models/Other-Document-Model/CreditNote');
-const { calculateDocumentTotals, getSummaryAggregation } = require('../../utils/documentHelper');
+const User = require('../../models/User-Model/User');
+const Customer = require('../../models/Customer-Vendor-Model/Customer');
+const { calculateDocumentTotals, getSummaryAggregation, getSelectedPrintTemplate } = require('../../utils/documentHelper');
 const { calculateShippingDistance } = require('../../utils/shippingHelper');
+const { generateSaleInvoicePDF } = require('../../utils/saleInvoicePdfHelper');
+const { getCopyOptions } = require('../../utils/pdfHelper');
+const { sendInvoiceEmail } = require('../../utils/emailHelper');
+const { recordActivity } = require('../../utils/activityLogHelper');
 const mongoose = require('mongoose');
+const crypto = require('crypto');
+const fs = require('fs');
+
+// Helper to generate secure public token
+const generatePublicToken = (id) => {
+    const secret = process.env.JWT_SECRET || 'your-default-secret';
+    return crypto
+        .createHmac('sha256', secret)
+        .update(id.toString())
+        .digest('hex')
+        .substring(0, 16);
+};
 
 // Generate Credit Note Number (following same pattern as Job Work)
 const generateCreditNoteNumber = async (userId) => {
@@ -586,6 +604,387 @@ const getCreditNoteSummary = async (req, res) => {
     }
 };
 
+/**
+ * @desc    Get data for duplicating a Credit Note (Prefill Add Form)
+ * @route   GET /api/credit-note/:id/duplicate
+ */
+const getDuplicateCreditNoteData = async (req, res) => {
+    try {
+        const creditNote = await CreditNote.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!creditNote) return res.status(404).json({ success: false, message: 'Credit Note not found' });
+
+        const data = creditNote.toObject();
+
+        // System fields to exclude
+        delete data._id;
+        delete data.status;
+        delete data.createdAt;
+        delete data.updatedAt;
+        delete data.__v;
+        delete data.userId;
+        delete data.conversions;
+        delete data.attachments;
+
+        // Reset document number
+        if (data.creditNoteDetails) {
+            delete data.creditNoteDetails.cnNumber;
+        }
+
+        // Linked references to exclude
+        delete data.staff;
+        delete data.branch;
+
+        // Reset sub-document IDs
+        if (Array.isArray(data.items)) {
+            data.items = data.items.map(item => {
+                delete item._id;
+                return item;
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Credit Note data for duplication retrieved',
+            data
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const cancelCreditNote = async (req, res) => {
+    try {
+        const creditNote = await CreditNote.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!creditNote) return res.status(404).json({ success: false, message: 'Credit Note not found' });
+
+        if (creditNote.status === 'Cancelled') {
+            return res.status(400).json({ success: false, message: 'Credit Note is already cancelled' });
+        }
+
+        creditNote.status = 'Cancelled';
+        const updatedCreditNote = await creditNote.save();
+
+        if (!updatedCreditNote) {
+            return res.status(500).json({ success: false, message: "Failed to update credit note status" });
+        }
+
+        await recordActivity(
+            req,
+            'Cancel',
+            'CreditNote',
+            `Credit Note cancelled: ${creditNote.creditNoteDetails.cnNumber}`,
+            creditNote.creditNoteDetails.cnNumber
+        );
+
+        res.status(200).json({ success: true, message: "Credit Note cancelled successfully", data: updatedCreditNote });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const restoreCreditNote = async (req, res) => {
+    try {
+        const creditNote = await CreditNote.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!creditNote) return res.status(404).json({ success: false, message: 'Credit Note not found' });
+
+        if (creditNote.status !== 'Cancelled') {
+            return res.status(400).json({ success: false, message: 'Credit Note is not in Cancelled state' });
+        }
+
+        creditNote.status = 'Active';
+        await creditNote.save();
+
+        await recordActivity(
+            req,
+            'Restore',
+            'CreditNote',
+            `Credit Note restored to Active: ${creditNote.creditNoteDetails.cnNumber}`,
+            creditNote.creditNoteDetails.cnNumber
+        );
+
+        res.status(200).json({ success: true, message: "Credit Note restored successfully", data: creditNote });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const downloadCreditNotePDF = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const creditNotes = await CreditNote.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!creditNotes || creditNotes.length === 0) return res.status(404).json({ success: false, message: "Credit Note(s) not found" });
+
+        const userData = await User.findById(req.user._id);
+        const options = getCopyOptions(req);
+
+        const printConfig = await getSelectedPrintTemplate(req.user._id, 'Credit Note', creditNotes[0].branch);
+        const pdfBuffer = await generateSaleInvoicePDF(creditNotes, userData, {
+            ...options,
+            hideDueDate: true,
+            hideTerms: true
+        }, 'Credit Note', printConfig);
+
+        const filename = creditNotes.length === 1 ? `CreditNote_${creditNotes[0].creditNoteDetails.cnNumber}.pdf` : `Merged_CreditNotes.pdf`;
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.status(200).send(pdfBuffer);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const shareCreditNoteEmail = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const creditNotes = await CreditNote.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!creditNotes || creditNotes.length === 0) return res.status(404).json({ success: false, message: "Credit Note(s) not found" });
+
+        const firstDoc = creditNotes[0];
+        const customer = await Customer.findOne({ userId: req.user._id, companyName: firstDoc.customerInformation.ms });
+        const email = req.body.email || (customer ? customer.email : null);
+
+        if (!email) return res.status(400).json({ success: false, message: "Customer email not found. Please provide an email address." });
+
+        const options = getCopyOptions(req);
+
+        await sendInvoiceEmail(creditNotes, email, false, {
+            ...options,
+            hideDueDate: true,
+            hideTerms: true
+        }, 'Credit Note');
+
+        res.status(200).json({ success: true, message: `Credit Note(s) sent to ${email} successfully` });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const shareCreditNoteWhatsApp = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const creditNotes = await CreditNote.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!creditNotes || creditNotes.length === 0) return res.status(404).json({ success: false, message: "Credit Note(s) not found" });
+
+        const firstDoc = creditNotes[0];
+        const customer = await Customer.findOne({ userId: req.user._id, companyName: firstDoc.customerInformation.ms });
+        const phone = req.body.phone || (customer ? customer.phone : null);
+
+        if (!phone) return res.status(400).json({ success: false, message: "Customer phone not found. Please provide a phone number." });
+
+        const cleanPhone = phone.replace(/\D/g, '');
+        const whatsappNumber = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+
+        const options = getCopyOptions(req);
+        let queryParams = [];
+        if (options.original) queryParams.push('original=true');
+        if (options.duplicate) queryParams.push('duplicate=true');
+        if (options.transport) queryParams.push('transport=true');
+        if (options.office) queryParams.push('office=true');
+
+        const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+        const token = generatePublicToken(req.params.id);
+        const publicLink = `${req.protocol}://${req.get('host')}/api/credit-note/view-public/${req.params.id}/${token}${queryString}`;
+
+        let message = '';
+        if (creditNotes.length === 1) {
+            message = `Dear ${firstDoc.customerInformation.ms},\n\nPlease find your Credit Note No: ${firstDoc.creditNoteDetails.cnNumber} for Total Amount: ${firstDoc.totals.grandTotal.toFixed(2)}.\n\nView Link: ${publicLink}\n\nThank you!`;
+        } else {
+            message = `Dear ${firstDoc.customerInformation.ms},\n\nPlease find your merged Credit Notes for Total Amount: ${creditNotes.reduce((sum, q) => sum + q.totals.grandTotal, 0).toFixed(2)}.\n\nView Link: ${publicLink}\n\nThank you!`;
+        }
+
+        const encodedMessage = encodeURIComponent(message);
+        const deepLink = `https://wa.me/${whatsappNumber}?text=${encodedMessage}`;
+
+        res.status(200).json({
+            success: true,
+            message: "WhatsApp share link generated",
+            data: { whatsappNumber, deepLink }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const generateCreditNotePublicLink = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const creditNotes = await CreditNote.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!creditNotes || creditNotes.length === 0) return res.status(404).json({ success: false, message: "Credit Note(s) not found" });
+
+        const token = generatePublicToken(req.params.id);
+
+        const options = getCopyOptions(req);
+        let queryParams = [];
+        if (options.original) queryParams.push('original=true');
+        if (options.duplicate) queryParams.push('duplicate=true');
+        if (options.transport) queryParams.push('transport=true');
+        if (options.office) queryParams.push('office=true');
+
+        const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const publicLink = `${baseUrl}/api/credit-note/view-public/${req.params.id}/${token}${queryString}`;
+
+        res.status(200).json({ success: true, publicLink });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const viewPublicCreditNote = async (req, res) => {
+    try {
+        const { id, token } = req.params;
+        const generatedToken = generatePublicToken(id);
+
+        if (token !== generatedToken) {
+            return res.status(403).send('Invalid or expired link');
+        }
+
+        const creditNote = await CreditNote.findById(id);
+        if (!creditNote) return res.status(404).send('Credit Note not found');
+
+        const userData = await User.findById(creditNote.userId);
+
+        const options = getCopyOptions(req);
+
+        const printConfig = await getSelectedPrintTemplate(creditNote.userId, 'Credit Note', creditNote.branch);
+
+        const pdfBuffer = await generateSaleInvoicePDF(creditNote, userData, {
+            ...options,
+            hideDueDate: true,
+            hideTerms: true
+        }, 'Credit Note', printConfig);
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename=credit-note-${creditNote.creditNoteDetails.cnNumber}.pdf`);
+        res.send(pdfBuffer);
+    } catch (error) {
+        res.status(500).send(error.message);
+    }
+};
+
+const attachCreditNoteFile = async (req, res) => {
+    try {
+        if (!req.files || req.files.length === 0) return res.status(400).json({ success: false, message: "No files uploaded" });
+
+        const newAttachments = req.files.map(file => ({
+            fileName: file.filename,
+            filePath: file.path,
+            fileSize: file.size,
+            mimeType: file.mimetype,
+            uploadedAt: new Date(),
+            uploadedBy: req.user._id
+        }));
+
+        const creditNote = await CreditNote.findOneAndUpdate(
+            { _id: req.params.id, userId: req.user._id },
+            { $push: { attachments: { $each: newAttachments } } },
+            { new: true }
+        );
+
+        if (!creditNote) return res.status(404).json({ success: false, message: "Credit Note not found" });
+
+        await recordActivity(
+            req,
+            'Attachment',
+            'CreditNote',
+            `Files attached to Credit Note: ${creditNote.creditNoteDetails.cnNumber}`,
+            creditNote.creditNoteDetails.cnNumber
+        );
+
+        res.status(200).json({ success: true, message: "Files attached successfully", data: creditNote.attachments });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const getCreditNoteAttachments = async (req, res) => {
+    try {
+        const creditNote = await CreditNote.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!creditNote) return res.status(404).json({ success: false, message: "Credit Note not found" });
+        res.status(200).json({ success: true, data: creditNote.attachments || [] });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const updateCreditNoteAttachment = async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded" });
+
+        const creditNote = await CreditNote.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!creditNote) {
+            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return res.status(404).json({ success: false, message: "Credit Note not found" });
+        }
+
+        const attachmentIndex = creditNote.attachments.findIndex(a => a._id.toString() === req.params.attachmentId);
+        if (attachmentIndex === -1) {
+            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return res.status(404).json({ success: false, message: "Attachment not found" });
+        }
+
+        const oldFile = creditNote.attachments[attachmentIndex].filePath;
+        if (fs.existsSync(oldFile)) {
+            try { fs.unlinkSync(oldFile); } catch (e) { console.error("Error deleting old file:", e); }
+        }
+
+        creditNote.attachments[attachmentIndex] = {
+            _id: creditNote.attachments[attachmentIndex]._id,
+            fileName: req.file.filename,
+            filePath: req.file.path,
+            fileSize: req.file.size,
+            mimeType: req.file.mimetype,
+            uploadedAt: new Date(),
+            uploadedBy: req.user._id
+        };
+
+        await creditNote.save();
+
+        await recordActivity(
+            req,
+            'Update Attachment',
+            'CreditNote',
+            `Attachment replaced for Credit Note: ${creditNote.creditNoteDetails.cnNumber}`,
+            creditNote.creditNoteDetails.cnNumber
+        );
+
+        res.status(200).json({ success: true, message: "Attachment replaced successfully", data: creditNote.attachments });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const deleteCreditNoteAttachment = async (req, res) => {
+    try {
+        const creditNote = await CreditNote.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!creditNote) return res.status(404).json({ success: false, message: "Credit Note not found" });
+
+        const attachment = creditNote.attachments.find(a => a._id.toString() === req.params.attachmentId);
+        if (!attachment) return res.status(404).json({ success: false, message: "Attachment not found" });
+
+        if (fs.existsSync(attachment.filePath)) {
+            try { fs.unlinkSync(attachment.filePath); } catch (e) { console.error("Error deleting file:", e); }
+        }
+
+        creditNote.attachments = creditNote.attachments.filter(a => a._id.toString() !== req.params.attachmentId);
+        await creditNote.save();
+
+        await recordActivity(
+            req,
+            'Delete Attachment',
+            'CreditNote',
+            `Attachment deleted from Credit Note: ${creditNote.creditNoteDetails.cnNumber}`,
+            creditNote.creditNoteDetails.cnNumber
+        );
+
+        res.status(200).json({ success: true, message: "Attachment deleted successfully", data: creditNote.attachments });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 module.exports = {
     createCreditNote,
     getCreditNotes,
@@ -593,5 +992,17 @@ module.exports = {
     updateCreditNote,
     deleteCreditNote,
     searchCreditNotes,
-    getCreditNoteSummary
+    getCreditNoteSummary,
+    getDuplicateCreditNoteData,
+    cancelCreditNote,
+    restoreCreditNote,
+    downloadCreditNotePDF,
+    shareCreditNoteEmail,
+    shareCreditNoteWhatsApp,
+    generateCreditNotePublicLink,
+    viewPublicCreditNote,
+    attachCreditNoteFile,
+    getCreditNoteAttachments,
+    updateCreditNoteAttachment,
+    deleteCreditNoteAttachment
 };

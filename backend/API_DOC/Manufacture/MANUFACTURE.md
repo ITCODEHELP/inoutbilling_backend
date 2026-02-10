@@ -85,3 +85,25 @@ Authorization: Bearer <token>
 }
 ```
 
+### Delete Manufacture
+```http
+DELETE /api/manufacture/:id
+Authorization: Bearer <token>
+```
+
+**Response (Success)**
+```json
+{
+  "success": true,
+  "message": "Manufacture deleted successfully"
+}
+```
+
+**Response (Not Found)**
+```json
+{
+  "success": false,
+  "message": "Manufacture not found"
+}
+```
+

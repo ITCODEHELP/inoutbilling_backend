@@ -3,6 +3,7 @@ const router = express.Router();
 const {
     createPurchaseOrder,
     getPurchaseOrders,
+    getNextPurchaseOrderNumber,
     getPurchaseOrderSummary,
     getPurchaseOrderById,
     updatePurchaseOrder,
@@ -64,6 +65,7 @@ router.route('/item-columns/:id')
 
 // Purchase Order Routes
 router.get('/search', searchPurchaseOrders);
+router.get('/next-number', getNextPurchaseOrderNumber);
 router.get('/summary', getPurchaseOrderSummary);
 
 router.route('/')

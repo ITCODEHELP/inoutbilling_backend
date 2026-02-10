@@ -97,7 +97,20 @@ const creditNoteSchema = new mongoose.Schema({
     customFields: {
         type: mongoose.Schema.Types.Mixed,
         default: {}
-    }
+    },
+    status: {
+        type: String,
+        enum: ['Active', 'Cancelled'],
+        default: 'Active'
+    },
+    attachments: [{
+        fileName: String,
+        filePath: String,
+        fileSize: Number,
+        mimeType: String,
+        uploadedAt: { type: Date, default: Date.now },
+        uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+    }]
 }, {
     timestamps: true
 });

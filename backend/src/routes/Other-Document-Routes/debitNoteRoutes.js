@@ -7,7 +7,12 @@ const {
     updateDebitNote,
     deleteDebitNote,
     searchDebitNotes,
-    getDebitNoteSummary
+    getDebitNoteSummary,
+    downloadDebitNotePDF,
+    shareDebitNoteEmail,
+    shareDebitNoteWhatsApp,
+    generateDebitNotePublicLink,
+    viewPublicDebitNote
 } = require('../../controllers/Other-Document-Controller/debitNoteController');
 const { protect } = require('../../middlewares/authMiddleware');
 
@@ -19,6 +24,12 @@ router.get('/summary', getDebitNoteSummary);
 router.route('/')
     .get(getDebitNotes)
     .post(createDebitNote);
+
+router.get('/download-pdf/:id', downloadDebitNotePDF);
+router.post('/share-email/:id', shareDebitNoteEmail);
+router.post('/share-whatsapp/:id', shareDebitNoteWhatsApp);
+router.get('/public-link/:id', generateDebitNotePublicLink);
+router.get('/view-public/:id/:token', viewPublicDebitNote);
 
 router.route('/:id')
     .get(getDebitNoteById)
