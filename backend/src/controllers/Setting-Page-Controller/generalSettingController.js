@@ -2,6 +2,7 @@ const GeneralSettings = require('../../models/Setting-Model/GeneralSetting');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const sharp = require('sharp');
 
 // Configure Multer for settings images
 const storage = multer.diskStorage({
@@ -104,6 +105,44 @@ const uploadSettingsImages = (req, res) => {
         }
 
         try {
+            // Define maximum dimensions for each image type
+            const maxDimensions = {
+                logo: { width: 400, height: 200 },
+                signature: { width: 540, height: 150 },
+                background: { width: 1400, height: 1400 },
+                footer: { width: 1400, height: 300 }
+            };
+
+            // Validate image dimensions
+            const uploadedFiles = req.files;
+            for (const fieldName in uploadedFiles) {
+                if (uploadedFiles[fieldName] && uploadedFiles[fieldName][0]) {
+                    const file = uploadedFiles[fieldName][0];
+                    const metadata = await sharp(file.path).metadata();
+                    const maxDim = maxDimensions[fieldName];
+
+                    if (metadata.width > maxDim.width || metadata.height > maxDim.height) {
+                        // Delete the uploaded file
+                        fs.unlinkSync(file.path);
+
+                        // Delete all other uploaded files in this request
+                        for (const field in uploadedFiles) {
+                            if (uploadedFiles[field] && uploadedFiles[field][0]) {
+                                const filePath = uploadedFiles[field][0].path;
+                                if (fs.existsSync(filePath)) {
+                                    fs.unlinkSync(filePath);
+                                }
+                            }
+                        }
+
+                        return res.status(400).json({
+                            success: false,
+                            message: `Please upload ${fieldName} image size between ${maxDim.width}x${maxDim.height} pixels. Your image is ${metadata.width}x${metadata.height} pixels.`
+                        });
+                    }
+                }
+            }
+
             const settings = await GeneralSettings.findOne({ userId: req.user._id }) || new GeneralSettings({ userId: req.user._id });
 
             // Handle logo upload

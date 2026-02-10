@@ -696,10 +696,13 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
 
             // Handle Signature Injection
             if (brandingAssets.signature) {
-                // Priority order: blank space in foot_table_signature > footer_seal_signature > footer_seal_name > fallback
+                // Priority order: blank space in foot_table_signature > no_sign > footer_seal_signature > footer_seal_name > fallback
                 if ($('.foot_table_signature td').length > 0) {
                     // This is the blank space between "For Company" and "Authorised Signatory"
                     $('.foot_table_signature td').html(`<img src="${brandingAssets.signature}" class="branding-signature-image" style="max-height: 40px; max-width: 150px; display: block; margin: 0 auto; object-fit: contain; page-break-inside: avoid;">`);
+                } else if ($('.no_sign').length > 0) {
+                    // For templates (4-13) where signature goes between "For Company" and "Authorised Signatory"
+                    $('.no_sign').html(`<img src="${brandingAssets.signature}" class="branding-signature-image" style="max-height: 40px; max-width: 150px; display: block; margin: 0 auto; object-fit: contain; page-break-inside: avoid;">`);
                 } else if ($('.footer_seal_signature').length > 0) {
                     // Fallback to dedicated signature area
                     $('.footer_seal_signature').html(`<img src="${brandingAssets.signature}" class="branding-signature-image" style="max-height: 35px; max-width: 120px; display: block; margin: 0 auto; object-fit: contain; page-break-inside: avoid;">`);
