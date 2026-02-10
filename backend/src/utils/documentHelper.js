@@ -274,12 +274,23 @@ const getSelectedPrintTemplate = async (userId, docType, branchId = 'main') => {
             printOrientation: 'Portrait'
         };
 
+        // If userId is not a valid ObjectId, it might be the custom string userId.
+        // We need to resolve it to the User._id first because PrintTemplateSettings uses ObjectId.
+        let resolvedUserId = userId;
+        if (userId && typeof userId === 'string' && !mongoose.Types.ObjectId.isValid(userId)) {
+            const User = mongoose.model('User');
+            const foundUser = await User.findOne({ userId: userId }).select('_id').lean();
+            if (foundUser) {
+                resolvedUserId = foundUser._id;
+            }
+        }
+
         // Try to find settings for the specific branch
-        let settings = await PrintTemplateSettings.findOne({ userId, branchId });
+        let settings = await PrintTemplateSettings.findOne({ userId: resolvedUserId, branchId });
 
         // Fallback to 'main' if specific branch settings not found and branchId wasn't already 'main'
         if (!settings && branchId !== 'main') {
-            settings = await PrintTemplateSettings.findOne({ userId, branchId: 'main' });
+            settings = await PrintTemplateSettings.findOne({ userId: resolvedUserId, branchId: 'main' });
         }
 
         if (!settings || !settings.templateConfigurations) return defaultSettings;

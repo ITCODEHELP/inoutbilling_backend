@@ -1,5 +1,6 @@
 const { generateSaleInvoicePDF } = require('./saleInvoicePdfHelper');
 const { fetchAndResolveDocumentOptions } = require('./documentOptionsHelper');
+const { getSelectedPrintTemplate } = require('./documentHelper');
 
 /**
  * Generates an invoice PDF as a Buffer (Legacy/Generic wrapper).
@@ -7,14 +8,16 @@ const { fetchAndResolveDocumentOptions } = require('./documentOptionsHelper');
 const generateInvoicePDF = async (invoice, isPurchase = false) => {
     const user = { userId: invoice.userId }; // Minimal user object needed for fetching Business
     const docType = isPurchase ? 'Purchase Invoice' : 'Sale Invoice';
-    const printConfig = await fetchAndResolveDocumentOptions(invoice.userId, docType);
+    const docOptions = await fetchAndResolveDocumentOptions(invoice.userId, docType);
+    const printConfig = await getSelectedPrintTemplate(invoice.userId, docType);
+    const finalConfig = { ...docOptions, ...printConfig };
 
     return generateSaleInvoicePDF(
         [invoice],
         user,
         { original: true },
         docType,
-        printConfig
+        finalConfig
     );
 };
 
@@ -24,14 +27,16 @@ const generateInvoicePDF = async (invoice, isPurchase = false) => {
 const generateReceiptPDF = async (data, type = "EXPENSE") => {
     const docType = type === 'EXPENSE' ? 'Daily Expense' : 'Other Income';
     const user = { userId: data.userId };
-    const printConfig = await fetchAndResolveDocumentOptions(data.userId, docType);
+    const docOptions = await fetchAndResolveDocumentOptions(data.userId, docType);
+    const printConfig = await getSelectedPrintTemplate(data.userId, docType);
+    const finalConfig = { ...docOptions, ...printConfig };
 
     return generateSaleInvoicePDF(
         [data],
         user,
         { original: true },
         docType,
-        printConfig
+        finalConfig
     );
 };
 
@@ -40,14 +45,16 @@ const generateReceiptPDF = async (data, type = "EXPENSE") => {
  */
 const generateQuotationPDF = async (data) => {
     const user = { userId: data.userId };
-    const printConfig = await fetchAndResolveDocumentOptions(data.userId, 'Quotation');
+    const docOptions = await fetchAndResolveDocumentOptions(data.userId, 'Quotation');
+    const printConfig = await getSelectedPrintTemplate(data.userId, 'Quotation');
+    const finalConfig = { ...docOptions, ...printConfig };
 
     return generateSaleInvoicePDF(
         [data],
         user,
         { original: true },
         'Quotation',
-        printConfig
+        finalConfig
     );
 };
 
@@ -56,14 +63,16 @@ const generateQuotationPDF = async (data) => {
  */
 const generateProformaPDF = async (data) => {
     const user = { userId: data.userId };
-    const printConfig = await fetchAndResolveDocumentOptions(data.userId, 'Proforma');
+    const docOptions = await fetchAndResolveDocumentOptions(data.userId, 'Proforma');
+    const printConfig = await getSelectedPrintTemplate(data.userId, 'Proforma');
+    const finalConfig = { ...docOptions, ...printConfig };
 
     return generateSaleInvoicePDF(
         [data],
         user,
         { original: true },
         'Proforma',
-        printConfig
+        finalConfig
     );
 };
 
@@ -72,14 +81,16 @@ const generateProformaPDF = async (data) => {
  */
 const generateDeliveryChallanPDF = async (data) => {
     const user = { userId: data.userId };
-    const printConfig = await fetchAndResolveDocumentOptions(data.userId, 'Delivery Challan');
+    const docOptions = await fetchAndResolveDocumentOptions(data.userId, 'Delivery Challan');
+    const printConfig = await getSelectedPrintTemplate(data.userId, 'Delivery Challan');
+    const finalConfig = { ...docOptions, ...printConfig };
 
     return generateSaleInvoicePDF(
         [data],
         user,
         { original: true },
         'Delivery Challan',
-        printConfig
+        finalConfig
     );
 };
 
@@ -90,7 +101,10 @@ const generateDeliveryChallanPDF = async (data) => {
 const generateLedgerPDF = async (data) => {
     const { user, rows, fromDate, toDate } = data;
     const docType = 'Bank Ledger';
-    const printConfig = await fetchAndResolveDocumentOptions(user.userId || user._id, docType);
+    const userId = user._id || user.userId;
+    const docOptions = await fetchAndResolveDocumentOptions(userId, docType);
+    const printConfig = await getSelectedPrintTemplate(userId, docType);
+    const finalConfig = { ...docOptions, ...printConfig };
 
     // Map ledger data for unified generator
     const docForPdf = {
@@ -116,7 +130,7 @@ const generateLedgerPDF = async (data) => {
         user,
         { original: true },
         docType,
-        printConfig
+        finalConfig
     );
 };
 
