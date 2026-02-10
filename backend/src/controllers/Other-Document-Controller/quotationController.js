@@ -310,7 +310,7 @@ const printQuotation = async (req, res) => {
 const downloadQuotationPDF = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const quotations = await Quotation.find({ _id: { $in: ids }, userId: req.user._id });
+        const quotations = await Quotation.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!quotations || quotations.length === 0) return res.status(404).json({ success: false, message: "Quotation(s) not found" });
 
         const userData = await User.findById(req.user._id);
@@ -338,7 +338,7 @@ const shareQuotationEmail = async (req, res) => {
             return res.status(400).json({ success: false, message: "Invalid Quotation ID(s) provided" });
         }
 
-        const quotations = await Quotation.find({ _id: { $in: ids }, userId: req.user._id });
+        const quotations = await Quotation.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
 
         // Return clear error if any ID is missing
         if (quotations.length !== ids.length) {
@@ -374,7 +374,7 @@ const shareQuotationEmail = async (req, res) => {
 const shareQuotationWhatsApp = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const quotations = await Quotation.find({ _id: { $in: ids }, userId: req.user._id });
+        const quotations = await Quotation.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!quotations || quotations.length === 0) return res.status(404).json({ success: false, message: "Quotation(s) not found" });
 
         const firstDoc = quotations[0];
