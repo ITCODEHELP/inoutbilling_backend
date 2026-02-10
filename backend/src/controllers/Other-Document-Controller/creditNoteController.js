@@ -338,7 +338,7 @@ const deleteCreditNote = async (req, res) => {
 const searchCreditNotes = async (req, res) => {
     try {
         const userId = req.user._id;
-        const Staff = require('../models/Staff');
+        const Staff = require('../../models/Setting-Model/Staff');
         const {
             search,
             company, customerName,
@@ -711,7 +711,7 @@ const restoreCreditNote = async (req, res) => {
 const downloadCreditNotePDF = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const creditNotes = await CreditNote.find({ _id: { $in: ids }, userId: req.user._id });
+        const creditNotes = await CreditNote.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!creditNotes || creditNotes.length === 0) return res.status(404).json({ success: false, message: "Credit Note(s) not found" });
 
         const userData = await User.findById(req.user._id);
@@ -737,7 +737,7 @@ const downloadCreditNotePDF = async (req, res) => {
 const shareCreditNoteEmail = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const creditNotes = await CreditNote.find({ _id: { $in: ids }, userId: req.user._id });
+        const creditNotes = await CreditNote.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!creditNotes || creditNotes.length === 0) return res.status(404).json({ success: false, message: "Credit Note(s) not found" });
 
         const firstDoc = creditNotes[0];
@@ -763,7 +763,7 @@ const shareCreditNoteEmail = async (req, res) => {
 const shareCreditNoteWhatsApp = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const creditNotes = await CreditNote.find({ _id: { $in: ids }, userId: req.user._id });
+        const creditNotes = await CreditNote.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!creditNotes || creditNotes.length === 0) return res.status(404).json({ success: false, message: "Credit Note(s) not found" });
 
         const firstDoc = creditNotes[0];

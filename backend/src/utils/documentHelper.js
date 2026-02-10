@@ -265,8 +265,13 @@ const calculateExportInvoiceTotals = async (userId, documentData, invoiceType, c
  */
 const getSelectedPrintTemplate = async (userId, docType, branchId = 'main') => {
     try {
-        // Ensure branchId defaults to 'main' if falsy (e.g. null or empty string)
-        const branch = branchId || 'main';
+        // Normalize branchId to a string (use .ms or ._id if it's an object, or fallback to 'main')
+        let branch = 'main';
+        if (typeof branchId === 'string' && branchId.trim()) {
+            branch = branchId;
+        } else if (branchId && typeof branchId === 'object') {
+            branch = branchId.ms || branchId.branchName || (branchId._id ? branchId._id.toString() : 'main');
+        }
 
         const defaultSettings = {
             selectedTemplate: 'Default',
@@ -275,10 +280,10 @@ const getSelectedPrintTemplate = async (userId, docType, branchId = 'main') => {
         };
 
         // Try to find settings for the specific branch
-        let settings = await PrintTemplateSettings.findOne({ userId, branchId });
+        let settings = await PrintTemplateSettings.findOne({ userId, branchId: branch });
 
-        // Fallback to 'main' if specific branch settings not found and branchId wasn't already 'main'
-        if (!settings && branchId !== 'main') {
+        // Fallback to 'main' if specific branch settings not found and branch wasn't already 'main'
+        if (!settings && branch !== 'main') {
             settings = await PrintTemplateSettings.findOne({ userId, branchId: 'main' });
         }
 

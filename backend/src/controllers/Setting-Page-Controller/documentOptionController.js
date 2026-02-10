@@ -71,12 +71,27 @@ const saveDocumentOptions = async (req, res) => {
             'letterOptions', 'inwardPayment', 'outwardPayment'
         ];
 
+        // Reverse map for display names
+        const schemaToDocType = {
+            'saleInvoice': 'Sale Invoice',
+            'deliveryChallan': 'Delivery Challan',
+            'quotation': 'Quotation',
+            'proforma': 'Proforma Invoice',
+            'purchaseOrder': 'Purchase Order',
+            'saleOrder': 'Sale Order',
+            'jobWork': 'Job Work',
+            'purchaseInvoice': 'Purchase Invoice',
+            'creditNote': 'Credit Note',
+            'debitNote': 'Debit Note',
+            'multiCurrencyInvoice': 'Packing List',
+            'inwardPayment': 'Inward Payment',
+            'outwardPayment': 'Outward Payment'
+        };
+
         docTypes.forEach(schemaKey => {
             if (updates[schemaKey]) {
                 // Compute effective config for default series
-                const docTypeDisplay = Object.keys(mapDocTypeToSchemaKey).find(
-                    key => mapDocTypeToSchemaKey(key) === schemaKey
-                ) || schemaKey;
+                const docTypeDisplay = schemaToDocType[schemaKey] || schemaKey;
 
                 const resolvedConfig = computeEffectiveConfig(
                     updates[schemaKey],

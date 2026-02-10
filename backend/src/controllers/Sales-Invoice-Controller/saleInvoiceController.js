@@ -1055,7 +1055,7 @@ const shareEmail = async (req, res) => {
         const ids = req.params.id.split(',').map(id => id.trim()).filter(id => mongoose.Types.ObjectId.isValid(id));
         if (ids.length === 0) return res.status(400).json({ success: false, message: "Invalid ID(s) provided" });
 
-        const invoices = await SaleInvoice.find({ _id: { $in: ids }, userId: req.user._id });
+        const invoices = await SaleInvoice.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (invoices.length !== ids.length) return res.status(404).json({ success: false, message: "Some invoice(s) not found" });
 
         const firstInvoice = invoices[0];
@@ -1081,7 +1081,7 @@ const shareWhatsApp = async (req, res) => {
         const ids = req.params.id.split(',').map(id => id.trim()).filter(id => mongoose.Types.ObjectId.isValid(id));
         if (ids.length === 0) return res.status(400).json({ success: false, message: "Invalid ID(s) provided" });
 
-        const invoices = await SaleInvoice.find({ _id: { $in: ids }, userId: req.user._id });
+        const invoices = await SaleInvoice.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (invoices.length !== ids.length) return res.status(404).json({ success: false, message: "Some invoice(s) not found" });
 
         const firstInvoice = invoices[0];
@@ -1131,7 +1131,7 @@ const shareSMS = async (req, res) => {
         const ids = req.params.id.split(',').map(id => id.trim()).filter(id => mongoose.Types.ObjectId.isValid(id));
         if (ids.length === 0) return res.status(400).json({ success: false, message: "Invalid ID(s) provided" });
 
-        const invoices = await SaleInvoice.find({ _id: { $in: ids }, userId: req.user._id });
+        const invoices = await SaleInvoice.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (invoices.length !== ids.length) return res.status(404).json({ success: false, message: "Some invoice(s) not found" });
 
         const firstInvoice = invoices[0];
@@ -1176,7 +1176,7 @@ const shareSMS = async (req, res) => {
 const downloadInvoicePDF = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const invoices = await SaleInvoice.find({ _id: { $in: ids }, userId: req.user._id });
+        const invoices = await SaleInvoice.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!invoices || invoices.length === 0) return res.status(404).json({ success: false, message: "Invoice(s) not found" });
 
         const userData = await User.findById(req.user._id);
@@ -1754,7 +1754,7 @@ const updateInvoice = async (req, res) => {
 const generatePublicLink = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const invoices = await SaleInvoice.find({ _id: { $in: ids }, userId: req.user._id });
+        const invoices = await SaleInvoice.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!invoices || invoices.length === 0) return res.status(404).json({ success: false, message: "Invoice(s) not found" });
 
         const token = generatePublicToken(req.params.id);
@@ -1782,7 +1782,7 @@ const viewInvoicePublic = async (req, res) => {
         }
 
         const ids = id.split(',');
-        const invoices = await SaleInvoice.find({ _id: { $in: ids } });
+        const invoices = await SaleInvoice.find({ _id: { $in: ids } }).sort({ createdAt: 1 });
         if (!invoices || invoices.length === 0) return res.status(404).send("Invoice(s) not found");
 
         const userData = await User.findById(invoices[0].userId);

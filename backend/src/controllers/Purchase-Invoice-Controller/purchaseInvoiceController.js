@@ -780,7 +780,7 @@ const getSummaryByCategory = async (req, res) => {
 const downloadPurchaseInvoicePDF = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const invoices = await PurchaseInvoice.find({ _id: { $in: ids }, userId: req.user._id });
+        const invoices = await PurchaseInvoice.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!invoices || invoices.length === 0) return res.status(404).json({ success: false, message: "Invoice(s) not found" });
 
         const userData = await User.findById(req.user._id);
@@ -925,7 +925,7 @@ const generateBarcodeForPurchaseInvoice = async (req, res) => {
 const shareEmail = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const invoices = await PurchaseInvoice.find({ _id: { $in: ids }, userId: req.user._id });
+        const invoices = await PurchaseInvoice.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!invoices || invoices.length === 0) return res.status(404).json({ success: false, message: "Invoice(s) not found" });
 
         const firstInvoice = invoices[0];
@@ -955,7 +955,7 @@ const shareEmail = async (req, res) => {
 const shareWhatsApp = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const invoices = await PurchaseInvoice.find({ _id: { $in: ids }, userId: req.user._id });
+        const invoices = await PurchaseInvoice.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!invoices || invoices.length === 0) return res.status(404).json({ success: false, message: "Invoice(s) not found" });
 
         const firstInvoice = invoices[0];
@@ -1348,7 +1348,7 @@ const getHSNSummary = async (req, res) => {
 const generatePublicLink = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const invoices = await PurchaseInvoice.find({ _id: { $in: ids }, userId: req.user._id });
+        const invoices = await PurchaseInvoice.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
 
         if (!invoices || invoices.length === 0) {
             return res.status(404).json({
@@ -1384,7 +1384,7 @@ const viewInvoicePublic = async (req, res) => {
         }
 
         const ids = id.split(',');
-        const invoices = await PurchaseInvoice.find({ _id: { $in: ids } });
+        const invoices = await PurchaseInvoice.find({ _id: { $in: ids } }).sort({ createdAt: 1 });
         if (!invoices || invoices.length === 0) return res.status(404).send("Invoice(s) not found");
 
         const userData = await User.findById(invoices[0].userId);
