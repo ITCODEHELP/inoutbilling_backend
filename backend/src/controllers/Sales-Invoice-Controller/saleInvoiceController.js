@@ -355,7 +355,49 @@ const handleCreateInvoiceLogic = async (req) => {
     const validationError = validateSaleInvoice(bodyData);
     if (validationError) throw new Error(validationError);
 
-    // 4️⃣ Save invoice
+    // 4️⃣ Check for duplicate invoice number and auto-increment if found
+    const initialInvoiceNumber = bodyData.invoiceDetails.invoiceNumber;
+    let uniqueInvoiceNumber = initialInvoiceNumber;
+    let retryCount = 0;
+    const maxRetries = 10;
+
+    while (true) {
+        const existingInvoice = await SaleInvoice.findOne({
+            userId: req.user._id,
+            'invoiceDetails.invoiceNumber': uniqueInvoiceNumber
+        });
+
+        if (!existingInvoice) break;
+
+        if (retryCount >= maxRetries) {
+            throw new Error(`Unable to generate unique invoice number after ${maxRetries} attempts. Please try again.`);
+        }
+
+        // Auto-increment logic
+        // Extract numeric part at the end
+        const match = uniqueInvoiceNumber.match(/(\d+)$/);
+        if (match) {
+            const numberPart = match[1];
+            const prefix = uniqueInvoiceNumber.slice(0, -numberPart.length);
+            // Increment preserving length if leading zeros? 
+            // Usually valid business logic is just valid integer increment.
+            // But let's try to be smart. If "001", make "002".
+            const nextNum = parseInt(numberPart, 10) + 1;
+            const newNumberPart = nextNum.toString().padStart(numberPart.length, '0');
+            uniqueInvoiceNumber = `${prefix}${newNumberPart}`;
+        } else {
+            // Append -1 if no number found
+            uniqueInvoiceNumber = `${uniqueInvoiceNumber}-1`;
+        }
+        retryCount++;
+    }
+
+    if (uniqueInvoiceNumber !== initialInvoiceNumber) {
+        console.log(`[Invoice Collision] Auto-incremented invoice number from ${initialInvoiceNumber} to ${uniqueInvoiceNumber}`);
+        bodyData.invoiceDetails.invoiceNumber = uniqueInvoiceNumber;
+    }
+
+    // 5️⃣ Save invoice
     const invoice = await SaleInvoice.create({
         ...bodyData,
         userId: req.user._id

@@ -844,26 +844,31 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
             $('.footer_seal_name').text(`For ${user.companyName || "Company"}`);
 
             // --- BANK DETAILS & QR CODE INJECTION ---
-            if (!invoiceDetails.hideBankDetails) {
+            if (!details.hideBankDetails) {
                 // 1. Robust Bank Selection
-                // Logic: Specific Selection > Default > First Available
+                // Logic: Specific Selection (ID or Name) > Default (only if no selection)
                 let selectedBank = null;
 
-                // Try finding by selection key (which might be bankId or _id)
-                if (invoiceDetails.bankSelection) {
-                    selectedBank = bankDetailsMap[invoiceDetails.bankSelection];
-                }
+                if (details.bankSelection) {
+                    // A. Try finding by ID (Exact Match)
+                    selectedBank = bankDetailsMap[details.bankSelection];
 
-                // Fallback to default if not found or not selected
-                if (!selectedBank) {
+                    // B. If not found, try finding by Bank Name (Case-Insensitive)
+                    if (!selectedBank) {
+                        const searchName = details.bankSelection.trim().toLowerCase();
+                        selectedBank = Object.values(bankDetailsMap).find(b =>
+                            b.bankName && b.bankName.trim().toLowerCase() === searchName
+                        );
+                    }
+                } else {
+                    // C. No selection provided: Use Default
                     selectedBank = bankDetailsMap['default'];
-                }
 
-                // Fallback to first available bank if still no bank
-                if (!selectedBank && Object.keys(bankDetailsMap).length > 0) {
-                    // Get the first bank in the map
-                    const firstKey = Object.keys(bankDetailsMap)[0];
-                    selectedBank = bankDetailsMap[firstKey];
+                    // D. Fallback to first available if no default set
+                    if (!selectedBank && Object.keys(bankDetailsMap).length > 0) {
+                        const firstKey = Object.keys(bankDetailsMap)[0];
+                        selectedBank = bankDetailsMap[firstKey];
+                    }
                 }
 
                 if (selectedBank) {
