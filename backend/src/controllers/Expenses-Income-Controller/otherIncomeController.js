@@ -66,7 +66,15 @@ const buildIncomeQuery = async (userId, queryParams) => {
 // @route   POST /api/other-incomes
 const createIncome = async (req, res) => {
     try {
+        if (!req.user || !req.user._id) {
+            return res.status(401).json({ success: false, message: 'User authentication failed' });
+        }
+
         const { print = false, customFields, ...data } = req.body;
+
+        if (!data.items || !Array.isArray(data.items)) {
+            return res.status(400).json({ success: false, message: 'Items array is required' });
+        }
 
         // --- Custom Fields Validation ---
         let parsedCustomFields = {};
@@ -78,29 +86,42 @@ const createIncome = async (req, res) => {
             }
         }
 
+        // Custom Fields Validation Removed to avoid blocking Other Income creation if Daily Expense fields are required
         const definitions = await DailyExpenseCustomField.find({ userId: req.user._id, status: 'Active' });
-        for (const def of definitions) {
-            if (def.required && !parsedCustomFields[def._id.toString()]) {
-                return res.status(400).json({ success: false, message: `Field '${def.name}' is required` });
-            }
-        }
+        // for (const def of definitions) {
+        //     if (def.required && !parsedCustomFields[def._id.toString()]) {
+        //         return res.status(400).json({ success: false, message: `Field '${def.name}' is required` });
+        //     }
+        // }
 
         // Calculate items and totals strictly
         let calculatedTotal = 0;
         const processedItems = data.items.map(item => {
-            const amount = item.price; // price is line amount here
+            const price = Number(item.price) || 0;
+            const amount = price; // price is line amount here as per logic
             calculatedTotal += amount;
-            return { ...item, amount };
+            return {
+                incomeName: item.incomeName || item.name || 'Unknown', // Fallback for name
+                note: item.note || '',
+                price: price,
+                amount: amount
+            };
         });
 
-        const grandTotal = calculatedTotal + (Number(data.roundOff) || 0);
+        // Ensure roundOff is a number
+        const roundOffVal = Number(data.roundOff) || 0;
+
+        // Recalculate grandTotal to be safe
+        const grandTotal = calculatedTotal + roundOffVal;
 
         const newIncome = new OtherIncome({
             ...data,
+            category: data.category || '', // Ensure category is not undefined
             customFields: parsedCustomFields,
             items: processedItems,
             totalInvoiceValue: calculatedTotal,
             grandTotal,
+            roundOff: roundOffVal,
             userId: req.user._id
         });
 
@@ -121,7 +142,8 @@ const createIncome = async (req, res) => {
                 items: newIncome.items.map(i => ({ name: i.incomeName, amount: i.amount })),
                 grandTotal: newIncome.grandTotal,
                 amountInWords: newIncome.amountInWords,
-                customFields: printableFields
+                customFields: printableFields,
+                userId: req.user._id
             }, "INCOME");
 
             res.setHeader('Content-Type', 'application/pdf');
@@ -131,6 +153,14 @@ const createIncome = async (req, res) => {
 
         res.status(201).json({ success: true, data: newIncome });
     } catch (error) {
+        console.error("Create Income Error:", error);
+        if (error.code === 11000) {
+            return res.status(400).json({ success: false, message: 'Income Number must be unique. This number already exists.' });
+        }
+        if (error.name === 'ValidationError') {
+            const messages = Object.values(error.errors).map(val => val.message);
+            return res.status(400).json({ success: false, message: messages.join(', ') });
+        }
         res.status(500).json({ success: false, message: 'Server Error', error: error.message });
     }
 };
@@ -440,19 +470,37 @@ const updateIncome = async (req, res) => {
         if (data.items) {
             let calculatedTotal = 0;
             const processedItems = data.items.map(item => {
-                const amount = item.price;
+                const price = Number(item.price) || 0;
+                const amount = price;
                 calculatedTotal += amount;
-                return { ...item, amount };
+                return {
+                    incomeName: item.incomeName || item.name, // handle potential loose mapping
+                    note: item.note,
+                    price: price,
+                    amount: amount
+                };
             });
             income.items = processedItems;
             income.totalInvoiceValue = calculatedTotal;
-            income.grandTotal = calculatedTotal + (Number(data.roundOff || income.roundOff) || 0);
-        } else if (data.roundOff !== undefined) {
-            income.grandTotal = income.totalInvoiceValue + Number(data.roundOff);
+
+            // Get roundOff from payload or existing
+            const currentRoundOff = data.roundOff !== undefined ? Number(data.roundOff) : (income.roundOff || 0);
+            income.grandTotal = calculatedTotal + (Number(currentRoundOff) || 0);
+            income.roundOff = currentRoundOff;
+
+        } else {
+            // If items not changing, but roundOff might change
+            if (data.roundOff !== undefined) {
+                const newRoundOff = Number(data.roundOff) || 0;
+                // We need to re-sum existing items to be sure about base total?
+                // Or trust totalInvoiceValue? Trust totalInvoiceValue.
+                income.grandTotal = (income.totalInvoiceValue || 0) + newRoundOff;
+                income.roundOff = newRoundOff;
+            }
         }
 
         // Update other fields
-        const fieldsToUpdate = ['incomeNo', 'incomeDate', 'category', 'paymentType', 'remarks', 'amountInWords', 'roundOff'];
+        const fieldsToUpdate = ['incomeNo', 'incomeDate', 'category', 'paymentType', 'remarks', 'amountInWords'];
         fieldsToUpdate.forEach(field => {
             if (data[field] !== undefined) income[field] = data[field];
         });
@@ -462,6 +510,9 @@ const updateIncome = async (req, res) => {
         await income.save();
         res.status(200).json({ success: true, message: 'Other income updated successfully', data: income });
     } catch (error) {
+        if (error.code === 11000) {
+            return res.status(400).json({ success: false, message: 'Income Number must be unique.' });
+        }
         res.status(500).json({ success: false, message: 'Server Error', error: error.message });
     }
 };

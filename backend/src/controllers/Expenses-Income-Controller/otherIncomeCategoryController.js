@@ -30,7 +30,7 @@ const getCategories = async (req, res) => {
         }
 
         const incomeCategories = await OtherIncome.aggregate([
-            { $match: incomeMatchQuery },
+            { $match: { ...incomeMatchQuery, category: { $ne: null, $ne: '' } } },
             { $group: { _id: '$category' } },
             { $sort: { _id: 1 } }
         ]);
@@ -55,6 +55,7 @@ const getCategories = async (req, res) => {
         // Step 4: Merge income-derived categories
         for (const incCat of incomeCategories) {
             const categoryName = incCat._id;
+            if (!categoryName) continue; // Skip if empty or null
             const key = categoryName.toLowerCase();
 
             // If not in master, create it

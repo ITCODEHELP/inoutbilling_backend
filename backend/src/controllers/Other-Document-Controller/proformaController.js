@@ -379,7 +379,7 @@ const printProforma = async (req, res) => {
 const downloadProformaPDF = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const proformas = await Proforma.find({ _id: { $in: ids }, userId: req.user._id });
+        const proformas = await Proforma.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!proformas || proformas.length === 0) return res.status(404).json({ success: false, message: "Proforma(s) not found" });
 
         const userData = await User.findById(req.user._id);
@@ -418,7 +418,7 @@ const downloadProformaPDF = async (req, res) => {
 const shareProformaEmail = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const proformas = await Proforma.find({ _id: { $in: ids }, userId: req.user._id });
+        const proformas = await Proforma.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!proformas || proformas.length === 0) return res.status(404).json({ success: false, message: "Proforma(s) not found" });
 
         const firstDoc = proformas[0];
@@ -464,7 +464,7 @@ const shareProformaEmail = async (req, res) => {
 const shareProformaWhatsApp = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const proformas = await Proforma.find({ _id: { $in: ids }, userId: req.user._id });
+        const proformas = await Proforma.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!proformas || proformas.length === 0) return res.status(404).json({ success: false, message: "Proforma(s) not found" });
 
         const firstDoc = proformas[0];
@@ -510,7 +510,7 @@ const shareProformaWhatsApp = async (req, res) => {
 const generatePublicLink = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const proformas = await Proforma.find({ _id: { $in: ids }, userId: req.user._id });
+        const proformas = await Proforma.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!proformas || proformas.length === 0) return res.status(404).json({ success: false, message: "Proforma(s) not found" });
 
         const token = generatePublicToken(req.params.id);

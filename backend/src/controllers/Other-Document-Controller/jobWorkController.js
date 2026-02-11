@@ -1128,7 +1128,7 @@ const printJobWork = async (req, res) => {
 const downloadJobWorkPDF = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const jws = await JobWork.find({ _id: { $in: ids }, userId: req.user._id });
+        const jws = await JobWork.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!jws || jws.length === 0) return res.status(404).json({ success: false, message: "Job Work(s) not found" });
 
         const userData = await User.findById(req.user._id);
@@ -1163,7 +1163,7 @@ const shareJobWorkEmail = async (req, res) => {
         const ids = req.params.id.split(',').map(id => id.trim()).filter(id => mongoose.Types.ObjectId.isValid(id));
         if (ids.length === 0) return res.status(400).json({ success: false, message: "Invalid ID(s) provided" });
 
-        const jws = await JobWork.find({ _id: { $in: ids }, userId: req.user._id });
+        const jws = await JobWork.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (jws.length !== ids.length) return res.status(404).json({ success: false, message: "Some Job Work(s) not found" });
 
         const firstDoc = jws[0];
@@ -1196,7 +1196,7 @@ const shareJobWorkEmail = async (req, res) => {
 const shareJobWorkWhatsApp = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const jws = await JobWork.find({ _id: { $in: ids }, userId: req.user._id });
+        const jws = await JobWork.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!jws || jws.length === 0) return res.status(404).json({ success: false, message: "Job Work(s) not found" });
 
         const firstDoc = jws[0];
@@ -1244,7 +1244,7 @@ const shareJobWorkWhatsApp = async (req, res) => {
 const generateJobWorkPublicLink = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const jws = await JobWork.find({ _id: { $in: ids }, userId: req.user._id });
+        const jws = await JobWork.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!jws || jws.length === 0) return res.status(404).json({ success: false, message: "Job Work(s) not found" });
 
         const token = generatePublicToken(req.params.id);
@@ -1277,7 +1277,7 @@ const viewJobWorkPublic = async (req, res) => {
         }
 
         const ids = id.split(',');
-        const jws = await JobWork.find({ _id: { $in: ids } });
+        const jws = await JobWork.find({ _id: { $in: ids } }).sort({ createdAt: 1 });
         if (!jws || jws.length === 0) return res.status(404).send('Job Work not found');
 
         const userData = await User.findById(jws[0].userId);

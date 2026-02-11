@@ -55,27 +55,36 @@ const getCategories = async (req, res) => {
         // Step 4: Merge expense-derived categories
         for (const expCat of expenseCategories) {
             const categoryName = expCat._id;
+
+            // Skip null or undefined category names
+            if (!categoryName) continue;
+
             const key = categoryName.toLowerCase();
 
             // If not in master, create it
             if (!categoryMap.has(key)) {
-                const newCategory = await ExpenseCategory.create({
-                    userId: req.user._id,
-                    name: categoryName,
-                    status: 'Active',
-                    isDeleted: false
-                });
+                try {
+                    const newCategory = await ExpenseCategory.create({
+                        userId: req.user._id,
+                        name: categoryName,
+                        status: 'Active',
+                        isDeleted: false
+                    });
 
-                categoryMap.set(key, {
-                    _id: newCategory._id,
-                    categoryId: newCategory._id,
-                    categoryName: newCategory.name,
-                    name: newCategory.name,
-                    status: newCategory.status,
-                    isDeleted: newCategory.isDeleted,
-                    createdAt: newCategory.createdAt,
-                    updatedAt: newCategory.updatedAt
-                });
+                    categoryMap.set(key, {
+                        _id: newCategory._id,
+                        categoryId: newCategory._id,
+                        categoryName: newCategory.name,
+                        name: newCategory.name,
+                        status: newCategory.status,
+                        isDeleted: newCategory.isDeleted,
+                        createdAt: newCategory.createdAt,
+                        updatedAt: newCategory.updatedAt
+                    });
+                } catch (createError) {
+                    console.error(`Failed to auto-create category "${categoryName}":`, createError.message);
+                    // Just continue, maybe it was created by a parallel request
+                }
             }
         }
 

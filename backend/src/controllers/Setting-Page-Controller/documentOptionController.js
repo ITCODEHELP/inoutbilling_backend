@@ -34,48 +34,58 @@ exports.getDocumentOptions = async (req, res) => {
  */
 exports.saveDocumentOptions = async (req, res) => {
     try {
-        const userId = req.user.userId || req.user._id;
+        const userId = req.user._id;
+        const updates = req.body;
 
-        // 1. Prepare Update Data
-        let updateData = { ...req.body };
-        delete updateData.userId; // Secure userId
-
-        // Helper to fix series mapping (name -> invoiceName)
-        const fixSeriesMapping = (seriesList) => {
-            if (!Array.isArray(seriesList)) return seriesList;
-            return seriesList.map(s => {
-                const sObj = { ...s };
-                // Ensure name is preserved into invoiceName if invoiceName is empty/missing
-                if (sObj.name && (!sObj.invoiceName || sObj.invoiceName.trim() === '')) {
-                    sObj.invoiceName = sObj.name;
-                }
-                return sObj;
+        // Validate that we have some data to update
+        if (!updates || Object.keys(updates).length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No update data provided'
             });
-        };
+        }
 
-        // List of document types to check for resolution
-        const docTypesToResolve = [
-            'Sale Invoice', 'Delivery Challan', 'Quotation', 'Proforma',
-            'Purchase Order', 'Sale Order', 'Purchase Invoice', 'Job Work',
-            'Credit Note', 'Debit Note', 'Receipt', 'Payment', 'Inward Payment', 'Outward Payment'
+        // Remove userId from updates if present (shouldn't be modified)
+        delete updates.userId;
+
+        // For each document type in updates, compute and store resolvedConfig
+        const docTypes = [
+            'saleInvoice', 'deliveryChallan', 'quotation', 'proforma',
+            'purchaseOrder', 'saleOrder', 'jobWork', 'purchaseInvoice',
+            'creditNote', 'debitNote', 'multiCurrencyInvoice', 'paymentType',
+            'letterOptions', 'inwardPayment', 'outwardPayment'
         ];
 
-        // 2. Process each key in the update data
-        Object.keys(updateData).forEach(key => {
-            if (key === 'documentType' || key === 'docType') return;
+        // Reverse map for display names
+        const schemaToDocType = {
+            'saleInvoice': 'Sale Invoice',
+            'deliveryChallan': 'Delivery Challan',
+            'quotation': 'Quotation',
+            'proforma': 'Proforma Invoice',
+            'purchaseOrder': 'Purchase Order',
+            'saleOrder': 'Sale Order',
+            'jobWork': 'Job Work',
+            'purchaseInvoice': 'Purchase Invoice',
+            'creditNote': 'Credit Note',
+            'debitNote': 'Debit Note',
+            'multiCurrencyInvoice': 'Packing List',
+            'inwardPayment': 'Inward Payment',
+            'outwardPayment': 'Outward Payment'
+        };
 
-            // Fix Series Mapping if this section has invoiceSeries
-            if (updateData[key] && Array.isArray(updateData[key].invoiceSeries)) {
-                updateData[key].invoiceSeries = fixSeriesMapping(updateData[key].invoiceSeries);
-            }
+        docTypes.forEach(schemaKey => {
+            if (updates[schemaKey]) {
+                // Compute effective config for default series
+                const docTypeDisplay = schemaToDocType[schemaKey] || schemaKey;
 
-            // Compute Resolved Config
-            // Find which DocType this key corresponds to
-            const matchingDocType = docTypesToResolve.find(dt => mapDocTypeToSchemaKey(dt) === key);
+                const resolvedConfig = computeEffectiveConfig(
+                    updates[schemaKey],
+                    docTypeDisplay,
+                    null // Default series
+                );
 
-            if (matchingDocType && updateData[key]) {
-                const effectiveConfig = computeEffectiveConfig(updateData[key], matchingDocType);
-                updateData[key].resolvedConfig = effectiveConfig;
+                // Store it
+                updates[schemaKey].resolvedConfig = resolvedConfig;
             }
         });
 

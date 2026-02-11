@@ -76,7 +76,7 @@ const printPackingList = async (req, res) => {
 const downloadPackingListPDF = async (req, res) => {
     try {
         const ids = req.params.id.split(',').map(id => id.trim());
-        const packingLists = await PackingList.find({ _id: { $in: ids }, userId: req.user._id, isDeleted: false });
+        const packingLists = await PackingList.find({ _id: { $in: ids }, userId: req.user._id, isDeleted: false }).sort({ createdAt: 1 });
         if (!packingLists || packingLists.length === 0) return res.status(404).json({ success: false, message: "Packing List(s) not found" });
 
         const userData = await User.findById(req.user._id);
@@ -100,7 +100,7 @@ const downloadPackingListPDF = async (req, res) => {
 const sharePackingListEmail = async (req, res) => {
     try {
         const ids = req.params.id.split(',').map(id => id.trim());
-        const packingLists = await PackingList.find({ _id: { $in: ids }, userId: req.user._id, isDeleted: false });
+        const packingLists = await PackingList.find({ _id: { $in: ids }, userId: req.user._id, isDeleted: false }).sort({ createdAt: 1 });
 
         if (packingLists.length === 0) return res.status(404).json({ success: false, message: "Packing List(s) not found" });
 
@@ -125,7 +125,7 @@ const sharePackingListEmail = async (req, res) => {
 const sharePackingListWhatsApp = async (req, res) => {
     try {
         const ids = req.params.id.split(',').map(id => id.trim());
-        const packingLists = await PackingList.find({ _id: { $in: ids }, userId: req.user._id, isDeleted: false });
+        const packingLists = await PackingList.find({ _id: { $in: ids }, userId: req.user._id, isDeleted: false }).sort({ createdAt: 1 });
         if (packingLists.length === 0) return res.status(404).json({ success: false, message: "Packing List(s) not found" });
 
         const firstDoc = packingLists[0];
@@ -166,7 +166,7 @@ const sharePackingListWhatsApp = async (req, res) => {
 const generatePackingListPublicLink = async (req, res) => {
     try {
         const ids = req.params.id.split(',').map(id => id.trim());
-        const packingLists = await PackingList.find({ _id: { $in: ids }, userId: req.user._id, isDeleted: false });
+        const packingLists = await PackingList.find({ _id: { $in: ids }, userId: req.user._id, isDeleted: false }).sort({ createdAt: 1 });
         if (packingLists.length === 0) return res.status(404).json({ success: false, message: "Packing List(s) not found" });
 
         const token = generatePublicToken(req.params.id);
@@ -195,7 +195,7 @@ const viewPackingListPublic = async (req, res) => {
         if (token !== generatePublicToken(id)) return res.status(401).send("Invalid or expired link");
 
         const ids = id.split(',').map(id => id.trim());
-        const packingLists = await PackingList.find({ _id: { $in: ids }, isDeleted: false });
+        const packingLists = await PackingList.find({ _id: { $in: ids }, isDeleted: false }).sort({ createdAt: 1 });
         if (!packingLists || packingLists.length === 0) return res.status(404).send("Packing List(s) not found");
 
         const userData = await User.findById(packingLists[0].userId);

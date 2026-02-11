@@ -147,3 +147,145 @@ Authorization: Bearer <token>
 }
 ```
 
+### Duplicate Debit Note
+```http
+GET /api/debit-note/:id/duplicate
+Authorization: Bearer <token>
+```
+**Response (Success)**
+```json
+{
+  "success": true,
+  "message": "Debit Note data for duplication retrieved",
+  "data": {
+    "customerInformation": { ... },
+    "debitNoteDetails": {
+       "dnPrefix": "DN",
+       "dnPostfix": "2024",
+       "dnDate": "2024-01-20",
+       "invoiceNumber": "INV-2024-005",
+       "invoiceDate": "2024-01-15",
+       "docType": "Regular",
+       "dnType": "Quantity Shortage",
+       "deliveryMode": "Courier"
+    },
+    "items": [ ... ],
+    "totals": { ... }
+  }
+}
+```
+> **Note**: System fields like `_id`, `dnNumber`, `status`, and timestamps are removed from the response data to facilitate creating a new record.
+
+### Cancel Debit Note
+```http
+POST /api/debit-note/:id/cancel
+Authorization: Bearer <token>
+```
+**Response (Success)**
+```json
+{
+  "success": true,
+  "message": "Debit Note cancelled successfully",
+  "data": {
+    "status": "Cancelled",
+    ...
+  }
+}
+```
+
+### Restore Debit Note
+```http
+POST /api/debit-note/:id/restore
+Authorization: Bearer <token>
+```
+**Response (Success)**
+```json
+{
+  "success": true,
+  "message": "Debit Note restored successfully",
+  "data": {
+    "status": "Active",
+    ...
+  }
+}
+```
+
+### Download Debit Note PDF
+```http
+GET /api/debit-note/:id/download-pdf?original=true&duplicate=true
+Authorization: Bearer <token>
+```
+**Query Parameters**
+- `id`: Single ID or comma-separated IDs for merged PDF
+- `original`, `duplicate`, `transport`, `office`: (Boolean) Include specific copies
+
+### Share Debit Note via Email
+```http
+POST /api/debit-note/share-email/:id
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+**Request Body**
+```json
+{
+  "email": "customer@example.com"
+}
+```
+
+### Share Debit Note via WhatsApp
+```http
+POST /api/debit-note/share-whatsapp/:id
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+**Request Body**
+```json
+{
+  "phone": "919876543210"
+}
+```
+
+### Generate Public Link
+```http
+GET /api/debit-note/public-link/:id
+Authorization: Bearer <token>
+```
+
+### Public View Debit Note
+```http
+GET /api/debit-note/view-public/:id/:token
+```
+> **Note**: This endpoint is unprotected and intended for customer access via secure link.
+
+### Attachment APIs
+
+#### Attach Files
+```http
+POST /api/debit-note/:id/attach-file
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+```
+**Form Data**
+- `attachments`: File(s) to upload
+
+#### List Attachments
+```http
+GET /api/debit-note/:id/attachments
+Authorization: Bearer <token>
+```
+
+#### Update (Replace) Attachment
+```http
+PUT /api/debit-note/:id/attachment/:attachmentId
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+```
+**Form Data**
+- `attachment`: New file to replace existing one
+
+#### Delete Attachment
+```http
+DELETE /api/debit-note/:id/attachment/:attachmentId
+Authorization: Bearer <token>
+```
+
