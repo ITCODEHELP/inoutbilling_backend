@@ -38,45 +38,76 @@ const calculateDocumentTotals = async (userId, documentData, branchId = null) =>
     let totalCGST = 0;
     let totalSGST = 0;
     let totalIGST = 0;
+    let totalDiscount = 0;
+    let totalInvoiceValue = 0; // Sum of final item totals before discount
+    let totalTax = 0;
 
     const items = Array.isArray(documentData.items) ? documentData.items : [];
     const calculatedItems = items.map(item => {
         const qty = Number(item.qty || 0);
         const price = Number(item.price || 0);
-        const discount = Number(item.discount || 0);
-        const igstRate = Number(item.igst || 0); // Base IGST rate from client
+        const discount = Number(item.discount || item.discountValue || 0); // Accept both field names
+        const discountType = item.discountType || 'Percentage';
+        const igstRate = Number(item.igst || 0);
 
-        const taxableValue = qty * price * (1 - discount / 100);
+        // Step 1: Calculate base amount (qty × price)
+        const baseAmount = qty * price;
 
+        // Step 2: Calculate tax on base amount
         let cgst = 0, sgst = 0, igst = 0;
         let cgstRate = 0, sgstRate = 0, finalIgstRate = 0;
 
         if (isIntraState) {
             cgstRate = igstRate / 2;
             sgstRate = igstRate / 2;
-            cgst = (taxableValue * cgstRate) / 100;
-            sgst = (taxableValue * sgstRate) / 100;
+            cgst = (baseAmount * cgstRate) / 100;
+            sgst = (baseAmount * sgstRate) / 100;
         } else {
             finalIgstRate = igstRate;
-            igst = (taxableValue * finalIgstRate) / 100;
+            igst = (baseAmount * finalIgstRate) / 100;
         }
 
-        const total = taxableValue + cgst + sgst + igst;
+        const taxAmount = cgst + sgst + igst;
 
-        totalTaxable += taxableValue;
+        // Step 3: Amount with tax (before discount)
+        const amountWithTax = baseAmount + taxAmount;
+
+        // Step 4: Calculate discount on final amount (after tax)
+        let discountAmount = 0;
+        if (discountType === 'Percentage') {
+            discountAmount = amountWithTax * (discount / 100);
+        } else {
+            // Flat discount
+            discountAmount = discount;
+        }
+
+        // Step 5: Final item total (after discount)
+        const finalItemTotal = amountWithTax - discountAmount;
+
+        // Aggregate totals
+        totalInvoiceValue += amountWithTax; // Total before discount
+        totalDiscount += discountAmount;
         totalCGST += cgst;
         totalSGST += sgst;
         totalIGST += igst;
+        totalTax += taxAmount;
+
+        // For taxable value, we need to back-calculate from final total
+        // taxableValue = finalItemTotal - taxAmount (from discounted amount)
+        const taxableValue = baseAmount; // Keep base as taxable for reporting
 
         return {
             ...item,
             hsnSac: item.hsnSac || item.hsnCode || "",
             qty, price, discount,
+            discountType,
+            baseAmount: Math.round(baseAmount * 100) / 100,
             taxableValue: Math.round(taxableValue * 100) / 100,
+            discountAmount: Math.round(discountAmount * 100) / 100,
             igst: isIntraState ? 0 : finalIgstRate,
             cgst: isIntraState ? cgstRate : 0,
             sgst: isIntraState ? sgstRate : 0,
-            total: Math.round(total * 100) / 100
+            total: Math.round(finalItemTotal * 100) / 100
         };
     });
 
@@ -89,17 +120,22 @@ const calculateDocumentTotals = async (userId, documentData, branchId = null) =>
         totalTaxOnCharges += Number(charge.tax || 0);
     });
 
-    // 5. Aggregates
-    const totalTax = totalCGST + totalSGST + totalIGST + totalTaxOnCharges;
-    let grandTotal = totalTaxable + totalTax + totalChargeAmount;
+    // 5. Calculate invoice totals from final item totals
+    const sumOfItemTotals = calculatedItems.reduce((sum, item) => sum + item.total, 0);
+    let grandTotal = sumOfItemTotals + totalChargeAmount + totalTaxOnCharges;
 
     const finalGrandTotal = Math.round(grandTotal);
     const roundOff = Math.round((finalGrandTotal - grandTotal) * 100) / 100;
 
+    // Calculate totalTaxable from base amounts (for reporting purposes)
+    const totalTaxableForReporting = calculatedItems.reduce((sum, item) => sum + item.taxableValue, 0);
+
     return {
         items: calculatedItems,
         totals: {
-            totalTaxable: Math.round(totalTaxable * 100) / 100,
+            totalInvoiceValue: Math.round(totalInvoiceValue * 100) / 100, // Total with tax before discount
+            totalDiscount: Math.round(totalDiscount * 100) / 100, // Total discount amount
+            totalTaxable: Math.round(totalTaxableForReporting * 100) / 100, // Base amounts for reporting
             totalCGST: Math.round(totalCGST * 100) / 100,
             totalSGST: Math.round(totalSGST * 100) / 100,
             totalIGST: Math.round(totalIGST * 100) / 100,

@@ -92,7 +92,7 @@ exports.saveDocumentOptions = async (req, res) => {
         // 3. Save using findOneAndUpdate with upsert
         const options = await DocumentOption.findOneAndUpdate(
             { userId },
-            { $set: updateData },
+            { $set: updates },
             { new: true, upsert: true, setDefaultsOnInsert: true }
         );
 
@@ -111,7 +111,8 @@ exports.saveDocumentOptions = async (req, res) => {
                 'saleInvoice', 'deliveryChallan', 'quotation', 'proforma',
                 'purchaseOrder', 'saleOrder', 'purchaseInvoice', 'jobWork',
                 'creditNote', 'debitNote', 'receipt', 'payment',
-                'inwardPayment', 'outwardPayment', 'dailyExpense', 'otherIncome', 'bankLedger'
+                'inwardPayment', 'outwardPayment', 'dailyExpense', 'otherIncome', 'bankLedger',
+                'multiCurrencyInvoice'
             ];
 
             // Check if request body contains any known document keys

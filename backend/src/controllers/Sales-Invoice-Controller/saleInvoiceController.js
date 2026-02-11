@@ -355,6 +355,15 @@ const handleCreateInvoiceLogic = async (req) => {
     const validationError = validateSaleInvoice(bodyData);
     if (validationError) throw new Error(validationError);
 
+    // 3.5️⃣ BACKEND CALCULATION - Calculate totals from base inputs only
+    const { calculateDocumentTotals } = require('../../utils/documentHelper');
+    const branchId = bodyData.branch || bodyData.branchId || null;
+    const calculated = await calculateDocumentTotals(req.user._id, bodyData, branchId);
+
+    // Replace frontend totals with backend-calculated values
+    bodyData.items = calculated.items;
+    bodyData.totals = calculated.totals;
+
     // 4️⃣ Check for duplicate invoice number
     const existingInvoice = await SaleInvoice.findOne({
         userId: req.user._id,
@@ -1727,6 +1736,15 @@ const updateInvoice = async (req, res) => {
         // 3️⃣ Validate
         const validationError = validateSaleInvoice(bodyData);
         if (validationError) return res.status(400).json({ success: false, message: validationError });
+
+        // 3.5️⃣ BACKEND CALCULATION - Calculate totals from base inputs only
+        const { calculateDocumentTotals } = require('../../utils/documentHelper');
+        const branchId = bodyData.branch || bodyData.branchId || null;
+        const calculated = await calculateDocumentTotals(req.user._id, bodyData, branchId);
+
+        // Replace frontend totals with backend-calculated values
+        bodyData.items = calculated.items;
+        bodyData.totals = calculated.totals;
 
         // 4️⃣ Update invoice
         const invoice = await SaleInvoice.findOneAndUpdate(
