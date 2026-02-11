@@ -1,858 +1,718 @@
 <!doctype html>
 <html>
-  <head>
-    <meta charset="UTF-8" />
-    <title>Tax Invoice</title>
 
-    <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
+<head>
+  <meta charset="UTF-8" />
+  <title>Tax Invoice</title>
 
-      .page-copy-container-wrapper,
-      .page-copy-container-wrapper-letter,
-      body {
-        background: #dde0e4 !important;
-      }
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
 
-      .page-wrapper-table,
-      .page-wrapper-tr,
-      .page-copy-container-wrapper {
-        position: relative;
-      }
+    .page-copy-container-wrapper,
+    .page-copy-container-wrapper-letter,
+    body {
+      background: #dde0e4 !important;
+    }
 
-      .page-wrapper-table {
-        width: 780px;
-        margin: 0px auto;
-        position: relative;
-      }
+    .page-wrapper-table,
+    .page-wrapper-tr,
+    .page-copy-container-wrapper {
+      position: relative;
+    }
 
-      .page-wrapper-tr,
-      .page-wrapper-tr-letter {
-        background: #fff;
-        box-shadow: 0 0 10px 0 rgb(0 0 0 / 50%);
-        -webkit-box-shadow: 0 0 10px 0 rgb(0 0 0 / 50%);
-        margin: 10px 0;
-      }
+    .page-wrapper-table {
+      width: 780px;
+      margin: 0px auto;
+      position: relative;
+    }
 
-      .page-wrapper,
-      .page-wrapper-letter {
-        padding: 28px 0px !important;
-      }
+    .page-wrapper-tr,
+    .page-wrapper-tr-letter {
+      background: #fff;
+      box-shadow: 0 0 10px 0 rgb(0 0 0 / 50%);
+      -webkit-box-shadow: 0 0 10px 0 rgb(0 0 0 / 50%);
+      margin: 10px 0;
+    }
 
-      .page-wrapper {
-        /* height: 1020px; */
-        width: 710px;
-        margin: 0px auto;
-        position: relative;
-      }
+    .page-wrapper,
+    .page-wrapper-letter {
+      padding: 28px 0px !important;
+    }
 
-      .page-wrapper .page-header,
-      .page-wrapper-letter .page-header {
-        position: relative;
-        padding: 0px;
-        margin: 0px;
-        z-index: 1;
-        border-bottom: 0px;
-      }
+    .page-wrapper {
+      /* height: 1020px; */
+      width: 710px;
+      margin: 0px auto;
+      position: relative;
+    }
 
-      table {
-        width: 100%;
-        font-size: 13px;
-        line-height: 1.3;
-      }
+    .page-wrapper .page-header,
+    .page-wrapper-letter .page-header {
+      position: relative;
+      padding: 0px;
+      margin: 0px;
+      z-index: 1;
+      border-bottom: 0px;
+    }
 
-      p {
-        font-size: 14px;
-        margin: 0;
-        line-height: 1.3;
-      }
+    table {
+      width: 100%;
+      font-size: 13px;
+      line-height: 1.3;
+    }
 
-      #section2 {
-        padding-top: 5px;
-      }
-      #section2 .invoiceDetailtd .section2_invo_color .section2_title {
-        font-weight: 600;
-      }
-      #section2 .customerdata_label {
-        font-weight: normal;
-        font-size: 13px;
-        padding: 2px 0;
-        color: #000;
-      }
+    p {
+      font-size: 14px;
+      margin: 0;
+      line-height: 1.3;
+    }
 
-      #section2 h2.special {
-        font-size: 15px;
-        padding: 2px 0;
-        line-height: 1.2;
-      }
+    #section2 {
+      padding-top: 5px;
+    }
 
-      #section2 .section2_invo {
-        font-size: 13px;
-        color: black;
-        font-weight: 600;
-      }
+    #section2 .invoiceDetailtd .section2_invo_color .section2_title {
+      font-weight: 600;
+    }
 
-      #section2 .section2_invo_color {
-        font-size: 13px;
-        padding: 2px 0;
-      }
+    #section2 .customerdata_label {
+      font-weight: normal;
+      font-size: 13px;
+      padding: 2px 0;
+      color: #000;
+    }
 
-      #section2 .section2_add {
-        padding: 2px 0;
-      }
+    #section2 h2.special {
+      font-size: 15px;
+      padding: 2px 0;
+      line-height: 1.2;
+    }
 
-      #section2 .invoicedata .invoicedata_item_label {
-        min-width: 130px;
-      }
+    #section2 .section2_invo {
+      font-size: 13px;
+      color: black;
+      font-weight: 600;
+    }
 
-      section#headersec td:first-child {
-        text-align: left;
-      }
+    #section2 .section2_invo_color {
+      font-size: 13px;
+      padding: 2px 0;
+    }
 
-      section#headersec td:last-child {
-        text-align: right;
-      }
+    #section2 .section2_add {
+      padding: 2px 0;
+    }
 
-      section #headersec h3 {
-        font-size: 15px;
-      }
+    #section2 .invoicedata .invoicedata_item_label {
+      min-width: 130px;
+    }
 
-      #section2 .invoiceDetailtd {
-        padding-right: 10px;
-      }
+    section#headersec td:first-child {
+      text-align: left;
+    }
 
-      .customerdata td.customerdata_label {
-        text-align: center;
-        font-weight: bold;
-        border-bottom: 1px solid #0070c0;
-        width: 100%;
-        font-size: 10px;
-      }
+    section#headersec td:last-child {
+      text-align: right;
+    }
 
-      .customerdata td.customerdata_item_label {
-        font-weight: bold;
-      }
+    section #headersec h3 {
+      font-size: 15px;
+    }
 
-      .invoicedata td {
-        padding: 3px 5px 6px 5px;
-        font-size: 11px;
-        vertical-align: top;
-        line-height: 13px;
-      }
+    #section2 .invoiceDetailtd {
+      padding-right: 10px;
+    }
 
-      .invoicedata td.special {
-        font-weight: bold;
-        font-size: 12px;
-      }
+    .customerdata td.customerdata_label {
+      text-align: center;
+      font-weight: bold;
+      border-bottom: 1px solid #0070c0;
+      width: 100%;
+      font-size: 10px;
+    }
 
-      .billdetailsthead td {
-        font-size: 9px;
-      }
+    .customerdata td.customerdata_item_label {
+      font-weight: bold;
+    }
 
-      .billdetailsthead td {
-        background-color: #e8f3fd;
-        border: 1px solid #0070c0;
-        border-collapse: collapse;
-        text-align: center;
-        font-weight: bold;
-        padding: 5px 2px;
-      }
+    .invoicedata td {
+      padding: 3px 5px 6px 5px;
+      font-size: 11px;
+      vertical-align: top;
+      line-height: 13px;
+    }
 
-      .valign-mid {
-        vertical-align: middle;
-      }
+    .invoicedata td.special {
+      font-weight: bold;
+      font-size: 12px;
+    }
 
-      .page-wrapper .page-content {
-        position: relative;
-      }
+    .billdetailsthead td {
+      font-size: 9px;
+    }
 
-      .tableboxLinetable {
-        position: absolute;
-        top: 0;
-        left: 0;
-        z-index: 0;
-        border-bottom: 1px solid #0070c0;
-      }
+    .billdetailsthead td {
+      background-color: #e8f3fd;
+      border: 1px solid #0070c0;
+      border-collapse: collapse;
+      text-align: center;
+      font-weight: bold;
+      padding: 5px 2px;
+    }
 
-      .tableboxLine {
-        border-right: 1px solid #0070c0;
-        border-left: 1px solid #0070c0;
-        border-collapse: collapse;
-        height: 417px;
-        top: 0;
-        box-sizing: border-box;
-        -moz-box-sizing: border-box;
-        -webkit-box-sizing: border-box;
-        z-index: -1;
-      }
+    .valign-mid {
+      vertical-align: middle;
+    }
 
-      .invoicedataFooter td {
-        font-size: 11px;
-        background-color: #e8f3fd;
-        padding: 5px 1px 5px 0px;
-        border: 1px solid #0070c0;
-      }
+    .page-wrapper .page-content {
+      position: relative;
+    }
 
-      .txt-right {
-        text-align: right;
-      }
+    .tableboxLinetable {
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 0;
+      border-bottom: 1px solid #0070c0;
+    }
 
-      .txt-bold {
-        font-weight: bold;
-      }
+    .tableboxLine {
+      border-right: 1px solid #0070c0;
+      border-left: 1px solid #0070c0;
+      border-collapse: collapse;
+      height: 417px;
+      top: 0;
+      box-sizing: border-box;
+      -moz-box-sizing: border-box;
+      -webkit-box-sizing: border-box;
+      z-index: -1;
+    }
 
-      .invoiceTotal,
-      .invoiceTotalSign,
-      .invoiceInfo {
-        border-collapse: collapse;
-      }
+    .invoicedataFooter td {
+      font-size: 11px;
+      background-color: #e8f3fd;
+      padding: 5px 1px 5px 0px;
+      border: 1px solid #0070c0;
+    }
 
-      .invoiceTotal,
-      .invoiceTotalSign,
-      .invoiceInfo {
-        border-collapse: collapse;
-      }
+    .txt-right {
+      text-align: right;
+    }
 
-      .invoiceTotalSign {
-        position: absolute;
-        bottom: 0;
-      }
+    .txt-bold {
+      font-weight: bold;
+    }
 
-      .invoiceTotalSign td {
-        padding: 3px 5px;
-        font-size: 8px;
-        line-height: 13px;
-        font-weight: bold;
-        border-top: 1px solid #0070c0;
-        text-align: center;
-      }
+    .invoiceTotal,
+    .invoiceTotalSign,
+    .invoiceInfo {
+      border-collapse: collapse;
+    }
 
-      .company_email {
-        display: none;
-      }
+    .invoiceTotal,
+    .invoiceTotalSign,
+    .invoiceInfo {
+      border-collapse: collapse;
+    }
 
-      #section2 .invoiceDetailtd .section2_add .section2_title {
-        font-weight: 600;
-      }
-      h2.section2_invo.special {
-        margin: 0;
-      }
+    .invoiceTotalSign {
+      position: absolute;
+      bottom: 0;
+    }
 
-      #section3 {
-        padding-top: 10px;
-      }
+    .invoiceTotalSign td {
+      padding: 3px 5px;
+      font-size: 8px;
+      line-height: 13px;
+      font-weight: bold;
+      border-top: 1px solid #0070c0;
+      text-align: center;
+    }
 
-      #section3 .section3_table,
-      #section3 .section3_table td h4,
-      #section3 .section3_table td p {
-        font-size: 11px;
-      }
+    .company_email {
+      display: none;
+    }
 
-      #section3 .section3_table {
-        border-collapse: collapse;
-      }
+    #section2 .invoiceDetailtd .section2_add .section2_title {
+      font-weight: 600;
+    }
 
-      #section3 .section3_thead {
-        border-width: 1px;
-        border-top: 2px solid #0070c0;
-        border-bottom: 2px solid #0070c0;
-        background-color: #0070c0;
-        color: #fff;
-        font-size: 11px;
-      }
+    h2.section2_invo.special {
+      margin: 0;
+    }
 
-      #section3 .section3_thead td[rowspan="2"] {
-        vertical-align: middle;
-      }
+    #section3 {
+      padding-top: 10px;
+    }
 
-      #section3 .section3_table td {
-        padding: 2px;
-      }
-      #section3 .section3_text_left {
-        text-align: left;
-      }
-      #section3 .section3_text_center {
-        text-align: center;
-      }
-      #section3 .section3_text_right {
-        text-align: right;
-      }
+    #section3 .section3_table,
+    #section3 .section3_table td h4,
+    #section3 .section3_table td p {
+      font-size: 11px;
+    }
 
-      #section3 .section3_thead tr:last-child td {
-        font-size: 11px;
-        text-align: center;
-        padding-top: 0;
-      }
+    #section3 .section3_table {
+      border-collapse: collapse;
+    }
 
-      #section3 .section3_tbl_border {
-        border-bottom: 2px solid #b3c0c7;
-      }
+    #section3 .section3_thead {
+      border-width: 1px;
+      border-top: 2px solid #0070c0;
+      border-bottom: 2px solid #0070c0;
+      background-color: #0070c0;
+      color: #fff;
+      font-size: 11px;
+    }
 
-      #section3 .section3_table td h4 {
-        font-size: 14px;
-      }
+    #section3 .section3_thead td[rowspan="2"] {
+      vertical-align: middle;
+    }
 
-      #section4 .section4_height {
-        height: auto;
-        padding: 1px 4px;
-      }
+    #section3 .section3_table td {
+      padding: 2px;
+    }
 
-      #section4 .section4_text_clr {
-        color: #000;
-        width: 25%;
-        vertical-align: bottom;
-      }
+    #section3 .section3_text_left {
+      text-align: left;
+    }
 
-      #section4 .totalamountinword {
-        border-bottom: 3px solid #0070c0;
-        padding-left: 4px;
-      }
+    #section3 .section3_text_center {
+      text-align: center;
+    }
 
-      #section4 .invoiceTotal .section4_td_right:last-child {
-        font-weight: 600;
-      }
+    #section3 .section3_text_right {
+      text-align: right;
+    }
 
-      #section4 .section4_td_right {
-        text-align: right;
-        font-weight: 400;
-      }
+    #section3 .section3_thead tr:last-child td {
+      font-size: 11px;
+      text-align: center;
+      padding-top: 0;
+    }
 
-      section#section5 {
-        padding-top: 5px;
-      }
+    #section3 .section3_tbl_border {
+      border-bottom: 2px solid #b3c0c7;
+    }
 
-      #section5 .section5_left,
-      #section5 .section5_right {
-        padding: 0;
-      }
+    #section3 .section3_table td h4 {
+      font-size: 14px;
+    }
 
-      #section5 td,
-      #section6 td {
-        padding: 4px;
-        vertical-align: top;
-      }
+    #section4 .section4_height {
+      height: auto;
+      padding: 1px 4px;
+    }
 
-      #section5 .section6_title,
-      #section6 .section6_title {
-        font-weight: 600;
-        font-size: 13px;
-      }
+    #section4 .section4_text_clr {
+      color: #000;
+      width: 25%;
+      vertical-align: bottom;
+    }
 
-      #section5 .section5_sig,
-      #section6 .section6_sig {
-        text-align: center;
-        font-weight: bold;
-      }
+    #section4 .totalamountinword {
+      border-bottom: 3px solid #0070c0;
+      padding-left: 4px;
+    }
 
-      #section5 .section5_cmp_name,
-      #section6 .section6_cmp_name {
-        text-align: center;
-        font-size: 13px;
-        margin-bottom: 3px;
-        font-weight: bold;
-      }
-      #section5 .no_sign,
-      #section6 .no_sign {
-        height: 20px;
-      }
-      td {
-        /* padding: 4px; */
-        vertical-align: top;
-      }
-      #section5 p.signtitle,
-      #section6 p.signtitle {
-        margin-top: 40px;
-        font-size: 9px;
-      }
-    </style>
-  </head>
-  <body
-    style="
+    #section4 .invoiceTotal .section4_td_right:last-child {
+      font-weight: 600;
+    }
+
+    #section4 .section4_td_right {
+      text-align: right;
+      font-weight: 400;
+    }
+
+    section#section5 {
+      padding-top: 5px;
+    }
+
+    #section5 .section5_left,
+    #section5 .section5_right {
+      padding: 0;
+    }
+
+    #section5 td,
+    #section6 td {
+      padding: 4px;
+      vertical-align: top;
+    }
+
+    #section5 .section6_title,
+    #section6 .section6_title {
+      font-weight: 600;
+      font-size: 13px;
+    }
+
+    #section5 .section5_sig,
+    #section6 .section6_sig {
+      text-align: center;
+      font-weight: bold;
+    }
+
+    #section5 .section5_cmp_name,
+    #section6 .section6_cmp_name {
+      text-align: center;
+      font-size: 13px;
+      margin-bottom: 3px;
+      font-weight: bold;
+    }
+
+    #section5 .no_sign,
+    #section6 .no_sign {
+      height: 20px;
+    }
+
+    td {
+      /* padding: 4px; */
+      vertical-align: top;
+    }
+
+    #section5 p.signtitle,
+    #section6 p.signtitle {
+      margin-top: 40px;
+      font-size: 9px;
+    }
+  </style>
+</head>
+
+<body style="
       font-family: Arial, Helvetica, sans-serif;
       background: #f5f5f5;
       padding: 20px;
-    "
-  >
-    <div class="page-copy-container-wrapper">
-      <div class="page-wrapper-table original_for_recipient">
-        <div
-          class="page-wrapper-tr page-first page-last"
-          style="page-break-inside: avoid; page-break-after: auto"
-        >
-          <div>
-            <div class="Active page-wrapper">
-              <section id="headersection" class="pageRow1">
-                <section id="headersec">
-                  <table cellspacing="0" cellpadding="0">
-                    <colgroup>
-                      <col style="width: 50%" />
-                      <col style="width: 50%" />
-                    </colgroup>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <h3 style="color: #0070c0">TAX INVOICE</h3>
-                        </td>
-                        <td>
-                          <h3 class="copyname">ORIGINAL FOR RECIPIENT</h3>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </section>
-              </section>
-              <section id="section2" class="pageRow1">
-                <table
-                  cellspacing="0"
-                  cellpadding="0"
-                  class="customerdata"
-                  data-editor=".customerdata td:not(.customerdata_label):not(.customerdata_item_label):not(.special)"
-                >
+    ">
+  <div class="page-copy-container-wrapper">
+    <div class="page-wrapper-table original_for_recipient">
+      <div class="page-wrapper-tr page-first page-last" style="page-break-inside: avoid; page-break-after: auto">
+        <div>
+          <div class="Active page-wrapper">
+            <section id="headersection" class="pageRow1">
+              <section id="headersec">
+                <table cellspacing="0" cellpadding="0">
                   <colgroup>
-                    <col style="width: 35%" />
-                    <col style="width: 30%" />
-                    <col style="width: 35%" />
+                    <col style="width: 50%" />
+                    <col style="width: 50%" />
                   </colgroup>
                   <tbody>
                     <tr>
-                      <td class="invoiceDetailtd">
-                        <p
-                          class="customerdata_label customer_label"
-                          data-editor="#section2 .customerdata_label"
-                        >
-                          Details of Buyer | Billed to:
-                        </p>
-                        <h2
-                          class="section2_invo special company_name"
-                          data-editor="#section2 h2.special"
-                        >
-                          Shree Krishna Traders Pvt. Ltd.
-                        </h2>
-                        <p
-                          class="section2_invo_color special2 company_address"
-                          data-editor="#section2 p.special2"
-                        >
-                          Plot No. 45, GIDC Industrial Area Phase 2,Near Udyog
-                          Bhavan., Gujarat, India, Near Udyog Bhavan<span
-                            class="cmp_city"
-                            >, Ahmedabad</span
-                          ><span class="cmp_state">, Gujarat</span
-                          ><span class="cmp_pincode"> - 380015</span>
-                        </p>
-                        <p
-                          class="section2_mrgin_top customerdata_item_label company_contact_no"
-                        >
-                          Phone: +91 98765 43210
-                        </p>
-                        <p
-                          class="section2_mrgin_top customerdata_item_label company_email"
-                        >
-                          Email:
-                          accounts@shreekrishnatraders.com,info@shreekrishnatraders.com
-                        </p>
-                        <p class="section2_invo_color company_gstin">
-                          <span class="section2_title"> GSTIN:</span>
-                          <span
-                            class="section2_invo2 cmp_gstno"
-                            data-editor="#section2 .cmp_gstno"
-                            >24ABCDE1234F1Z5</span
-                          >
-                        </p>
-                        <p class="section2_invo_color company_pan_no">
-                          <span class="section2_title">PAN:</span>
-                          <span class="section2_invo2 cmp_gstno"
-                            >ABCDE1234F</span
-                          >
-                        </p>
-
-                        <p class="section2_invo_color company_state">
-                          <span class="section2_title">State:</span>
-                          <span class="section2_invo2">Gujarat ( 24 )</span>
-                        </p>
-                        <p class="section2_invo_color company_place_of_supply">
-                          <span class="section2_title">Place of Supply:</span>
-                          <span class="section2_invo2"
-                            >Gujarat
-                            <span class="supply_state_code">( 24 )</span></span
-                          >
-                        </p>
+                      <td>
+                        <h3 style="color: #0070c0">TAX INVOICE</h3>
                       </td>
-
-                      <td class="invoiceDetailtd">
-                        <p class="customerdata_label shipping_label">
-                          Details of Consignee | Shipped to :
-                        </p>
-                        <h2 class="section2_invo special shipping_name">
-                          Shree Krishna Traders – Warehouse
-                        </h2>
-                        <p class="section2_add shipping_address special2">
-                          Warehouse No. 12, GIDC Industrial Estate, Phase-3<span
-                            class="shippingState"
-                            >, Gujarat</span
-                          >, India<span class="shippingPincode"> - 390010</span>
-                        </p>
-                        <p class="section2_add shipping_phone">
-                          <span class="section2_title">Phone:</span> +91 91234
-                          56789
-                        </p>
-
-                        <p class="section2_add shipping_gstin">
-                          <span class="section2_title"> GSTIN:</span
-                          ><span class="cmp_gstno"> 24PQRSX6789L1Z2</span>
-                        </p>
-
-                        <p class="section2_add shipping_state">
-                          <span class="section2_title">State:</span> Gujarat (
-                          24 )
-                        </p>
-                      </td>
-
-                      <td class="invoiceDetailtd">
-                        <table
-                          class="invoicedata"
-                          data-editor=".invoicedata .section2_invo2"
-                        >
-                          <colgroup>
-                            <col style="width: 40%" />
-                            <col style="width: 60%" />
-                          </colgroup>
-                          <tbody>
-                            <tr class="invoice_no">
-                              <td
-                                class="invoicedata_item_label"
-                                data-editor="#section2 .section2_invo:not(.special)"
-                              >
-                                <p class="section2_invo">Invoice #:</p>
-                              </td>
-                              <td
-                                class="special"
-                                data-editor="#section2 td.special p.section2_invo"
-                              >
-                                <p class="section2_invo">A24</p>
-                              </td>
-                            </tr>
-                            <tr class="invoice_date">
-                              <td class="invoicedata_item_label">
-                                <p class="section2_invo">Invoice Date:</p>
-                              </td>
-                              <td><p class="section2_invo">02-Feb-2026</p></td>
-                            </tr>
-
-                            <tr class="transport_name">
-                              <td class="invoicedata_item_label">
-                                <p class="section2_invo2_color">Transport:</p>
-                              </td>
-                              <td>
-                                <p class="section2_invo2">Hand Delivery</p>
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
+                      <td>
+                        <h3 class="copyname">ORIGINAL FOR RECIPIENT</h3>
                       </td>
                     </tr>
                   </tbody>
                 </table>
               </section>
+            </section>
+            <section id="section2" class="pageRow1">
+              <table cellspacing="0" cellpadding="0" class="customerdata"
+                data-editor=".customerdata td:not(.customerdata_label):not(.customerdata_item_label):not(.special)">
+                <colgroup>
+                  <col style="width: 35%" />
+                  <col style="width: 30%" />
+                  <col style="width: 35%" />
+                </colgroup>
+                <tbody>
+                  <tr>
+                    <td class="invoiceDetailtd">
+                      <p class="customerdata_label customer_label" data-editor="#section2 .customerdata_label">
+                        Details of Buyer | Billed to:
+                      </p>
+                      <h2 class="section2_invo special company_name" data-editor="#section2 h2.special">
+                        Shree Krishna Traders Pvt. Ltd.
+                      </h2>
+                      <p class="section2_invo_color special2 company_address" data-editor="#section2 p.special2">
+                        Plot No. 45, GIDC Industrial Area Phase 2,Near Udyog
+                        Bhavan., Gujarat, India, Near Udyog Bhavan<span class="cmp_city">, Ahmedabad</span><span
+                          class="cmp_state">, Gujarat</span><span class="cmp_pincode"> - 380015</span>
+                      </p>
+                      <p class="section2_mrgin_top customerdata_item_label company_contact_no">
+                        Phone: +91 98765 43210
+                      </p>
+                      <p class="section2_mrgin_top customerdata_item_label company_email">
+                        Email:
+                        accounts@shreekrishnatraders.com,info@shreekrishnatraders.com
+                      </p>
+                      <p class="section2_invo_color company_gstin">
+                        <span class="section2_title"> GSTIN:</span>
+                        <span class="section2_invo2 cmp_gstno" data-editor="#section2 .cmp_gstno">24ABCDE1234F1Z5</span>
+                      </p>
+                      <p class="section2_invo_color company_pan_no">
+                        <span class="section2_title">PAN:</span>
+                        <span class="section2_invo2 cmp_gstno">ABCDE1234F</span>
+                      </p>
 
-              <section id="exportshipping" class="pageRow1"></section>
+                      <p class="section2_invo_color company_state">
+                        <span class="section2_title">State:</span>
+                        <span class="section2_invo2">Gujarat ( 24 )</span>
+                      </p>
+                      <p class="section2_invo_color company_place_of_supply">
+                        <span class="section2_title">Place of Supply:</span>
+                        <span class="section2_invo2">Gujarat
+                          <span class="supply_state_code">( 24 )</span></span>
+                      </p>
+                    </td>
 
-              <section id="section3">
-                <table
-                  class="section3_table billdetailstbody"
-                  id="billdetailstbody"
-                  cellspacing="0"
-                  border="0"
-                  cellpadding="0"
-                >
+                    <td class="invoiceDetailtd">
+                      <p class="customerdata_label shipping_label">
+                        Details of Consignee | Shipped to :
+                      </p>
+                      <h2 class="section2_invo special shipping_name">
+                        Shree Krishna Traders – Warehouse
+                      </h2>
+                      <p class="section2_add shipping_address special2">
+                        Warehouse No. 12, GIDC Industrial Estate, Phase-3<span class="shippingState">, Gujarat</span>,
+                        India<span class="shippingPincode"> - 390010</span>
+                      </p>
+                      <p class="section2_add shipping_phone">
+                        <span class="section2_title">Phone:</span> +91 91234
+                        56789
+                      </p>
+
+                      <p class="section2_add shipping_gstin">
+                        <span class="section2_title"> GSTIN:</span><span class="cmp_gstno"> 24PQRSX6789L1Z2</span>
+                      </p>
+
+                      <p class="section2_add shipping_state">
+                        <span class="section2_title">State:</span> Gujarat (
+                        24 )
+                      </p>
+                    </td>
+
+                    <td class="invoiceDetailtd">
+                      <table class="invoicedata" data-editor=".invoicedata .section2_invo2">
+                        <colgroup>
+                          <col style="width: 40%" />
+                          <col style="width: 60%" />
+                        </colgroup>
+                        <tbody>
+                          <tr class="invoice_no">
+                            <td class="invoicedata_item_label" data-editor="#section2 .section2_invo:not(.special)">
+                              <p class="section2_invo">Invoice #:</p>
+                            </td>
+                            <td class="special" data-editor="#section2 td.special p.section2_invo">
+                              <p class="section2_invo">A24</p>
+                            </td>
+                          </tr>
+                          <tr class="invoice_date">
+                            <td class="invoicedata_item_label">
+                              <p class="section2_invo">Invoice Date:</p>
+                            </td>
+                            <td>
+                              <p class="section2_invo">02-Feb-2026</p>
+                            </td>
+                          </tr>
+
+                          <tr class="transport_name">
+                            <td class="invoicedata_item_label">
+                              <p class="section2_invo2_color">Transport:</p>
+                            </td>
+                            <td>
+                              <p class="section2_invo2">Hand Delivery</p>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </section>
+
+            <section id="exportshipping" class="pageRow1"></section>
+
+            <section id="section3">
+              <table class="section3_table billdetailstbody" id="billdetailstbody" cellspacing="0" border="0"
+                cellpadding="0">
+                <colgroup>
+                  <col data-column="0" class="sr_no" style="width: 3%" />
+                  <col data-column="1" class="productname" style="width: 40%" />
+                  <col data-column="2" class="hsnsac" style="width: 11%" />
+                  <col data-column="3" class="qty" style="width: 10%" />
+                  <col data-column="4" class="rate" style="width: 12%" />
+                  <col data-column="5" class="disc" style="width: 11%" />
+                  <col data-column="11" class="total" style="width: 13%" />
+                </colgroup>
+                <thead class="section3_thead" data-editor="#section3 .section3_thead">
+                  <tr class="pageRow1">
+                    <td data-column="0" class="header-sr-no section3_text_left" rowspan="2">
+                      Sr. No.
+                    </td>
+                    <td data-column="1" class="header-product-name section3_text_left" rowspan="2">
+                      Name of Product / Service
+                    </td>
+                    <td data-column="2" class="header-hsn-sac section3_text_center" rowspan="2">
+                      HSN / SAC
+                    </td>
+                    <td data-column="3" class="header-qty section3_text_center" rowspan="2">
+                      Qty
+                    </td>
+
+                    <td data-column="4" class="header-rate section3_text_center" rowspan="2">
+                      Rate
+                    </td>
+                    <td data-column="5" class="header-disc section3_text_center">
+                      Disc.
+                    </td>
+
+                    <td data-column="11" class="header-total section3_text_right" rowspan="2">
+                      Total
+                    </td>
+                  </tr>
+                  <tr class="pageRow1">
+                    <td data-column="5" class="header-cur-symbol" style="border-left: none">
+                      (%)
+                    </td>
+                  </tr>
+                </thead>
+                <tbody data-editor="#section3 .section3_table tbody td">
+                  <tr class="pageRow1">
+                    <td data-column="0" class="td-body-sr-no section3_tbl_border">
+                      1
+                    </td>
+                    <td data-column="1" class="td-body-product-name section3_tbl_border"
+                      data-editor="#section3 .section3_table td h4">
+                      <h4>abc</h4>
+                    </td>
+                    <td data-column="2" class="td-body-hsn-sac section3_text_center section3_tbl_border">
+                      8471
+                    </td>
+                    <td data-column="3" class="td-body-qty section3_text_center section3_tbl_border">
+                      1.00
+                    </td>
+                    <td data-column="4" class="td-body-rate section3_text_center section3_tbl_border section3_rate">
+                      123.00
+                    </td>
+                    <td data-column="5" class="td-body-disc section3_text_center section3_tbl_border">
+                      20.00
+                    </td>
+
+                    <td data-column="11" class="td-body-item-total section3_text_right section3_tbl_border">
+                      98.40
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </section>
+            <section id="section4" class="pageRow1">
+              <div class="section4_height">
+                <table class="section4_tbl_right invoiceTotal" cellspacing="0" cellpadding="0">
                   <colgroup>
-                    <col data-column="0" class="sr_no" style="width: 3%" />
-                    <col
-                      data-column="1"
-                      class="productname"
-                      style="width: 40%"
-                    />
-                    <col data-column="2" class="hsnsac" style="width: 11%" />
-                    <col data-column="3" class="qty" style="width: 10%" />
-                    <col data-column="4" class="rate" style="width: 12%" />
-                    <col data-column="5" class="disc" style="width: 11%" />
-                    <col data-column="11" class="total" style="width: 13%" />
-                  </colgroup>
-                  <thead
-                    class="section3_thead"
-                    data-editor="#section3 .section3_thead"
-                  >
-                    <tr class="pageRow1">
-                      <td
-                        data-column="0"
-                        class="header-sr-no section3_text_left"
-                        rowspan="2"
-                      >
-                        Sr. No.
-                      </td>
-                      <td
-                        data-column="1"
-                        class="header-product-name section3_text_left"
-                        rowspan="2"
-                      >
-                        Name of Product / Service
-                      </td>
-                      <td
-                        data-column="2"
-                        class="header-hsn-sac section3_text_center"
-                        rowspan="2"
-                      >
-                        HSN / SAC
-                      </td>
-                      <td
-                        data-column="3"
-                        class="header-qty section3_text_center"
-                        rowspan="2"
-                      >
-                        Qty
-                      </td>
-
-                      <td
-                        data-column="4"
-                        class="header-rate section3_text_center"
-                        rowspan="2"
-                      >
-                        Rate
-                      </td>
-                      <td
-                        data-column="5"
-                        class="header-disc section3_text_center"
-                      >
-                        Disc.
-                      </td>
-
-                      <td
-                        data-column="11"
-                        class="header-total section3_text_right"
-                        rowspan="2"
-                      >
-                        Total
-                      </td>
-                    </tr>
-                    <tr class="pageRow1">
-                      <td
-                        data-column="5"
-                        class="header-cur-symbol"
-                        style="border-left: none"
-                      >
-                        (%)
-                      </td>
-                    </tr>
-                  </thead>
-                  <tbody data-editor="#section3 .section3_table tbody td">
-                    <tr class="pageRow1">
-                      <td
-                        data-column="0"
-                        class="td-body-sr-no section3_tbl_border"
-                      >
-                        1
-                      </td>
-                      <td
-                        data-column="1"
-                        class="td-body-product-name section3_tbl_border"
-                        data-editor="#section3 .section3_table td h4"
-                      >
-                        <h4>abc</h4>
-                      </td>
-                      <td
-                        data-column="2"
-                        class="td-body-hsn-sac section3_text_center section3_tbl_border"
-                      >
-                        8471
-                      </td>
-                      <td
-                        data-column="3"
-                        class="td-body-qty section3_text_center section3_tbl_border"
-                      >
-                        1.00
-                      </td>
-                      <td
-                        data-column="4"
-                        class="td-body-rate section3_text_center section3_tbl_border section3_rate"
-                      >
-                        123.00
-                      </td>
-                      <td
-                        data-column="5"
-                        class="td-body-disc section3_text_center section3_tbl_border"
-                      >
-                        20.00
-                      </td>
-
-                      <td
-                        data-column="11"
-                        class="td-body-item-total section3_text_right section3_tbl_border"
-                      >
-                        98.40
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </section>
-              <section id="section4" class="pageRow1">
-                <div class="section4_height">
-                  <table
-                    class="section4_tbl_right invoiceTotal"
-                    cellspacing="0"
-                    cellpadding="0"
-                  >
-                    <colgroup>
-                      <col style="width: 35%" />
-                      <col style="width: 45%" />
-                      <col style="width: 20%" />
-                    </colgroup>
-                    <tbody>
-                      <tr>
-                        <td rowspan="13" class="section4_text_clr">
-                          Total Items / Qty :
-                          <b class="hideonlyformat">1 / 1.00</b>
-                        </td>
-                        <td></td>
-                        <td></td>
-                      </tr>
-                      <tr class="_total_amount_after_tax_filed">
-                        <td
-                          class="section4_td_right"
-                          data-editor="#section4 .section4_td_right:not(.special)"
-                        >
-                          Total Amount
-                        </td>
-                        <td
-                          class="section4_td_right special hideonlyformat"
-                          data-editor="#section4 .special"
-                        >
-                          ₹&nbsp; 98.00
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-                <div class="totalamountinword">
-                  <table
-                    cellspacing="0"
-                    cellpadding="0"
-                    class="invoiceQtyItem"
-                    data-editor=".invoiceQtyItem td"
-                  >
-                    <tbody>
-                      <tr>
-                        <td class="section4_text_align">
-                          Total amount (in words):
-                          <span
-                            class="amount_in_words"
-                            data-editor=".invoiceQtyItem td span.amount_in_words"
-                            >NINETY-EIGHT <span class="cur_main">RUPEES </span
-                            ><span class="cur_decimal_main">
-                              <span> ONLY</span>.
-                            </span></span
-                          >
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-
-              <section id="section5" class="pageRow1">
-                <table>
-                  <colgroup>
-                    <col style="width: 65%" />
                     <col style="width: 35%" />
-                  </colgroup>
-                  <tbody>
-                    <tr>
-                      <td class="section5_left">
-                        <table
-                          cellspacing="0"
-                          cellpadding="0"
-                          class="bankInfo"
-                          style="display: none"
-                        >
-                          <colgroup>
-                            <col style="width: 100%" />
-                          </colgroup>
-                          <tbody>
-                            <tr>
-                              <td></td>
-                              <td></td>
-                            </tr>
-                          </tbody>
-                        </table>
-                        <table
-                          cellspacing="0"
-                          cellpadding="0"
-                          class="termCondition"
-                        >
-                          <tbody>
-                            <tr class="termConditiontr">
-                              <td
-                                class="section6_title sectionHeader"
-                                data-editor="#section6 .termCondition .termConditiontr .section6_title.sectionHeader"
-                              >
-                                Terms and Conditions:
-                              </td>
-                            </tr>
-                            <tr class="terms_condition_section">
-                              <td
-                                data-editor=".termCondition td .terms_condition_box"
-                              >
-                                <span class="terms_condition_box"
-                                  >Subject to our home Jurisdiction. <br />
-                                  Our Responsibility Ceases as soon as goods
-                                  leaves our Premises. <br />
-                                  Goods once sold will not taken back. <br />
-                                  Delivery Ex-Premises.</span
-                                >
-                                <br />
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </td>
-                      <td class="section5_right">
-                        <div class="section5_sig">
-                          <p
-                            class="section5_cmp_name"
-                            data-editor="#section5 .section5_cmp_name"
-                          >
-                            For itcode
-                          </p>
-                          <div class="no_sign"></div>
-                          <p
-                            class="signtitle"
-                            data-editor="#section5 p.signtitle"
-                          >
-                            Authorised Signatory
-                          </p>
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </section>
-
-              <section id="section7">
-                <table cellspacing="0" cellpadding="0" class="branding_table">
-                  <colgroup>
-                    <col style="width: 80%" />
+                    <col style="width: 45%" />
                     <col style="width: 20%" />
                   </colgroup>
                   <tbody>
-                    <tr class="branding_rt">
-                      <td
-                        class="footer-text"
-                        data-editor=".branding_table .branding_rt .footer-text"
-                        style="padding: 5px 0 0"
-                      ></td>
-                      <td
-                        style="
+                    <tr>
+                      <td rowspan="13" class="section4_text_clr">
+                        Total Items / Qty :
+                        <b class="hideonlyformat">1 / 1.00</b>
+                      </td>
+                      <td></td>
+                      <td></td>
+                    </tr>
+                    <tr class="_total_amount_after_tax_filed">
+                      <td class="section4_td_right" data-editor="#section4 .section4_td_right:not(.special)">
+                        Total Amount
+                      </td>
+                      <td class="section4_td_right special hideonlyformat" data-editor="#section4 .special">
+                        ₹&nbsp; 5400
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="totalamountinword">
+                <table cellspacing="0" cellpadding="0" class="invoiceQtyItem" data-editor=".invoiceQtyItem td">
+                  <tbody>
+                    <tr>
+                      <td class="section4_text_align">
+                        Total amount (in words):
+                        <span class="amount_in_words" data-editor=".invoiceQtyItem td span.amount_in_words">NINETY-EIGHT
+                          <span class="cur_main">RUPEES </span><span class="cur_decimal_main">
+                            <span> ONLY</span>.
+                          </span></span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section id="section5" class="pageRow1">
+              <table>
+                <colgroup>
+                  <col style="width: 65%" />
+                  <col style="width: 35%" />
+                </colgroup>
+                <tbody>
+                  <tr>
+                    <td class="section5_left">
+                      <table cellspacing="0" cellpadding="0" class="bankInfo" style="display: none">
+                        <colgroup>
+                          <col style="width: 100%" />
+                        </colgroup>
+                        <tbody>
+                          <tr>
+                            <td></td>
+                            <td></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      <table cellspacing="0" cellpadding="0" class="termCondition">
+                        <tbody>
+                          <tr class="termConditiontr">
+                            <td class="section6_title sectionHeader"
+                              data-editor="#section6 .termCondition .termConditiontr .section6_title.sectionHeader">
+                              Terms and Conditions:
+                            </td>
+                          </tr>
+                          <tr class="terms_condition_section">
+                            <td data-editor=".termCondition td .terms_condition_box">
+                              <span class="terms_condition_box">Subject to our home Jurisdiction. <br />
+                                Our Responsibility Ceases as soon as goods
+                                leaves our Premises. <br />
+                                Goods once sold will not taken back. <br />
+                                Delivery Ex-Premises.</span>
+                              <br />
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </td>
+                    <td class="section5_right">
+                      <div class="section5_sig">
+                        <p class="section5_cmp_name" data-editor="#section5 .section5_cmp_name">
+                          For itcode
+                        </p>
+                        <div class="no_sign"></div>
+                        <p class="signtitle" data-editor="#section5 p.signtitle">
+                          Authorised Signatory
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </section>
+
+            <section id="section7">
+              <table cellspacing="0" cellpadding="0" class="branding_table">
+                <colgroup>
+                  <col style="width: 80%" />
+                  <col style="width: 20%" />
+                </colgroup>
+                <tbody>
+                  <tr class="branding_rt">
+                    <td class="footer-text" data-editor=".branding_table .branding_rt .footer-text"
+                      style="padding: 5px 0 0"></td>
+                    <td style="
                           text-align: left;
                           padding: 5px 0 0;
                           font-weight: bold;
@@ -861,16 +721,16 @@
                           line-height: 20px;
                           text-transform: uppercase;
                           vertical-align: top;
-                        "
-                      ></td>
-                    </tr>
-                  </tbody>
-                </table>
-              </section>
-            </div>
+                        "></td>
+                  </tr>
+                </tbody>
+              </table>
+            </section>
           </div>
         </div>
       </div>
     </div>
-  </body>
+  </div>
+</body>
+
 </html>

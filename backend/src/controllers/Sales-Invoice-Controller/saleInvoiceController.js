@@ -14,7 +14,7 @@ const Staff = require('../../models/Setting-Model/Staff');
 const { sendInvoiceEmail } = require('../../utils/emailHelper');
 const { generateSaleInvoicePDF } = require('../../utils/saleInvoicePdfHelper');
 const { getCopyOptions } = require('../../utils/pdfHelper');
-const { getSelectedPrintTemplate } = require('../../utils/documentHelper');
+const { getSelectedPrintTemplate, calculateDocumentTotals } = require('../../utils/documentHelper');
 const { recordActivity } = require('../../utils/activityLogHelper');
 const fs = require('fs');
 const path = require('path');
@@ -354,6 +354,19 @@ const handleCreateInvoiceLogic = async (req) => {
     // 3️⃣ Validate
     const validationError = validateSaleInvoice(bodyData);
     if (validationError) throw new Error(validationError);
+    // 3.5️⃣ BACKEND CALCULATION - Calculate totals from base inputs only
+    // const { calculateDocumentTotals } = require('../../utils/documentHelper'); // Moved to top
+    const branchId = bodyData.branch || bodyData.branchId || null;
+
+    // Ensure user exists before calculation (critical bug fix)
+    const userId = req.user ? req.user._id : (req.userId || null);
+    if (!userId) throw new Error("User ID is required for calculation");
+
+    const calculated = await calculateDocumentTotals(userId, bodyData, branchId);
+
+    // Replace frontend totals with backend-calculated values
+    bodyData.items = calculated.items;
+    bodyData.totals = calculated.totals;
 
     // 4️⃣ Check for duplicate invoice number
     const existingInvoice = await SaleInvoice.findOne({

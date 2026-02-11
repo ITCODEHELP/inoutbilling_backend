@@ -268,9 +268,17 @@ const manageDynamicColumns = ($, doc) => {
     // Zero (0) is considered a valid value (e.g., Discount = 0).
     const hasValue = (val) => {
         if (val === undefined || val === null) return false;
-        if (typeof val === 'string' && val.trim() === "") return false;
+        const strVal = String(val).trim();
+        if (strVal === "") return false;
+        // Check if numeric string is effectively > 0 for tax purposes, or handle "0.00"
         return true;
     };
+
+    const parseNum = (val) => {
+        if (!val) return 0;
+        return parseFloat(String(val).replace(/,/g, '')) || 0;
+    };
+
 
     // Check for specific fields
     const showHsn = doc.items.some(item => hasValue(item.hsnSac));
@@ -278,14 +286,16 @@ const manageDynamicColumns = ($, doc) => {
     const showQty = doc.items.some(item => hasValue(item.qty));
     const showRate = doc.items.some(item => hasValue(item.price) || hasValue(item.rate));
     // Discount: Show if any item has discount OR if explicitly 0 is a valid discount
-    const showDiscount = doc.items.some(item => hasValue(item.discount) || hasValue(item.disc));
+    // Expanded to check for percent fields as well
+    const showDiscount = doc.items.some(item => hasValue(item.discount) || hasValue(item.disc) || hasValue(item.discountPercent) || hasValue(item.discPercent));
 
     // Tax fields (IGST, CGST, SGST) - Check if they exist in items
     // Note: Some templates might not have these columns by default. 
     // This logic removes them if they exist but data is empty.
-    const showIgst = doc.items.some(item => Number(item.igst) > 0);
-    const showCgst = doc.items.some(item => Number(item.cgst) > 0);
-    const showSgst = doc.items.some(item => Number(item.sgst) > 0);
+    // Use parseNum to handle "1,200.00" strings correctly
+    const showIgst = doc.items.some(item => parseNum(item.igst) > 0 || parseNum(item.igstAmount) > 0);
+    const showCgst = doc.items.some(item => parseNum(item.cgst) > 0 || parseNum(item.cgstAmount) > 0);
+    const showSgst = doc.items.some(item => parseNum(item.sgst) > 0 || parseNum(item.sgstAmount) > 0);
 
     // 2. Configuration for Selectors (Header, Body, Background Lines, Footer)
     // We target common classes used across templates.
@@ -802,11 +812,131 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                 // Totals
                 if (doc.totals) {
                     const totalQty = (doc.items || []).reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
+                    const totalItems = (doc.items || []).length;
+
                     $('.footer-total-qty').text(totalQty.toFixed(2));
                     $('._footer_total').text((doc.totals.grandTotal || 0).toFixed(2));
                     $('.amount_in_words').text(doc.totals.totalInWords || "");
+
+                    // User Request: Ensure ._total_amount_after_tax_filed .special is populated
+                    $('._total_amount_after_tax_filed .special').text(`₹  ${(doc.totals.grandTotal || 0).toFixed(2)}`);
+
+                    // User Request: Total Items / Qty string
+                    // Selector: .section4_text_clr
+                    // We check if the element exists and update it
+                    if ($('.section4_text_clr').length > 0) {
+                        // Preserve the label if possible or just overwrite
+                        // Template 7 format: "Total Items / Qty : <b...>...</b>"
+                        $('.section4_text_clr').html(`Total Items / Qty : <b class="hideonlyformat">${totalItems} / ${totalQty.toFixed(2)}</b>`);
+                    }
                 }
                 $('.footer_seal_name').text(`For ${user.companyName || "Company"}`);
+
+                // --- DYNAMIC CUSTOMER & SHIPPING DETAILS ---
+                if (doc.customerInformation) {
+                    const cust = doc.customerInformation;
+
+                    // Buyer Details Population
+                    if (cust.phone) {
+                        $('.company_contact_no').css('display', 'block').text(`Phone: ${cust.phone}`);
+                    } else {
+                        $('.company_contact_no').css('display', 'none');
+                    }
+
+                    if (cust.email) {
+                        $('.company_email').css('display', 'block').text(`Email: ${cust.email}`);
+                    } else {
+                        $('.company_email').css('display', 'none');
+                    }
+
+                    if (cust.pan) {
+                        $('.company_pan_no').css('display', 'block');
+                        $('.company_pan_no .cmp_gstno').text(cust.pan);
+                        // Fallback if structure is different
+                        if ($('.company_pan_no').text().trim().length < 5) {
+                            $('.company_pan_no').html(`<b>PAN:</b> ${cust.pan}`);
+                        }
+                    } else {
+                        $('.company_pan_no').css('display', 'none');
+                    }
+
+                    if (cust.placeOfSupply) {
+                        $('.company_place_of_supply').css('display', 'block');
+                        $('.company_place_of_supply .section2_invo2').text(cust.placeOfSupply);
+                    } else {
+                        $('.company_place_of_supply').css('display', 'none');
+                    }
+
+                    // SHIPPING DETAILS LOGIC
+                    // Check for shippingDetails object OR legacy fields
+                    const shipName = doc.shippingDetails?.name || cust.shipTo || "";
+                    const shipAddress = doc.shippingDetails?.address || cust.shippingAddress || "";
+                    const shipGstin = doc.shippingDetails?.gstin || "";
+                    const shipState = doc.shippingDetails?.state || "";
+                    const shipPhone = doc.shippingDetails?.phone || "";
+
+                    // Visibility Check: Hide if no meaningful shipping info OR if same as billing
+                    const isSameAsBilling = (shipName === cust.ms) && (!shipAddress || shipAddress === cust.address);
+                    // Minimal requirement: Name must exist and be different, OR Address must exist.
+                    const hasShippingData = (shipName || shipAddress) && !isSameAsBilling;
+
+                    if (hasShippingData) {
+                        // Populate Shipping
+                        $('.shipping_name').text(shipName);
+
+                        let addrHtml = shipAddress;
+                        // If state is separate, append it? Usually address contains it, but let's be safe
+                        $('.shipping_address').html(addrHtml);
+
+                        if (shipPhone) {
+                            $('.shipping_phone').css('display', 'block').html(`<b>Phone:</b> ${shipPhone}`);
+                        } else {
+                            $('.shipping_phone').css('display', 'none');
+                        }
+
+                        if (shipGstin) {
+                            $('.shipping_gstin').css('display', 'block').find('.cmp_gstno').text(shipGstin);
+                        } else {
+                            $('.shipping_gstin').css('display', 'none');
+                        }
+
+                        if (shipState) {
+                            $('.shipping_state').css('display', 'block').text(`State: ${shipState}`);
+                        } else {
+                            $('.shipping_state').css('display', 'none');
+                        }
+
+                    } else {
+                        // HIDE THE SHIPPING COLUMN
+                        // Find the TD containing .shipping_label
+                        const $shippingLabel = $('.shipping_label');
+                        if ($shippingLabel.length > 0) {
+                            const $shippingTd = $shippingLabel.closest('td');
+                            $shippingTd.remove();
+
+                            // Adjust Layout: Change 3 columns to 2 columns (50% each)
+                            const $customerTable = $('.customerdata');
+                            const $colgroup = $customerTable.find('colgroup');
+                            if ($colgroup.length > 0) {
+                                $colgroup.empty();
+                                $colgroup.append('<col style="width: 50%" />');
+                                $colgroup.append('<col style="width: 50%" />');
+                            }
+                        }
+                    }
+                }
+
+                // Terms & Conditions - Hide if empty
+                // Check if text exists
+                const termsText = doc.termsDetails || (doc.termsAndConditions ? doc.termsAndConditions.text : "");
+                if (!termsText || termsText.trim() === "") {
+                    $('.termCondition').css('display', 'none');
+                } else {
+                    $('.termCondition').css('display', 'block');
+                    if ($('.terms_condition_box').length > 0) {
+                        $('.terms_condition_box').html(termsText.replace(/\n/g, '<br>'));
+                    }
+                }
 
                 // --- BANK DETAILS & QR CODE INJECTION ---
                 if (!details.hideBankDetails) {
@@ -856,14 +986,16 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                                 let upiString = `upi://pay?pa=${selectedBank.upiId}&pn=${encodeURIComponent(selectedBank.accountName || '')}&cu=INR`;
 
                                 // Always add amount if available (User requested specifically)
+                                // Ensure amount is parsed correctly (removing commas)
                                 if (doc.totals && doc.totals.grandTotal) {
-                                    upiString += `&am=${parseFloat(doc.totals.grandTotal).toFixed(2)}`;
-                                    if (docNum) {
-                                        upiString += `&tn=${encodeURIComponent(docNum)}`;
+                                    const totalAmount = parseFloat(String(doc.totals.grandTotal).replace(/,/g, ''));
+                                    if (!isNaN(totalAmount) && totalAmount > 0) {
+                                        upiString += `&am=${totalAmount.toFixed(2)}`;
+                                        if (docNum) {
+                                            upiString += `&tn=${encodeURIComponent(docNum)}`;
+                                        }
                                     }
-                                }
-
-                                const qrDataUrl = await QRCode.toDataURL(upiString, {
+                                } const qrDataUrl = await QRCode.toDataURL(upiString, {
                                     errorCorrectionLevel: 'M',
                                     margin: 1,
                                     width: 100,
@@ -890,7 +1022,7 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                                     ${qrDataUrl ? `
                                     <td style="vertical-align: top; text-align: right; width: 100px;">
                                         <img src="${qrDataUrl}" style="width: 80px; height: 80px;" alt="UPI QR">
-                                        <div style="font-size: 8px; text-align: center; margin-top: 2px;">Scan to Pay</div>
+                                        <div style="font-size: 8px; text-align: center; margin-top: 2px;">Pay using UPI</div>
                                     </td>
                                     ` : ''}
                                 </tr>
