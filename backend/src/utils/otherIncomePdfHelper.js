@@ -1,4 +1,5 @@
 const { generateSaleInvoicePDF } = require('./saleInvoicePdfHelper');
+const { getSelectedPrintTemplate } = require('./documentHelper');
 const { fetchAndResolveDocumentOptions } = require('./documentOptionsHelper');
 
 /**
@@ -13,14 +14,21 @@ const generateOtherIncomePDF = async (data, user, options = { original: true }) 
     const documents = Array.isArray(data) ? data : [data];
 
     // Resolve print config (falling back to business-wide settings)
-    const printConfig = await fetchAndResolveDocumentOptions(user.userId, 'Other Income');
+    const userId = user._id || user.userId;
+    const printConfig = await getSelectedPrintTemplate(userId, 'Other Income');
+
+    // Also fetch document-specific options (labels, etc.)
+    const docOptions = await fetchAndResolveDocumentOptions(userId, 'Other Income');
+
+    // Merge them
+    const finalConfig = { ...docOptions, ...printConfig };
 
     return generateSaleInvoicePDF(
         documents,
         user,
         options,
         'Other Income',
-        printConfig
+        finalConfig
     );
 };
 
