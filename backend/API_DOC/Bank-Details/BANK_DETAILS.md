@@ -15,10 +15,9 @@ Content-Type: application/json
   "bankName": "SBI",
   "accountNumber": "123456",
   "ifscCode": "SBIN0001234",
-  "ifscCode": "SBIN0001234",
   "upiId": "john@sbi",
   "printUpiQrOnInvoice": true,
-  "upiQrOnInvoiceWithAmount": false
+  "upiQrOnInvoiceWithAmount": true
 }
 ```
 
@@ -32,7 +31,6 @@ Content-Type: application/json
 ```json
 {
   "accountName": "John Doe Updated",
-  "bankName": "SBI",
   "bankName": "SBI",
   "accountNumber": "123456",
   "printUpiQrOnInvoice": true
@@ -252,7 +250,6 @@ Content-Type: multipart/form-data; boundary=----WebKitFormBoundary...
         "balance": 0,
         "status": "valid"
       },
-      ...
     ]
   }
 }
