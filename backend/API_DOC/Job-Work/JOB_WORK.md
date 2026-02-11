@@ -12,6 +12,7 @@
     - `product` / `productName`
     - `productGroup`
     - `jobWorkNumber`
+     <!-- `status` (Enum: `New`, `Pending`, `In-Work`, `Completed`) -->
     - `status` (Dynamic Status String. Default: `New`. Examples: `New`, `Pending`, `In-Work`, `Completed`)
     - `fromDate` / `toDate`
     - `total`
