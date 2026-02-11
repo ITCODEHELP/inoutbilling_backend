@@ -45,7 +45,7 @@ const saleInvoiceSchema = new mongoose.Schema({
     invoiceDetails: {
         invoiceType: { type: String, index: true },
         invoicePrefix: { type: String, index: true },
-        invoiceNumber: { type: String, required: [true, 'invoiceNumber is required'], unique: true, index: true },
+        invoiceNumber: { type: String, required: [true, 'invoiceNumber is required'], index: true },
         invoicePostfix: { type: String },
         date: { type: Date, required: [true, 'date is required'], index: true },
         deliveryMode: { type: String },

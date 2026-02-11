@@ -1,53 +1,38 @@
 const DocumentOption = require('../../models/Setting-Model/DocumentOption');
-const { fetchAndResolveDocumentOptions, computeEffectiveConfig, mapDocTypeToSchemaKey } = require('../../utils/documentOptionsHelper');
+const { computeEffectiveConfig, mapDocTypeToSchemaKey } = require('../../utils/documentOptionsHelper');
 
 /**
- * @desc    Get document options for a user
+ * @desc    Get Document Options
  * @route   GET /api/document-options
  * @access  Private
  */
-const getDocumentOptions = async (req, res) => {
+exports.getDocumentOptions = async (req, res) => {
     try {
-        const userId = req.user._id;
-        const { docType, seriesName } = req.query;
+        const userId = req.user.userId || req.user._id;
 
-        // If specific docType requested, return resolved config for that type
-        if (docType) {
-            const resolvedConfig = await fetchAndResolveDocumentOptions(userId, docType, seriesName);
+        const options = await DocumentOption.findOne({ userId });
+
+        if (!options) {
             return res.status(200).json({
-                success: true,
-                data: resolvedConfig
+                userId,
+                saleInvoice: {},
+                // We let the frontend handle empty states or defaults
             });
         }
 
-        // Otherwise return all document options
-        let docOptions = await DocumentOption.findOne({ userId });
-
-        // Create default if not exists
-        if (!docOptions) {
-            docOptions = await DocumentOption.create({ userId });
-        }
-
-        res.status(200).json({
-            success: true,
-            data: docOptions
-        });
-
+        res.status(200).json(options);
     } catch (error) {
-        console.error('[DocumentOptionController] Error fetching document options:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to fetch document options'
-        });
+        console.error('Error fetching document options:', error);
+        res.status(500).json({ message: 'Internal Server Error', error: error.message });
     }
 };
 
 /**
- * @desc    Save/Update document options for a user
+ * @desc    Save or Update Document Options
  * @route   POST /api/document-options
  * @access  Private
  */
-const saveDocumentOptions = async (req, res) => {
+exports.saveDocumentOptions = async (req, res) => {
     try {
         const userId = req.user._id;
         const updates = req.body;
@@ -104,63 +89,54 @@ const saveDocumentOptions = async (req, res) => {
             }
         });
 
-        // Update or create document options
-        const docOptions = await DocumentOption.findOneAndUpdate(
+        // 3. Save using findOneAndUpdate with upsert
+        const options = await DocumentOption.findOneAndUpdate(
             { userId },
-            { $set: updates },
-            { new: true, upsert: true, runValidators: true }
+            { $set: updateData },
+            { new: true, upsert: true, setDefaultsOnInsert: true }
         );
 
-        res.status(200).json({
-            success: true,
-            message: 'Document options saved successfully',
-            data: docOptions
-        });
+        // 4. Return specific section(s) if context provided or inferred, else full object
+        const requestedDocType = req.body.documentType || req.body.docType;
+        let responseData = {};
 
-    } catch (error) {
-        console.error('[DocumentOptionController] Error saving document options:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to save document options'
-        });
-    }
-};
+        if (requestedDocType) {
+            const schemaKey = mapDocTypeToSchemaKey(requestedDocType);
+            if (options[schemaKey]) {
+                responseData = { [schemaKey]: options[schemaKey] };
+            }
+        } else {
+            // Infer context from body keys if no explicit docType
+            const knownSchemaKeys = [
+                'saleInvoice', 'deliveryChallan', 'quotation', 'proforma',
+                'purchaseOrder', 'saleOrder', 'purchaseInvoice', 'jobWork',
+                'creditNote', 'debitNote', 'receipt', 'payment',
+                'inwardPayment', 'outwardPayment', 'dailyExpense', 'otherIncome', 'bankLedger'
+            ];
 
-/**
- * @desc    Get resolved configuration for a specific document type and series
- * @route   GET /api/document-options/resolve
- * @access  Private
- */
-const resolveDocumentConfig = async (req, res) => {
-    try {
-        const userId = req.user._id;
-        const { docType, seriesName } = req.query;
+            // Check if request body contains any known document keys
+            const inferredKeys = Object.keys(req.body).filter(key => knownSchemaKeys.includes(key));
 
-        if (!docType) {
-            return res.status(400).json({
-                success: false,
-                message: 'docType is required'
-            });
+            if (inferredKeys.length > 0) {
+                // Return only the update sections
+                inferredKeys.forEach(key => {
+                    if (options[key]) {
+                        responseData[key] = options[key];
+                    }
+                });
+            } else {
+                // Fallback to full document if no recognizable keys found
+                responseData = options;
+            }
         }
 
-        const resolvedConfig = await fetchAndResolveDocumentOptions(userId, docType, seriesName);
-
         res.status(200).json({
             success: true,
-            data: resolvedConfig
+            message: 'Document options saved and resolved successfully',
+            data: responseData
         });
-
     } catch (error) {
-        console.error('[DocumentOptionController] Error resolving document config:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to resolve document configuration'
-        });
+        console.error('Error saving document options:', error);
+        res.status(500).json({ message: 'Internal Server Error', error: error.message });
     }
-};
-
-module.exports = {
-    getDocumentOptions,
-    saveDocumentOptions,
-    resolveDocumentConfig
 };

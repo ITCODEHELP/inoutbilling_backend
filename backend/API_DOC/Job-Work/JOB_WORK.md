@@ -12,7 +12,7 @@
     - `product` / `productName`
     - `productGroup`
     - `jobWorkNumber`
-    - `status` (Enum: `New`, `Pending`, `In-Work`, `Completed`)
+    - `status` (Dynamic Status String. Default: `New`. Examples: `New`, `Pending`, `In-Work`, `Completed`)
     - `fromDate` / `toDate`
     - `total`
     - `lrNo` (Mapped to custom field `lr_no`)
@@ -44,7 +44,8 @@
 
 ### Update Status
 `PATCH` /api/job-works/:id/status
-- Body: `{ "status": "New" | "Pending" | "In-Work" | "Completed" }`
+<!-- - Body: `{ "status": "New" | "Pending" | "In-Work" | "Completed" }` -->
+- Body: `{ "status": "String" }` (Value must match one of the configured statuses in Document Options)
 
 ### Remaining Quantity
 `GET` /api/job-works/:id/remaining-quantity

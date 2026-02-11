@@ -355,7 +355,33 @@ const handleCreateInvoiceLogic = async (req) => {
     const validationError = validateSaleInvoice(bodyData);
     if (validationError) throw new Error(validationError);
 
-    // 4️⃣ Save invoice
+    // 4️⃣ Check for duplicate invoice number
+    const existingInvoice = await SaleInvoice.findOne({
+        userId: req.user._id,
+        'invoiceDetails.invoiceNumber': bodyData.invoiceDetails.invoiceNumber
+    });
+
+    if (existingInvoice) {
+        // Calculate suggestion for console
+        const currentNum = bodyData.invoiceDetails.invoiceNumber;
+        let nextNumSuggestion = currentNum;
+        const match = currentNum.match(/(\d+)$/);
+        if (match) {
+            const numberPart = match[1];
+            const prefix = currentNum.slice(0, -numberPart.length);
+            const nextVal = parseInt(numberPart, 10) + 1;
+            const newNumberPart = nextVal.toString().padStart(numberPart.length, '0');
+            nextNumSuggestion = `${prefix}${newNumberPart}`;
+        } else {
+            nextNumSuggestion = `${currentNum}-1`;
+        }
+
+        // console.log(`[Invoice Collision] Invoice number ${currentNum} already exists. Suggested next number: ${nextNumSuggestion}`);
+
+        throw new Error(`Invoice number "${currentNum}" already exists. Please use a unique invoice number.`);
+    }
+
+    // 5️⃣ Save invoice
     const invoice = await SaleInvoice.create({
         ...bodyData,
         userId: req.user._id

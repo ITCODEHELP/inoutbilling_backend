@@ -145,6 +145,14 @@ const saleOrderSchema = new mongoose.Schema({
     resolvedConfig: { type: mongoose.Schema.Types.Mixed, default: {} }
 }, { _id: false });
 
+const jobWorkSchema = new mongoose.Schema({
+    invoiceSeries: [invoiceSeriesSchema],
+    statusSettings: statusSettingsSchema,
+    completionDate: completionDateSchema,
+    otherOptions: standardOtherOptionsSchema,
+    resolvedConfig: { type: mongoose.Schema.Types.Mixed, default: {} }
+}, { _id: false });
+
 // --- Main Model ---
 
 const documentOptionSchema = new mongoose.Schema({
@@ -164,7 +172,7 @@ const documentOptionSchema = new mongoose.Schema({
     saleOrder: { type: saleOrderSchema, default: () => ({}) },
 
     // Flexible placeholders for future
-    jobWork: { type: mongoose.Schema.Types.Mixed, default: {} },
+    jobWork: { type: jobWorkSchema, default: () => ({}) },
     purchaseInvoice: { type: mongoose.Schema.Types.Mixed, default: {} },
     creditNote: { type: mongoose.Schema.Types.Mixed, default: {} },
     debitNote: { type: mongoose.Schema.Types.Mixed, default: {} },
