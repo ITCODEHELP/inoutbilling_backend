@@ -136,7 +136,7 @@ const computeEffectiveConfig = (specificOptions, docType, seriesName = null) => 
  */
 const fetchAndResolveDocumentOptions = async (userId, docType, seriesName = null) => {
     try {
-        const docOptions = await DocumentOption.findOne({ userId }).lean();
+        const docOptions = await DocumentOption.findOne({ userId: userId.toString() }).lean();
         const schemaKey = mapDocTypeToSchemaKey(docType);
 
         if (!docOptions || !docOptions[schemaKey]) {

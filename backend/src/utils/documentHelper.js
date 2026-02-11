@@ -265,8 +265,13 @@ const calculateExportInvoiceTotals = async (userId, documentData, invoiceType, c
  */
 const getSelectedPrintTemplate = async (userId, docType, branchId = 'main') => {
     try {
-        // Ensure branchId defaults to 'main' if falsy (e.g. null or empty string)
-        const branch = branchId || 'main';
+        // Normalize branchId to a string (use .ms or ._id if it's an object, or fallback to 'main')
+        let branch = 'main';
+        if (typeof branchId === 'string' && branchId.trim()) {
+            branch = branchId;
+        } else if (branchId && typeof branchId === 'object') {
+            branch = branchId.ms || branchId.branchName || (branchId._id ? branchId._id.toString() : 'main');
+        }
 
         const defaultSettings = {
             selectedTemplate: 'Default',

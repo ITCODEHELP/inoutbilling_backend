@@ -8,6 +8,8 @@ const { sendInvoiceEmail } = require('../../utils/emailHelper');
 const User = require('../../models/User-Model/User');
 const Customer = require('../../models/Customer-Vendor-Model/Customer');
 const crypto = require('crypto');
+const fs = require('fs');
+const { recordActivity } = require('../../utils/activityLogHelper');
 
 // Generate Debit Note Number (following same pattern as Credit Note)
 const generateDebitNoteNumber = async (userId) => {
@@ -376,7 +378,7 @@ const generatePublicToken = (id) => {
 const downloadDebitNotePDF = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const debitNotes = await DebitNote.find({ _id: { $in: ids }, userId: req.user._id });
+        const debitNotes = await DebitNote.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!debitNotes || debitNotes.length === 0) return res.status(404).json({ success: false, message: "Debit Note(s) not found" });
 
         const userData = await User.findById(req.user._id);
@@ -397,7 +399,7 @@ const downloadDebitNotePDF = async (req, res) => {
 const shareDebitNoteEmail = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const debitNotes = await DebitNote.find({ _id: { $in: ids }, userId: req.user._id });
+        const debitNotes = await DebitNote.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!debitNotes || debitNotes.length === 0) return res.status(404).json({ success: false, message: "Debit Note(s) not found" });
 
         const firstDoc = debitNotes[0];
@@ -416,7 +418,7 @@ const shareDebitNoteEmail = async (req, res) => {
 const shareDebitNoteWhatsApp = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const debitNotes = await DebitNote.find({ _id: { $in: ids }, userId: req.user._id });
+        const debitNotes = await DebitNote.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         const firstDoc = debitNotes[0];
         const customer = await Customer.findOne({ userId: req.user._id, companyName: firstDoc.customerInformation.ms });
         const phone = req.body.phone || (customer ? customer.phone : null);
@@ -459,6 +461,230 @@ const viewPublicDebitNote = async (req, res) => {
     }
 };
 
+/**
+ * @desc    Get data for duplicating a Debit Note (Prefill Add Form)
+ */
+const getDuplicateDebitNoteData = async (req, res) => {
+    try {
+        const debitNote = await DebitNote.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!debitNote) return res.status(404).json({ success: false, message: 'Debit Note not found' });
+
+        const data = debitNote.toObject();
+
+        // System fields to exclude
+        delete data._id;
+        delete data.status;
+        delete data.createdAt;
+        delete data.updatedAt;
+        delete data.__v;
+        delete data.userId;
+        delete data.conversions;
+        delete data.attachments;
+
+        // Reset document number
+        if (data.debitNoteDetails) {
+            delete data.debitNoteDetails.dnNumber;
+        }
+
+        // Linked references to exclude
+        delete data.staff;
+        delete data.branch;
+
+        // Reset sub-document IDs
+        if (Array.isArray(data.items)) {
+            data.items = data.items.map(item => {
+                delete item._id;
+                return item;
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Debit Note data for duplication retrieved',
+            data
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const cancelDebitNote = async (req, res) => {
+    try {
+        const debitNote = await DebitNote.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!debitNote) return res.status(404).json({ success: false, message: 'Debit Note not found' });
+
+        if (debitNote.status === 'Cancelled') {
+            return res.status(400).json({ success: false, message: 'Debit Note is already cancelled' });
+        }
+
+        debitNote.status = 'Cancelled';
+        const updatedDebitNote = await debitNote.save();
+
+        if (!updatedDebitNote) {
+            return res.status(500).json({ success: false, message: "Failed to update debit note status" });
+        }
+
+        await recordActivity(
+            req,
+            'Cancel',
+            'DebitNote',
+            `Debit Note cancelled: ${debitNote.debitNoteDetails.dnNumber}`,
+            debitNote.debitNoteDetails.dnNumber
+        );
+
+        res.status(200).json({ success: true, message: "Debit Note cancelled successfully", data: updatedDebitNote });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const restoreDebitNote = async (req, res) => {
+    try {
+        const debitNote = await DebitNote.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!debitNote) return res.status(404).json({ success: false, message: 'Debit Note not found' });
+
+        if (debitNote.status !== 'Cancelled') {
+            return res.status(400).json({ success: false, message: 'Debit Note is not in Cancelled state' });
+        }
+
+        debitNote.status = 'Active';
+        await debitNote.save();
+
+        await recordActivity(
+            req,
+            'Restore',
+            'DebitNote',
+            `Debit Note restored to Active: ${debitNote.debitNoteDetails.dnNumber}`,
+            debitNote.debitNoteDetails.dnNumber
+        );
+
+        res.status(200).json({ success: true, message: "Debit Note restored successfully", data: debitNote });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const attachDebitNoteFile = async (req, res) => {
+    try {
+        if (!req.files || req.files.length === 0) return res.status(400).json({ success: false, message: "No files uploaded" });
+
+        const newAttachments = req.files.map(file => ({
+            fileName: file.filename,
+            filePath: file.path,
+            fileSize: file.size,
+            mimeType: file.mimetype,
+            uploadedAt: new Date(),
+            uploadedBy: req.user._id
+        }));
+
+        const debitNote = await DebitNote.findOneAndUpdate(
+            { _id: req.params.id, userId: req.user._id },
+            { $push: { attachments: { $each: newAttachments } } },
+            { new: true }
+        );
+
+        if (!debitNote) return res.status(404).json({ success: false, message: "Debit Note not found" });
+
+        await recordActivity(
+            req,
+            'Attachment',
+            'DebitNote',
+            `Files attached to Debit Note: ${debitNote.debitNoteDetails.dnNumber}`,
+            debitNote.debitNoteDetails.dnNumber
+        );
+
+        res.status(200).json({ success: true, message: "Files attached successfully", data: debitNote.attachments });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const getDebitNoteAttachments = async (req, res) => {
+    try {
+        const debitNote = await DebitNote.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!debitNote) return res.status(404).json({ success: false, message: "Debit Note not found" });
+        res.status(200).json({ success: true, data: debitNote.attachments || [] });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const updateDebitNoteAttachment = async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded" });
+
+        const debitNote = await DebitNote.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!debitNote) {
+            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return res.status(404).json({ success: false, message: "Debit Note not found" });
+        }
+
+        const attachmentIndex = debitNote.attachments.findIndex(a => a._id.toString() === req.params.attachmentId);
+        if (attachmentIndex === -1) {
+            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return res.status(404).json({ success: false, message: "Attachment not found" });
+        }
+
+        const oldFile = debitNote.attachments[attachmentIndex].filePath;
+        if (fs.existsSync(oldFile)) {
+            try { fs.unlinkSync(oldFile); } catch (e) { console.error("Error deleting old file:", e); }
+        }
+
+        debitNote.attachments[attachmentIndex] = {
+            _id: debitNote.attachments[attachmentIndex]._id,
+            fileName: req.file.filename,
+            filePath: req.file.path,
+            fileSize: req.file.size,
+            mimeType: req.file.mimetype,
+            uploadedAt: new Date(),
+            uploadedBy: req.user._id
+        };
+
+        await debitNote.save();
+
+        await recordActivity(
+            req,
+            'Update Attachment',
+            'DebitNote',
+            `Attachment replaced for Debit Note: ${debitNote.debitNoteDetails.dnNumber}`,
+            debitNote.debitNoteDetails.dnNumber
+        );
+
+        res.status(200).json({ success: true, message: "Attachment replaced successfully", data: debitNote.attachments });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const deleteDebitNoteAttachment = async (req, res) => {
+    try {
+        const debitNote = await DebitNote.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!debitNote) return res.status(404).json({ success: false, message: "Debit Note not found" });
+
+        const attachment = debitNote.attachments.find(a => a._id.toString() === req.params.attachmentId);
+        if (!attachment) return res.status(404).json({ success: false, message: "Attachment not found" });
+
+        if (fs.existsSync(attachment.filePath)) {
+            try { fs.unlinkSync(attachment.filePath); } catch (e) { console.error("Error deleting file:", e); }
+        }
+
+        debitNote.attachments = debitNote.attachments.filter(a => a._id.toString() !== req.params.attachmentId);
+        await debitNote.save();
+
+        await recordActivity(
+            req,
+            'Delete Attachment',
+            'DebitNote',
+            `Attachment deleted from Debit Note: ${debitNote.debitNoteDetails.dnNumber}`,
+            debitNote.debitNoteDetails.dnNumber
+        );
+
+        res.status(200).json({ success: true, message: "Attachment deleted successfully", data: debitNote.attachments });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 module.exports = {
     createDebitNote,
     getDebitNotes,
@@ -467,9 +693,16 @@ module.exports = {
     deleteDebitNote,
     searchDebitNotes,
     getDebitNoteSummary,
+    getDuplicateDebitNoteData,
+    cancelDebitNote,
+    restoreDebitNote,
     downloadDebitNotePDF,
     shareDebitNoteEmail,
     shareDebitNoteWhatsApp,
     generateDebitNotePublicLink,
-    viewPublicDebitNote
+    viewPublicDebitNote,
+    attachDebitNoteFile,
+    getDebitNoteAttachments,
+    updateDebitNoteAttachment,
+    deleteDebitNoteAttachment
 };

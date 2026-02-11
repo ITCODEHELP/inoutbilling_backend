@@ -1042,7 +1042,7 @@ const printSaleOrder = async (req, res) => {
 const downloadSaleOrderPDF = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const sos = await SaleOrder.find({ _id: { $in: ids }, userId: req.user._id });
+        const sos = await SaleOrder.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!sos || sos.length === 0) return res.status(404).json({ success: false, message: "Sale Order(s) not found" });
 
         const userData = await User.findById(req.user._id);
@@ -1077,7 +1077,7 @@ const shareSaleOrderEmail = async (req, res) => {
         const ids = req.params.id.split(',').map(id => id.trim()).filter(id => mongoose.Types.ObjectId.isValid(id));
         if (ids.length === 0) return res.status(400).json({ success: false, message: "Invalid ID(s) provided" });
 
-        const sos = await SaleOrder.find({ _id: { $in: ids }, userId: req.user._id });
+        const sos = await SaleOrder.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (sos.length !== ids.length) return res.status(404).json({ success: false, message: "Some Sale Order(s) not found" });
 
         const firstDoc = sos[0];
@@ -1111,7 +1111,7 @@ const shareSaleOrderEmail = async (req, res) => {
 const shareSaleOrderWhatsApp = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const sos = await SaleOrder.find({ _id: { $in: ids }, userId: req.user._id });
+        const sos = await SaleOrder.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!sos || sos.length === 0) return res.status(404).json({ success: false, message: "Sale Order(s) not found" });
 
         const firstDoc = sos[0];
@@ -1159,7 +1159,7 @@ const shareSaleOrderWhatsApp = async (req, res) => {
 const generatePublicLink = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const sos = await SaleOrder.find({ _id: { $in: ids }, userId: req.user._id });
+        const sos = await SaleOrder.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!sos || sos.length === 0) return res.status(404).json({ success: false, message: "Sale Order(s) not found" });
 
         const token = generatePublicToken(req.params.id);
@@ -1192,7 +1192,7 @@ const viewSaleOrderPublic = async (req, res) => {
         }
 
         const ids = id.split(',');
-        const sos = await SaleOrder.find({ _id: { $in: ids } });
+        const sos = await SaleOrder.find({ _id: { $in: ids } }).sort({ createdAt: 1 });
         if (!sos || sos.length === 0) return res.status(404).send('Sale Order not found');
 
         const userData = await User.findById(sos[0].userId);

@@ -552,7 +552,7 @@ const printDeliveryChallan = async (req, res) => {
 const downloadDeliveryChallansPDF = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const challans = await DeliveryChallan.find({ _id: { $in: ids }, userId: req.user._id });
+        const challans = await DeliveryChallan.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!challans || challans.length === 0) return res.status(404).json({ success: false, message: "Delivery Challan(s) not found" });
 
         const userData = await User.findById(req.user._id);
@@ -576,7 +576,7 @@ const shareDeliveryChallanEmail = async (req, res) => {
     try {
         const { sendInvoiceEmail } = require('../../utils/emailHelper');
         const ids = req.params.id.split(',');
-        const challans = await DeliveryChallan.find({ _id: { $in: ids }, userId: req.user._id });
+        const challans = await DeliveryChallan.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!challans || challans.length === 0) return res.status(404).json({ success: false, message: "Delivery Challan(s) not found" });
 
         const firstDoc = challans[0];
@@ -600,7 +600,7 @@ const shareDeliveryChallanEmail = async (req, res) => {
 const shareDeliveryChallanWhatsApp = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const challans = await DeliveryChallan.find({ _id: { $in: ids }, userId: req.user._id });
+        const challans = await DeliveryChallan.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!challans || challans.length === 0) return res.status(404).json({ success: false, message: "Delivery Challan(s) not found" });
 
         const firstDoc = challans[0];
@@ -1170,7 +1170,7 @@ const deleteAttachment = async (req, res) => {
 const generatePublicLink = async (req, res) => {
     try {
         const ids = req.params.id.split(',');
-        const challans = await DeliveryChallan.find({ _id: { $in: ids }, userId: req.user._id });
+        const challans = await DeliveryChallan.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
         if (!challans || challans.length === 0) return res.status(404).json({ success: false, message: "Delivery Challan(s) not found" });
 
         const token = generatePublicToken(req.params.id);
@@ -1204,7 +1204,7 @@ const viewDeliveryChallanPublic = async (req, res) => {
         }
 
         const ids = id.split(',');
-        const challans = await DeliveryChallan.find({ _id: { $in: ids } });
+        const challans = await DeliveryChallan.find({ _id: { $in: ids } }).sort({ createdAt: 1 });
         if (!challans || challans.length === 0) return res.status(404).send("Delivery Challan(s) not found");
 
         const userData = await User.findById(challans[0].userId);
