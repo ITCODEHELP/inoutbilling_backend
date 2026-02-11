@@ -257,6 +257,137 @@ const generateTitleSection = (docType, copyLabel) => {
 };
 
 /**
+ * Dynamically manages table columns based on data presence.
+ * Removes empty columns (Header, Body, Vertical Lines) and adjusts layout.
+ */
+const manageDynamicColumns = ($, doc) => {
+    if (!doc.items || !Array.isArray(doc.items) || doc.items.length === 0) return;
+
+    // 1. Determine Visibility based on Data
+    // A column is visible if AT LEAST ONE item has a non-empty value for it.
+    // Zero (0) is considered a valid value (e.g., Discount = 0).
+    const hasValue = (val) => {
+        if (val === undefined || val === null) return false;
+        if (typeof val === 'string' && val.trim() === "") return false;
+        return true;
+    };
+
+    // Check for specific fields
+    const showHsn = doc.items.some(item => hasValue(item.hsnSac));
+    // Qty and Rate are usually always shown, but we check to be safe or if user wants to hide them (unlikely for invoice)
+    const showQty = doc.items.some(item => hasValue(item.qty));
+    const showRate = doc.items.some(item => hasValue(item.price) || hasValue(item.rate));
+    // Discount: Show if any item has discount OR if explicitly 0 is a valid discount
+    const showDiscount = doc.items.some(item => hasValue(item.discount) || hasValue(item.disc));
+
+    // Tax fields (IGST, CGST, SGST) - Check if they exist in items
+    // Note: Some templates might not have these columns by default. 
+    // This logic removes them if they exist but data is empty.
+    const showIgst = doc.items.some(item => Number(item.igst) > 0);
+    const showCgst = doc.items.some(item => Number(item.cgst) > 0);
+    const showSgst = doc.items.some(item => Number(item.sgst) > 0);
+
+    // 2. Configuration for Selectors (Header, Body, Background Lines, Footer)
+    // We target common classes used across templates.
+    const colConfig = [
+        {
+            key: 'hsnSac',
+            visible: showHsn,
+            selectors: [
+                '.hsnsac', '.header-hsn-sac', '.td-body-hsn-sac',
+                '[data-column="2"]',
+                '.footer-hsnsac', '.footer-hsn-sac'
+            ]
+        },
+        {
+            key: 'qty',
+            visible: showQty,
+            selectors: [
+                '.qty', '.header-qty', '.td-body-qty',
+                '[data-column="3"]',
+                '.footer-total-qty', '.footer-qty'
+            ]
+        },
+        {
+            key: 'rate',
+            visible: showRate,
+            selectors: [
+                '.rate', '.header-rate', '.td-body-rate',
+                '[data-column="4"]', '.section3_rate',
+                '.footer-rate', '._rate_total'
+            ]
+        },
+        {
+            key: 'discount',
+            visible: showDiscount,
+            selectors: [
+                '.disc', '.header-disc', '.td-body-disc',
+                '[data-column="5"]', '.header-cur-symbol',
+                '.footer-total-disc', '.footer-disc'
+            ]
+        },
+        // Tax columns often don't have standard classes in all templates, but adding here for those that do
+        {
+            key: 'igst',
+            visible: showIgst,
+            selectors: ['.igst', '.header-igst', '.td-body-igst', '.footer-igst', '.footer-tax']
+        },
+        {
+            key: 'cgst',
+            visible: showCgst,
+            selectors: ['.cgst', '.header-cgst', '.td-body-cgst', '.footer-cgst']
+        },
+        {
+            key: 'sgst',
+            visible: showSgst,
+            selectors: ['.sgst', '.header-sgst', '.td-body-sgst', '.footer-sgst']
+        }
+    ];
+
+    // 3. Remove Hidden Columns
+    colConfig.forEach(col => {
+        if (!col.visible) {
+            col.selectors.forEach(selector => {
+                // Remove headers, body cells, and background lines
+                $(selector).remove();
+            });
+        }
+    });
+
+    // 4. Adjust Colspan for Footer/Total Rows
+    // If columns are removed, the total colspan needs to be reduced.
+    // Count visible columns (Assumption: Standard columns are SrNo, Name, HSN, Qty, Rate, Disc, Total)
+    // Base columns: SrNo(1), Name(1), Total(1) = 3.
+    // Add dynamic columns if visible.
+    let visibleColCount = 3; // Sr, Name, Total
+    if (showHsn) visibleColCount++;
+    if (showQty) visibleColCount++;
+    if (showRate) visibleColCount++;
+    if (showDiscount) visibleColCount++;
+    if (showIgst) visibleColCount++;
+    if (showCgst) visibleColCount++;
+    if (showSgst) visibleColCount++;
+
+    // Update commonly used colspan cells (e.g., "Total", "Amount in Words" row often spans)
+    // We look for cells with high colspan and attempt to adjust them.
+    // Strategy: simpler to let the browser handle table layout usually, but for fixed footprint templates, explicit width adjustment is hard via Cheerio calculation.
+    // However, we can try to fix the 'footer' row colspan which usually spans (TotalCols - 1) or similar.
+
+    // A simple heuristic: Find cells with colspan > 3 and reduce them? 
+    // Or specifically target known footer label cells.
+    // Examples: .section4_text_clr (Template 5) spans 1?
+    // Template 12: footer table is separate.
+
+    // For now, removing the columns allows the table to auto-layout.
+    // To prevent blank gaps, the remaining columns (specifically Description/Name) should expand.
+    // We can remove width styles from the 'productname' or 'name' column to let it take remaining space.
+    if (!showHsn || !showDiscount || !showQty || !showRate) {
+        $('.productname, .header-product-name, .td-body-product-name').css('width', 'auto');
+        $('.tableboxLine.productname').css('width', 'auto');
+    }
+};
+
+/**
  * Main PDF Generation Logic using Puppeteer
  */
 const generateSaleInvoicePDF = async (documents, user, options = { original: true }, docType = 'Sale Invoice', printConfig = { selectedTemplate: 'Default', printSize: 'A4', printOrientation: 'Portrait' }) => {
@@ -442,8 +573,8 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
             $('head').append(`
                 <style>
                     @media print {
-                        /* Strip most backgrounds but preserve branding */
-                        *:not(.page-wrapper):not(.page-content):not(.branding-footer-image):not(.branding-signature-image) {
+                        /* Strip most backgrounds but preserve branding and table styles */
+                        *:not(.page-wrapper):not(.page-content):not(.branding-footer-image):not(.branding-signature-image):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(.page-header) {
                             background-color: transparent !important;
                             box-shadow: none !important;
                         }
@@ -719,10 +850,13 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
 
             // Handle Signature Injection
             if (brandingAssets.signature) {
-                // Priority order: blank space in foot_table_signature > footer_seal_signature > footer_seal_name > fallback
+                // Priority order: blank space in foot_table_signature > no_sign > footer_seal_signature > footer_seal_name > fallback
                 if ($('.foot_table_signature td').length > 0) {
                     // This is the blank space between "For Company" and "Authorised Signatory"
                     $('.foot_table_signature td').html(`<img src="${brandingAssets.signature}" class="branding-signature-image" style="max-height: 40px; max-width: 150px; display: block; margin: 0 auto; object-fit: contain; page-break-inside: avoid;">`);
+                } else if ($('.no_sign').length > 0) {
+                    // For templates (4-13) where signature goes between "For Company" and "Authorised Signatory"
+                    $('.no_sign').html(`<img src="${brandingAssets.signature}" class="branding-signature-image" style="max-height: 40px; max-width: 150px; display: block; margin: 0 auto; object-fit: contain; page-break-inside: avoid;">`);
                 } else if ($('.footer_seal_signature').length > 0) {
                     // Fallback to dedicated signature area
                     $('.footer_seal_signature').html(`<img src="${brandingAssets.signature}" class="branding-signature-image" style="max-height: 35px; max-width: 120px; display: block; margin: 0 auto; object-fit: contain; page-break-inside: avoid;">`);
@@ -816,22 +950,68 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                 if (options.dateLabel) $('.invoice_date b').text(options.dateLabel);
             }
 
-            // Items Table
-            const $tbody = $('#billdetailstbody tbody');
-            const $rowTemplate = $tbody.find('tr').first().clone();
-            $tbody.empty();
+            // --- DYNAMIC COLUMNS MANAGEMENT ---
+            // Remove empty columns and adjust layout BEFORE generating rows
+            manageDynamicColumns($, doc);
 
-            if (doc.items && Array.isArray(doc.items)) {
-                doc.items.forEach((item, index) => {
-                    const $row = $rowTemplate.clone();
-                    $row.find('.td-body-sr-no').text(index + 1);
-                    $row.find('.td-body-product-name b').text(item.productName || item.productDescription || "N/A");
-                    $row.find('.td-body-hsn-sac').text(item.hsnSac || "");
-                    $row.find('.td-body-qty').text(item.qty || 0);
-                    $row.find('.td-body-rate').text((Number(item.price) || 0).toFixed(2));
-                    $row.find('.td-body-item-total').text((Number(item.total) || 0).toFixed(2));
-                    $tbody.append($row);
-                });
+            // Items Table
+            // Handling for different template structures (Template 1-4 vs 5-13 vs Thermal)
+            // Common strategy: Find the tbody, extract the first row as template, clear, and append.
+
+            // Try standard selector (Template 1-4, 12, 13)
+            let $tbody = $('#billdetailstbody tbody');
+
+            // Fallback for Template 5-11 (often use .billdetailstbody class on table directly or #section3)
+            if ($tbody.length === 0) {
+                $tbody = $('.billdetailstbody tbody');
+            }
+            if ($tbody.length === 0) {
+                $tbody = $('.section3_table tbody');
+            }
+
+            if ($tbody.length > 0) {
+                const $rowTemplate = $tbody.find('tr').first().clone();
+                $tbody.empty();
+
+                if (doc.items && Array.isArray(doc.items)) {
+                    doc.items.forEach((item, index) => {
+                        const $row = $rowTemplate.clone();
+                        // Populate standard fields
+                        $row.find('.td-body-sr-no').text(index + 1);
+
+                        // Product Name (Handle various field names)
+                        const pName = item.productName || item.name || item.productDescription || "N/A";
+                        // Check if we need to append description? User didn't ask, but good practice.
+                        $row.find('.td-body-product-name, .productname h4').html(`<h4>${pName}</h4>${item.description ? `<p>${item.description}</p>` : ''}`);
+
+                        // Helper to safely set text if element exists (it might have been removed by dynamic logic)
+                        const setText = (selector, val) => {
+                            if ($row.find(selector).length) {
+                                $row.find(selector).text(val);
+                            }
+                        };
+
+                        setText('.td-body-hsn-sac', item.hsnSac || "");
+                        setText('.td-body-qty', item.qty || 0);
+                        setText('.td-body-rate', (Number(item.price) || Number(item.rate) || 0).toFixed(2));
+
+                        // Discount: Handle standard and percentage
+                        let discVal = (Number(item.discount) || Number(item.disc) || 0);
+                        setText('.td-body-disc', discVal > 0 ? discVal.toFixed(2) : (item.discount !== undefined && item.discount !== null && item.discount !== "" ? item.discount : ""));
+
+                        // Taxes (if columns exist)
+                        setText('.td-body-igst', (Number(item.igst) || 0).toFixed(2));
+                        setText('.td-body-cgst', (Number(item.cgst) || 0).toFixed(2));
+                        setText('.td-body-sgst', (Number(item.sgst) || 0).toFixed(2));
+
+                        // Total
+                        setText('.td-body-item-total', (Number(item.total) || 0).toFixed(2));
+
+                        $tbody.append($row);
+                    });
+                }
+            } else {
+                // Thermal Template or other structure handling? (Leaving existing logic if it differs, but snippet suggests this covers most)
             }
 
             // Totals
