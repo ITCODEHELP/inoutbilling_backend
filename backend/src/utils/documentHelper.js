@@ -43,7 +43,6 @@ const calculateDocumentTotals = async (userId, documentData, branchId = null) =>
     let totalTax = 0;
 
     const items = Array.isArray(documentData.items) ? documentData.items : [];
-    console.log(`[CALC DEBUG] calculateDocumentTotals called with ${items.length} items`);
 
     const calculatedItems = items.map(item => {
         const qty = Number(item.qty || 0);
@@ -53,8 +52,6 @@ const calculateDocumentTotals = async (userId, documentData, branchId = null) =>
         const discountType = item.discountType || 'Percentage';
         const igstRate = Number(item.igst || 0);
 
-        console.log(`[ITEM DEBUG] Processing: ${item.productName || item.name || 'Unknown'}`);
-        console.log(`  qty=${qty}, price=${price}, discount=${discount}, discountType=${discountType}, igst=${igstRate}`);
 
         // Step 1: Calculate base amount (qty × price)
         const baseAmount = qty * price;
@@ -88,19 +85,8 @@ const calculateDocumentTotals = async (userId, documentData, branchId = null) =>
             discountAmount = discount;
         }
 
-        // Debug logging
-        if (discount > 0) {
-            console.log(`[DISCOUNT DEBUG] Item: ${item.productName || item.name || 'Unknown'}`);
-            console.log(`  Base: ${baseAmount}, Tax: ${taxAmount}, AmountWithTax: ${amountWithTax}`);
-            console.log(`  Discount: ${discount} (${discountType}), DiscountAmount: ${discountAmount}`);
-        }
-
         // Step 5: Final item total (after discount)
         const finalItemTotal = amountWithTax - discountAmount;
-
-        if (discount > 0) {
-            console.log(`  FinalItemTotal: ${finalItemTotal} (should be ${amountWithTax} - ${discountAmount})`);
-        }
 
         // Aggregate totals
         totalInvoiceValue += amountWithTax; // Total before discount
