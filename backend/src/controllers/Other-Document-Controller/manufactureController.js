@@ -1,5 +1,9 @@
 const Manufacture = require('../../models/Other-Document-Model/Manufacture');
 const Product = require('../../models/Product-Service-Model/Product');
+const User = require('../../models/User-Model/User');
+const mongoose = require('mongoose');
+const { generateManufacturePDF } = require('../../utils/manufacturePdfHelper');
+const { getCopyOptions } = require('../../utils/pdfHelper');
 const numberToWords = require('../../utils/numberToWords');
 
 // Helper to calculate all totals
@@ -286,11 +290,53 @@ const deleteManufacture = async (req, res) => {
     }
 };
 
+/**
+ * @desc    Download Manufacture PDF
+ * @route   GET /api/manufacture/:id/download-pdf
+ */
+const downloadManufacturePDF = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const manufactures = await Manufacture.find({
+            _id: { $in: ids },
+            userId: req.user._id,
+            isDeleted: false
+        }).populate('product', 'name');
+
+        if (!manufactures || manufactures.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "Manufacture(s) not found"
+            });
+        }
+
+        const userData = await User.findById(req.user._id);
+        const options = getCopyOptions(req);
+
+        const pdfBuffer = await generateManufacturePDF(manufactures, userData, options);
+
+        const filename = manufactures.length === 1 ?
+            `Manufacture_${manufactures[0].manufactureNumber}.pdf` :
+            `Merged_Manufactures.pdf`;
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.status(200).send(pdfBuffer);
+    } catch (error) {
+        console.error('Error generating manufacture PDF:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
 module.exports = {
     createManufacture,
     getManufactures,
     getManufactureById,
     updateManufacture,
     searchManufactures,
-    deleteManufacture
+    deleteManufacture,
+    downloadManufacturePDF
 };

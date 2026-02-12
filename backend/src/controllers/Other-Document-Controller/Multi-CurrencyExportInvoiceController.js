@@ -85,6 +85,8 @@ const createExportInvoice = async (req, res) => {
             });
         }
 
+        // Relaxed validation for Export Shipping Details to allow draft saving
+        /*
         if (!exportShippingDetails.shipBillNo) {
             return res.status(400).json({
                 success: false,
@@ -140,6 +142,7 @@ const createExportInvoice = async (req, res) => {
                 message: 'Country of Final Destination is required'
             });
         }
+        */
 
         if (!items || !Array.isArray(items) || items.length === 0) {
             return res.status(400).json({
