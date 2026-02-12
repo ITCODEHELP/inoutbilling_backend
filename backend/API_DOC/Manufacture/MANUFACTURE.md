@@ -107,3 +107,50 @@ Authorization: Bearer <token>
 }
 ```
 
+
+
+
+### Download Manufacture PDF
+```http
+GET /api/manufacture/:id/download-pdf
+Authorization: Bearer <token>
+```
+**Query Parameters (for copies)**
+- `original=true`
+- `duplicate=true`
+- `transport=true`
+- `office=true`
+
+### Share Manufacture via Email
+```http
+POST /api/manufacture/:id/share-email
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+**Request Body**
+```json
+{
+  "email": "recipient@example.com"
+}
+```
+
+### Share Manufacture via WhatsApp
+```http
+POST /api/manufacture/:id/share-whatsapp
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+**Request Body**
+```json
+{
+  "phone": "9876543210"
+}
+```
+
+### Generate Public Link
+```http
+GET /api/manufacture/:id/public-link
+Authorization: Bearer <token>
+```
+
+
