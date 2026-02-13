@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User-Model/User');
+const Staff = require('../models/Setting-Model/Staff');
 const PerformanceOptimization = require('../utils/performanceOptimization');
 
 // Rate limiting storage (in production, use Redis)
@@ -54,6 +55,8 @@ const protect = async (req, res, next) => {
 
         // Try to get from cache first
         let userData;
+        let isStaff = false; // Flag to track if authenticated user is a staff member
+
         if (global.cacheManager) {
             userData = await global.cacheManager.get(cacheKey);
         }
@@ -62,28 +65,57 @@ const protect = async (req, res, next) => {
             // Verify token
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-            // Use optimized user lookup with lean projection
+            // 1. Try to find User (Owner) first
             const userQuery = User.findById(decoded.id).select('-password').lean();
-            const user = await userQuery;
+            let user = await userQuery;
 
-            if (!user) {
+            if (user) {
+                userData = user;
+                isStaff = false;
+            } else {
+                // 2. If not User, try to find Staff
+                const staffQuery = Staff.findById(decoded.id).select('-password').lean();
+                const staff = await staffQuery;
+
+                if (staff) {
+                    userData = staff;
+                    isStaff = true;
+                }
+            }
+
+            if (!userData) {
                 return res.status(401).json({ message: 'Not authorized, user not found' });
             }
 
             // Cache the user data for 5 minutes
-            userData = user;
+            // We store isStaff in cache key or adjacent, but here simpler to just cache object
+            // If we need to persist isStaff, we might need a wrapper object in cache, 
+            // but for now let's assume userData properties distinguish (Staff has ownerRef).
+            // Actually, best to just re-fetch or rely on structure. 
+            // For now, simple caching.
             if (global.cacheManager) {
+                // Add isStaff to saved data for retrieval
+                userData._isStaff = isStaff;
                 await global.cacheManager.set(cacheKey, userData, 300000); // 5 minutes
             }
+        } else {
+            // Recover isStaff flag from cached object
+            isStaff = userData._isStaff === true;
+        }
+
+        // --- ACCOUNT STATUS CHECK ---
+        // Block request if account is disabled/inactive
+        if (userData.isActive === false || userData.isEnabled === false) {
+            return res.status(403).json({
+                success: false,
+                message: 'Your account has been disabled, please contact the owner'
+            });
         }
 
         // Attach user to request (minimal data for performance)
         req.user = {
-            _id: userData._id,
-            userId: userData.userId,
-            phone: userData.phone,
-            countryCode: userData.countryCode,
-            isVerified: userData.isVerified
+            ...userData, // Attach full user/staff object (lean)
+            isStaff: isStaff // Explicit flag for controllers to use
         };
 
         // Add rate limit headers
