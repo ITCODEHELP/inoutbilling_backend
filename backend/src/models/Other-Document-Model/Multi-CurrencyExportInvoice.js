@@ -57,6 +57,7 @@ const exportInvoiceSchema = new mongoose.Schema({
         address: { type: String },
         contactPerson: { type: String },
         phone: { type: String },
+        email: { type: String },
         gstinPan: { type: String },
         reverseCharge: { type: Boolean, default: false },
         placeOfSupply: { type: String, required: [true, 'Place of Supply is required'] }

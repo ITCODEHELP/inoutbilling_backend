@@ -913,6 +913,31 @@ const downloadExportInvoicePDF = async (req, res) => {
 };
 
 /**
+ * @desc    Print Export Invoice
+ * @route   GET /api/export-invoice/:id/print
+ */
+const printExportInvoice = async (req, res) => {
+    try {
+        const exportInvoice = await ExportInvoice.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!exportInvoice) return res.status(404).json({ success: false, message: "Export Invoice not found" });
+
+        const userData = await User.findById(req.user._id);
+        const options = getCopyOptions(req);
+
+        const printConfig = await getSelectedPrintTemplate(req.user._id, 'Multi Currency Export Invoice', exportInvoice.branch);
+        const pdfBuffer = await generateSaleInvoicePDF(exportInvoice, userData, {
+            ...options
+        }, 'Multi Currency Export Invoice', printConfig);
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename=export-invoice-${exportInvoice.invoiceDetails.invoiceNumber}.pdf`);
+        res.send(pdfBuffer);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
  * @desc    Share Export Invoice via Email
  * @route   POST /api/export-invoice/:id/share-email
  */
@@ -1207,6 +1232,7 @@ module.exports = {
     shareExportInvoiceWhatsApp,
     generateExportInvoicePublicLink,
     viewPublicExportInvoice,
+    printExportInvoice,
     attachExportInvoiceFile,
     getExportInvoiceAttachments,
     updateExportInvoiceAttachment,
