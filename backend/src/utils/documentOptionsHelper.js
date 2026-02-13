@@ -14,7 +14,8 @@ const mapDocTypeToSchemaKey = (docType) => {
         'Sale Order': 'saleOrder',
         'Purchase Invoice': 'purchaseInvoice',
         'Job Work': 'jobWork',
-        'Packing List': 'multiCurrencyInvoice', // Reusing matching schema key
+        'Packing List': 'multiCurrencyInvoice',
+        'Multi Currency Export Invoice': 'multiCurrencyInvoice',
         'Inward Payment': 'inwardPayment',
         'Outward Payment': 'outwardPayment',
         'Daily Expense': 'dailyExpense',
@@ -41,7 +42,7 @@ const mapSchemaKeyToDefaultTitle = (schemaKey) => {
         'saleOrder': 'SALE ORDER',
         'purchaseInvoice': 'PURCHASE INVOICE',
         'jobWork': 'JOB WORK',
-        'multiCurrencyInvoice': 'PACKING LIST',
+        'multiCurrencyInvoice': 'MULTI CURRENCY INVOICE',
         'inwardPayment': 'RECEIPT VOUCHER',
         'outwardPayment': 'PAYMENT VOUCHER',
         'dailyExpense': 'EXPENSE VOUCHER',

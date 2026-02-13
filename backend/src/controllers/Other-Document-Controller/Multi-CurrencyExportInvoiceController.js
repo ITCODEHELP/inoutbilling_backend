@@ -1,9 +1,25 @@
 const ExportInvoice = require('../../models/Other-Document-Model/Multi-CurrencyExportInvoice');
-const { calculateExportInvoiceTotals, getSummaryAggregation } = require('../../utils/documentHelper');
-const { calculateShippingDistance } = require('../../utils/shippingHelper');
-const { sendInvoiceEmail } = require('../../utils/emailHelper');
+const User = require('../../models/User-Model/User');
 const Customer = require('../../models/Customer-Vendor-Model/Customer');
+const { calculateExportInvoiceTotals, getSummaryAggregation, getSelectedPrintTemplate } = require('../../utils/documentHelper');
+const { calculateShippingDistance } = require('../../utils/shippingHelper');
+const { generateSaleInvoicePDF } = require('../../utils/saleInvoicePdfHelper');
+const { getCopyOptions } = require('../../utils/pdfHelper');
+const { sendInvoiceEmail } = require('../../utils/emailHelper');
+const { recordActivity } = require('../../utils/activityLogHelper');
 const mongoose = require('mongoose');
+const crypto = require('crypto');
+const fs = require('fs');
+
+// Helper to generate secure public token
+const generatePublicToken = (id) => {
+    const secret = process.env.JWT_SECRET || 'your-default-secret';
+    return crypto
+        .createHmac('sha256', secret)
+        .update(id.toString())
+        .digest('hex')
+        .substring(0, 16);
+};
 
 // Generate Export Invoice Number (following same pattern as other invoices)
 const generateExportInvoiceNumber = async (userId) => {
@@ -753,6 +769,425 @@ const getExportInvoiceSummary = async (req, res) => {
     }
 };
 
+/**
+ * @desc    Get data for duplicating an Export Invoice (Prefill Add Form)
+ * @route   GET /api/export-invoice/:id/duplicate
+ */
+const getDuplicateExportInvoiceData = async (req, res) => {
+    try {
+        const exportInvoice = await ExportInvoice.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!exportInvoice) return res.status(404).json({ success: false, message: 'Export Invoice not found' });
+
+        const data = exportInvoice.toObject();
+
+        // System fields to exclude
+        delete data._id;
+        delete data.status;
+        delete data.createdAt;
+        delete data.updatedAt;
+        delete data.__v;
+        delete data.userId;
+        delete data.conversions;
+        delete data.attachments;
+
+        // Reset document number
+        if (data.invoiceDetails) {
+            delete data.invoiceDetails.invoiceNumber;
+        }
+
+        // Linked references to exclude
+        delete data.staff;
+        delete data.branch;
+
+        // Reset sub-document IDs
+        if (Array.isArray(data.items)) {
+            data.items = data.items.map(item => {
+                delete item._id;
+                return item;
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Export Invoice data for duplication retrieved',
+            data
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Cancel Export Invoice
+ * @route   POST /api/export-invoice/:id/cancel
+ */
+const cancelExportInvoice = async (req, res) => {
+    try {
+        const exportInvoice = await ExportInvoice.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!exportInvoice) return res.status(404).json({ success: false, message: 'Export Invoice not found' });
+
+        if (exportInvoice.status === 'Cancelled') {
+            return res.status(400).json({ success: false, message: 'Export Invoice is already cancelled' });
+        }
+
+        exportInvoice.status = 'Cancelled';
+        const updatedExportInvoice = await exportInvoice.save();
+
+        if (!updatedExportInvoice) {
+            return res.status(500).json({ success: false, message: "Failed to update export invoice status" });
+        }
+
+        await recordActivity(
+            req,
+            'Cancel',
+            'ExportInvoice',
+            `Export Invoice cancelled: ${exportInvoice.invoiceDetails.invoiceNumber}`,
+            exportInvoice.invoiceDetails.invoiceNumber
+        );
+
+        res.status(200).json({ success: true, message: "Export Invoice cancelled successfully", data: updatedExportInvoice });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Restore Export Invoice
+ * @route   POST /api/export-invoice/:id/restore
+ */
+const restoreExportInvoice = async (req, res) => {
+    try {
+        const exportInvoice = await ExportInvoice.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!exportInvoice) return res.status(404).json({ success: false, message: 'Export Invoice not found' });
+
+        if (exportInvoice.status !== 'Cancelled') {
+            return res.status(400).json({ success: false, message: 'Export Invoice is not in Cancelled state' });
+        }
+
+        exportInvoice.status = 'Active';
+        await exportInvoice.save();
+
+        await recordActivity(
+            req,
+            'Restore',
+            'ExportInvoice',
+            `Export Invoice restored to Active: ${exportInvoice.invoiceDetails.invoiceNumber}`,
+            exportInvoice.invoiceDetails.invoiceNumber
+        );
+
+        res.status(200).json({ success: true, message: "Export Invoice restored successfully", data: exportInvoice });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Download Export Invoice PDF
+ * @route   GET /api/export-invoice/:id/download-pdf
+ */
+const downloadExportInvoicePDF = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const exportInvoices = await ExportInvoice.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
+        if (!exportInvoices || exportInvoices.length === 0) return res.status(404).json({ success: false, message: "Export Invoice(s) not found" });
+
+        const userData = await User.findById(req.user._id);
+        const options = getCopyOptions(req);
+
+        const printConfig = await getSelectedPrintTemplate(req.user._id, 'Multi Currency Export Invoice', exportInvoices[0].branch);
+        const pdfBuffer = await generateSaleInvoicePDF(exportInvoices, userData, {
+            ...options
+        }, 'Multi Currency Export Invoice', printConfig);
+
+        const filename = exportInvoices.length === 1 ? `ExportInvoice_${exportInvoices[0].invoiceDetails.invoiceNumber}.pdf` : `Merged_ExportInvoices.pdf`;
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.status(200).send(pdfBuffer);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Share Export Invoice via Email
+ * @route   POST /api/export-invoice/:id/share-email
+ */
+const shareExportInvoiceEmail = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const exportInvoices = await ExportInvoice.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
+        if (!exportInvoices || exportInvoices.length === 0) return res.status(404).json({ success: false, message: "Export Invoice(s) not found" });
+
+        const firstDoc = exportInvoices[0];
+        const customer = await Customer.findOne({ userId: req.user._id, companyName: firstDoc.customerInformation.ms });
+        const email = req.body.email || (customer ? customer.email : null);
+
+        if (!email) return res.status(400).json({ success: false, message: "Customer email not found. Please provide an email address." });
+
+        const options = getCopyOptions(req);
+
+        await sendInvoiceEmail(exportInvoices, email, false, {
+            ...options
+        }, 'Multi Currency Export Invoice');
+
+        res.status(200).json({ success: true, message: `Export Invoice(s) sent to ${email} successfully` });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Share Export Invoice via WhatsApp
+ * @route   POST /api/export-invoice/:id/share-whatsapp
+ */
+const shareExportInvoiceWhatsApp = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const exportInvoices = await ExportInvoice.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 });
+        if (!exportInvoices || exportInvoices.length === 0) return res.status(404).json({ success: false, message: "Export Invoice(s) not found" });
+
+        const firstDoc = exportInvoices[0];
+        const customer = await Customer.findOne({ userId: req.user._id, companyName: firstDoc.customerInformation.ms });
+        const phone = req.body.phone || (customer ? customer.phone : null);
+
+        if (!phone) return res.status(400).json({ success: false, message: "Customer phone not found. Please provide a phone number." });
+
+        const cleanPhone = phone.replace(/\D/g, '');
+        const whatsappNumber = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+
+        const options = getCopyOptions(req);
+        let queryParams = [];
+        if (options.original) queryParams.push('original=true');
+        if (options.duplicate) queryParams.push('duplicate=true');
+        if (options.transport) queryParams.push('transport=true');
+        if (options.office) queryParams.push('office=true');
+
+        const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+        const token = generatePublicToken(req.params.id);
+        const publicLink = `${req.protocol}://${req.get('host')}/api/export-invoice/view-public/${req.params.id}/${token}${queryString}`;
+
+        let message = '';
+        if (exportInvoices.length === 1) {
+            message = `Dear ${firstDoc.customerInformation.ms},\n\nPlease find your Export Invoice No: ${firstDoc.invoiceDetails.invoiceNumber} for Total Amount: ${firstDoc.currency.symbol} ${firstDoc.totals.grandTotal.toFixed(2)}.\n\nView Link: ${publicLink}\n\nThank you!`;
+        } else {
+            message = `Dear ${firstDoc.customerInformation.ms},\n\nPlease find your merged Export Invoices for Total Amount: ${firstDoc.currency.symbol} ${exportInvoices.reduce((sum, q) => sum + q.totals.grandTotal, 0).toFixed(2)}.\n\nView Link: ${publicLink}\n\nThank you!`;
+        }
+
+        const encodedMessage = encodeURIComponent(message);
+        const deepLink = `https://wa.me/${whatsappNumber}?text=${encodedMessage}`;
+
+        res.status(200).json({
+            success: true,
+            message: "WhatsApp share link generated",
+            data: { whatsappNumber, deepLink }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Generate Public Link for Export Invoice
+ * @route   GET /api/export-invoice/:id/public-link
+ */
+const generateExportInvoicePublicLink = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const exportInvoices = await ExportInvoice.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!exportInvoices || exportInvoices.length === 0) return res.status(404).json({ success: false, message: "Export Invoice(s) not found" });
+
+        const token = generatePublicToken(req.params.id);
+
+        const options = getCopyOptions(req);
+        let queryParams = [];
+        if (options.original) queryParams.push('original=true');
+        if (options.duplicate) queryParams.push('duplicate=true');
+        if (options.transport) queryParams.push('transport=true');
+        if (options.office) queryParams.push('office=true');
+
+        const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const publicLink = `${baseUrl}/api/export-invoice/view-public/${req.params.id}/${token}${queryString}`;
+
+        res.status(200).json({ success: true, publicLink });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Public View for Export Invoice
+ * @route   GET /api/export-invoice/view-public/:id/:token
+ */
+const viewPublicExportInvoice = async (req, res) => {
+    try {
+        const { id, token } = req.params;
+        const generatedToken = generatePublicToken(id);
+
+        if (token !== generatedToken) {
+            return res.status(403).send('Invalid or expired link');
+        }
+
+        const exportInvoice = await ExportInvoice.findById(id);
+        if (!exportInvoice) return res.status(404).send('Export Invoice not found');
+
+        const userData = await User.findById(exportInvoice.userId);
+
+        const options = getCopyOptions(req);
+
+        const printConfig = await getSelectedPrintTemplate(exportInvoice.userId, 'Multi Currency Export Invoice', exportInvoice.branch);
+
+        const pdfBuffer = await generateSaleInvoicePDF(exportInvoice, userData, {
+            ...options
+        }, 'Multi Currency Export Invoice', printConfig);
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename=export-invoice-${exportInvoice.invoiceDetails.invoiceNumber}.pdf`);
+        res.send(pdfBuffer);
+    } catch (error) {
+        res.status(500).send(error.message);
+    }
+};
+
+/**
+ * @desc    Attach File to Export Invoice
+ * @route   POST /api/export-invoice/:id/attach-file
+ */
+const attachExportInvoiceFile = async (req, res) => {
+    try {
+        if (!req.files || req.files.length === 0) return res.status(400).json({ success: false, message: "No files uploaded" });
+
+        const newAttachments = req.files.map(file => ({
+            fileName: file.filename,
+            filePath: file.path,
+            fileSize: file.size,
+            mimeType: file.mimetype,
+            uploadedAt: new Date(),
+            uploadedBy: req.user._id
+        }));
+
+        const exportInvoice = await ExportInvoice.findOneAndUpdate(
+            { _id: req.params.id, userId: req.user._id },
+            { $push: { attachments: { $each: newAttachments } } },
+            { new: true }
+        );
+
+        if (!exportInvoice) return res.status(404).json({ success: false, message: "Export Invoice not found" });
+
+        await recordActivity(
+            req,
+            'Attachment',
+            'ExportInvoice',
+            `Files attached to Export Invoice: ${exportInvoice.invoiceDetails.invoiceNumber}`,
+            exportInvoice.invoiceDetails.invoiceNumber
+        );
+
+        res.status(200).json({ success: true, message: "Files attached successfully", data: exportInvoice.attachments });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Get All Attachments for Export Invoice
+ * @route   GET /api/export-invoice/:id/attachments
+ */
+const getExportInvoiceAttachments = async (req, res) => {
+    try {
+        const exportInvoice = await ExportInvoice.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!exportInvoice) return res.status(404).json({ success: false, message: "Export Invoice not found" });
+        res.status(200).json({ success: true, data: exportInvoice.attachments || [] });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Update/Replace Export Invoice Attachment
+ * @route   PUT /api/export-invoice/:id/attachment/:attachmentId
+ */
+const updateExportInvoiceAttachment = async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded" });
+
+        const exportInvoice = await ExportInvoice.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!exportInvoice) {
+            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return res.status(404).json({ success: false, message: "Export Invoice not found" });
+        }
+
+        const attachmentIndex = exportInvoice.attachments.findIndex(a => a._id.toString() === req.params.attachmentId);
+        if (attachmentIndex === -1) {
+            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return res.status(404).json({ success: false, message: "Attachment not found" });
+        }
+
+        const oldFile = exportInvoice.attachments[attachmentIndex].filePath;
+        if (fs.existsSync(oldFile)) {
+            try { fs.unlinkSync(oldFile); } catch (e) { console.error("Error deleting old file:", e); }
+        }
+
+        exportInvoice.attachments[attachmentIndex] = {
+            _id: exportInvoice.attachments[attachmentIndex]._id,
+            fileName: req.file.filename,
+            filePath: req.file.path,
+            fileSize: req.file.size,
+            mimeType: req.file.mimetype,
+            uploadedAt: new Date(),
+            uploadedBy: req.user._id
+        };
+
+        await exportInvoice.save();
+
+        await recordActivity(
+            req,
+            'Update Attachment',
+            'ExportInvoice',
+            `Attachment replaced for Export Invoice: ${exportInvoice.invoiceDetails.invoiceNumber}`,
+            exportInvoice.invoiceDetails.invoiceNumber
+        );
+
+        res.status(200).json({ success: true, message: "Attachment replaced successfully", data: exportInvoice.attachments });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Delete Export Invoice Attachment
+ * @route   DELETE /api/export-invoice/:id/attachment/:attachmentId
+ */
+const deleteExportInvoiceAttachment = async (req, res) => {
+    try {
+        const exportInvoice = await ExportInvoice.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!exportInvoice) return res.status(404).json({ success: false, message: "Export Invoice not found" });
+
+        const attachment = exportInvoice.attachments.find(a => a._id.toString() === req.params.attachmentId);
+        if (!attachment) return res.status(404).json({ success: false, message: "Attachment not found" });
+
+        if (fs.existsSync(attachment.filePath)) {
+            try { fs.unlinkSync(attachment.filePath); } catch (e) { console.error("Error deleting file:", e); }
+        }
+
+        exportInvoice.attachments = exportInvoice.attachments.filter(a => a._id.toString() !== req.params.attachmentId);
+        await exportInvoice.save();
+
+        await recordActivity(
+            req,
+            'Delete Attachment',
+            'ExportInvoice',
+            `Attachment deleted from Export Invoice: ${exportInvoice.invoiceDetails.invoiceNumber}`,
+            exportInvoice.invoiceDetails.invoiceNumber
+        );
+
+        res.status(200).json({ success: true, message: "Attachment deleted successfully", data: exportInvoice.attachments });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 module.exports = {
     createExportInvoice,
     getExportInvoices,
@@ -760,6 +1195,18 @@ module.exports = {
     updateExportInvoice,
     deleteExportInvoice,
     searchExportInvoices,
-    getExportInvoiceSummary
+    getExportInvoiceSummary,
+    getDuplicateExportInvoiceData,
+    cancelExportInvoice,
+    restoreExportInvoice,
+    downloadExportInvoicePDF,
+    shareExportInvoiceEmail,
+    shareExportInvoiceWhatsApp,
+    generateExportInvoicePublicLink,
+    viewPublicExportInvoice,
+    attachExportInvoiceFile,
+    getExportInvoiceAttachments,
+    updateExportInvoiceAttachment,
+    deleteExportInvoiceAttachment
 };
 

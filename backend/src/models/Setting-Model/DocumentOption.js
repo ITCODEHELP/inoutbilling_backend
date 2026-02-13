@@ -192,7 +192,7 @@ const documentOptionSchema = new mongoose.Schema({
     purchaseInvoice: { type: purchaseInvoiceSchema, default: () => ({}) },
     creditNote: { type: mongoose.Schema.Types.Mixed, default: {} },
     debitNote: { type: mongoose.Schema.Types.Mixed, default: {} },
-    multiCurrencyInvoice: { type: mongoose.Schema.Types.Mixed, default: {} },
+    multiCurrencyInvoice: { type: saleInvoiceSchema, default: () => ({}) },
     paymentType: { type: mongoose.Schema.Types.Mixed, default: {} },
     letterOptions: { type: mongoose.Schema.Types.Mixed, default: {} },
     inwardPayment: { type: mongoose.Schema.Types.Mixed, default: {} },

@@ -652,7 +652,7 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                     // Clean templates that have hardcoded default titles
                     $('#headersec h3, .page-header h3').each(function () {
                         const txt = $(this).text().trim().toUpperCase();
-                        const defaults = ['TAX INVOICE', 'DEBIT NOTE', 'CREDIT NOTE', 'QUOTATION', 'SALE INVOICE', 'PROFORMA INVOICE', 'DELIVERY CHALLAN', 'PURCHASE ORDER', 'SALE ORDER', 'PURCHASE INVOICE', 'JOB WORK', 'PACKING LIST'];
+                        const defaults = ['TAX INVOICE', 'DEBIT NOTE', 'CREDIT NOTE', 'QUOTATION', 'SALE INVOICE', 'PROFORMA INVOICE', 'DELIVERY CHALLAN', 'PURCHASE ORDER', 'SALE ORDER', 'PURCHASE INVOICE', 'JOB WORK', 'PACKING LIST', 'MULTI CURRENCY EXPORT INVOICE', 'EXPORT INVOICE'];
                         if (defaults.includes(txt)) {
                             $(this).text('');
                         }

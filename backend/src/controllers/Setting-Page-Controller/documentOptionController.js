@@ -68,7 +68,7 @@ exports.saveDocumentOptions = async (req, res) => {
             'purchaseInvoice': 'Purchase Invoice',
             'creditNote': 'Credit Note',
             'debitNote': 'Debit Note',
-            'multiCurrencyInvoice': 'Packing List',
+            'multiCurrencyInvoice': 'Multi Currency Invoice',
             'inwardPayment': 'Inward Payment',
             'outwardPayment': 'Outward Payment'
         };
@@ -111,7 +111,8 @@ exports.saveDocumentOptions = async (req, res) => {
                 'saleInvoice', 'deliveryChallan', 'quotation', 'proforma',
                 'purchaseOrder', 'saleOrder', 'purchaseInvoice', 'jobWork',
                 'creditNote', 'debitNote', 'receipt', 'payment',
-                'inwardPayment', 'outwardPayment', 'dailyExpense', 'otherIncome', 'bankLedger'
+                'inwardPayment', 'outwardPayment', 'dailyExpense', 'otherIncome', 'bankLedger',
+                'multiCurrencyInvoice'
             ];
 
             // Check if request body contains any known document keys

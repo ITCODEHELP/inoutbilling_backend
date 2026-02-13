@@ -52,12 +52,12 @@ const calculateDocumentTotals = async (userId, documentData, branchId = null) =>
         const discountType = item.discountType || 'Percentage';
         const igstRate = Number(item.igst || 0);
 
-
         // Step 1: Calculate base amount (qty × price)
         const baseAmount = qty * price;
 
         // Step 2: Calculate tax on base amount
 
+        // Step 2: Calculate tax on base amount
         let cgst = 0, sgst = 0, igst = 0;
         let cgstRate = 0, sgstRate = 0, finalIgstRate = 0;
 

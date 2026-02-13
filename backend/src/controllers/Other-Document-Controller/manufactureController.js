@@ -1,6 +1,25 @@
 const Manufacture = require('../../models/Other-Document-Model/Manufacture');
 const Product = require('../../models/Product-Service-Model/Product');
+const User = require('../../models/User-Model/User');
+const { getCopyOptions } = require('../../utils/pdfHelper');
+const { sendInvoiceEmail } = require('../../utils/emailHelper');
+const { recordActivity } = require('../../utils/activityLogHelper');
+const { generateSaleInvoicePDF } = require('../../utils/saleInvoicePdfHelper');
+const { getSelectedPrintTemplate, getSummaryAggregation } = require('../../utils/documentHelper');
 const numberToWords = require('../../utils/numberToWords');
+const mongoose = require('mongoose');
+const crypto = require('crypto');
+const fs = require('fs');
+
+// Helper to generate secure public token
+const generatePublicToken = (id) => {
+    const secret = process.env.JWT_SECRET || 'your-default-secret';
+    return crypto
+        .createHmac('sha256', secret)
+        .update(id.toString())
+        .digest('hex')
+        .substring(0, 16);
+};
 
 // Helper to calculate all totals
 const calculateManufactureTotals = (data) => {
@@ -286,11 +305,254 @@ const deleteManufacture = async (req, res) => {
     }
 };
 
+
+
+
+const prepareManufactureForPdf = (manufactures) => {
+    return manufactures.map(doc => {
+        const obj = doc.toObject();
+        // Map to invoiceDetails for PDF generator compatibility
+        obj.invoiceDetails = {
+            invoiceNumber: doc.manufactureNumber,
+            invoiceDate: doc.manufactureDate
+        };
+
+        // Add Product Details for Header
+        const productName = doc.product && doc.product.name ? doc.product.name : 'N/A';
+        const qty = doc.quantity || 0;
+        const uom = doc.uom || '';
+
+        obj.productDetails = {
+            productName,
+            qty,
+            uom,
+            description: `${productName} - ${qty} ${uom}`
+        };
+
+        // Map rawMaterials and otherOutcomes to generic items array
+        const rawMaterials = (doc.rawMaterials || []).map(i => ({
+            productName: i.productName,
+            description: i.itemNote || '', // Separating note
+            qty: i.qty,
+            uom: i.uom,
+            rate: i.price,
+            price: i.price,
+            total: i.total,
+            hsnSac: '',
+            discount: 0,
+            igst: 0, cgst: 0, sgst: 0
+        }));
+
+        const otherOutcomes = (doc.otherOutcomes || []).map(i => ({
+            productName: i.productName, // Treating as "Particulars"
+            description: i.itemNote || 'Other Outcome',
+            qty: i.qty,
+            uom: i.uom, // Ensure UOM is passed
+            rate: i.price,
+            price: i.price,
+            total: i.total,
+            hsnSac: '',
+            discount: 0,
+            igst: 0, cgst: 0, sgst: 0
+        }));
+
+        obj.mappedRawMaterials = rawMaterials;
+        obj.mappedOtherOutcomes = otherOutcomes;
+        obj.items = [...rawMaterials, ...otherOutcomes];
+
+        // Ensure totals structure is present if needed by PDF helper
+        if (!obj.totals) {
+            obj.totals = {
+                grandTotal: doc.grandTotal,
+                totalInWords: doc.totalInWords
+            };
+        }
+
+        return obj;
+    });
+};
+
+const downloadManufacturePDF = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const manufactures = await Manufacture.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 }).populate('product', 'name');
+        if (!manufactures || manufactures.length === 0) return res.status(404).json({ success: false, message: "Manufacture record(s) not found" });
+
+        const userData = await User.findById(req.user._id);
+        const options = getCopyOptions(req);
+
+        // Pass overrides for labels
+        const pdfOptions = {
+            ...options,
+            numLabel: 'Manufacture No.',
+            dateLabel: 'Manufacture Date',
+            hideDueDate: true,
+            hideTerms: true
+        };
+
+        const mappedManufactures = prepareManufactureForPdf(manufactures);
+
+        // Manufacture doesn't strictly have a "Branch" usually, using default if not present
+        const printConfig = await getSelectedPrintTemplate(req.user._id, 'Manufacture');
+
+        const pdfBuffer = await generateSaleInvoicePDF(mappedManufactures, userData, pdfOptions, 'Manufacture', printConfig);
+
+        const filename = manufactures.length === 1 ? `Manufacture_${manufactures[0].manufactureNumber}.pdf` : `Merged_Manufacture_Docs.pdf`;
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.status(200).send(pdfBuffer);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const shareManufactureEmail = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const manufactures = await Manufacture.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 }).populate('product', 'name');
+        if (!manufactures || manufactures.length === 0) return res.status(404).json({ success: false, message: "Manufacture record(s) not found" });
+
+        const email = req.body.email; // Required as no customer link
+        if (!email) return res.status(400).json({ success: false, message: "Email address is required." });
+
+        const options = getCopyOptions(req);
+        const pdfOptions = {
+            ...options,
+            numLabel: 'Manufacture No.',
+            dateLabel: 'Manufacture Date',
+            hideDueDate: true,
+            hideTerms: true
+        };
+
+        const mappedManufactures = prepareManufactureForPdf(manufactures);
+
+        await sendInvoiceEmail(mappedManufactures, email, false, pdfOptions, 'Manufacture');
+
+        res.status(200).json({ success: true, message: `Manufacture document(s) sent to ${email} successfully` });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const shareManufactureWhatsApp = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const manufactures = await Manufacture.find({ _id: { $in: ids }, userId: req.user._id }).sort({ createdAt: 1 }).populate('product', 'name');
+        if (!manufactures || manufactures.length === 0) return res.status(404).json({ success: false, message: "Manufacture record(s) not found" });
+
+        const firstDoc = manufactures[0];
+        const phone = req.body.phone; // Required
+
+        if (!phone) return res.status(400).json({ success: false, message: "Phone number is required." });
+
+        const cleanPhone = phone.replace(/\D/g, '');
+        const whatsappNumber = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+
+        const options = getCopyOptions(req);
+        let queryParams = [];
+        if (options.original) queryParams.push('original=true');
+        if (options.duplicate) queryParams.push('duplicate=true');
+        if (options.transport) queryParams.push('transport=true');
+        if (options.office) queryParams.push('office=true');
+
+        const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+        const token = generatePublicToken(req.params.id);
+        const publicLink = `${req.protocol}://${req.get('host')}/api/manufacture/view-public/${req.params.id}/${token}${queryString}`;
+
+        let message = '';
+        if (manufactures.length === 1) {
+            message = `Please find Manufacture Document No: ${firstDoc.manufactureNumber} for Product: ${firstDoc.product ? firstDoc.product.name : 'N/A'}.\n\nView Link: ${publicLink}\n\nThank you!`;
+        } else {
+            message = `Please find merged Manufacture Documents.\n\nView Link: ${publicLink}\n\nThank you!`;
+        }
+
+        const encodedMessage = encodeURIComponent(message);
+        const deepLink = `https://wa.me/${whatsappNumber}?text=${encodedMessage}`;
+
+        res.status(200).json({
+            success: true,
+            message: "WhatsApp share link generated",
+            data: { whatsappNumber, deepLink }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const generateManufacturePublicLink = async (req, res) => {
+    try {
+        const ids = req.params.id.split(',');
+        const manufactures = await Manufacture.find({ _id: { $in: ids }, userId: req.user._id });
+        if (!manufactures || manufactures.length === 0) return res.status(404).json({ success: false, message: "Manufacture record(s) not found" });
+
+        const token = generatePublicToken(req.params.id);
+
+        const options = getCopyOptions(req);
+        let queryParams = [];
+        if (options.original) queryParams.push('original=true');
+        if (options.duplicate) queryParams.push('duplicate=true');
+        if (options.transport) queryParams.push('transport=true');
+        if (options.office) queryParams.push('office=true');
+
+        const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const publicLink = `${baseUrl}/api/manufacture/view-public/${req.params.id}/${token}${queryString}`;
+
+        res.status(200).json({ success: true, publicLink });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const viewPublicManufacture = async (req, res) => {
+    try {
+        const { id, token } = req.params;
+        const generatedToken = generatePublicToken(id);
+
+        if (token !== generatedToken) {
+            return res.status(403).send('Invalid or expired link');
+        }
+
+        const manufacture = await Manufacture.findById(id).populate('product', 'name');
+        if (!manufacture) return res.status(404).send('Manufacture record not found');
+
+        const userData = await User.findById(manufacture.userId);
+
+        const options = getCopyOptions(req);
+        const pdfOptions = {
+            ...options,
+            numLabel: 'Manufacture No.',
+            dateLabel: 'Manufacture Date',
+            hideDueDate: true,
+            hideTerms: true
+        };
+
+        const printConfig = await getSelectedPrintTemplate(manufacture.userId, 'Manufacture');
+        const mappedManufactures = prepareManufactureForPdf([manufacture]);
+
+        const pdfBuffer = await generateSaleInvoicePDF(mappedManufactures, userData, pdfOptions, 'Manufacture', printConfig);
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename=manufacture-${manufacture.manufactureNumber}.pdf`);
+        res.send(pdfBuffer);
+    } catch (error) {
+        res.status(500).send(error.message);
+    }
+};
+
 module.exports = {
     createManufacture,
     getManufactures,
     getManufactureById,
     updateManufacture,
     searchManufactures,
-    deleteManufacture
+    deleteManufacture,
+    downloadManufacturePDF,
+    shareManufactureEmail,
+    shareManufactureWhatsApp,
+    generateManufacturePublicLink,
+    viewPublicManufacture
 };
+
