@@ -92,7 +92,7 @@ exports.saveDocumentOptions = async (req, res) => {
         // 3. Save using findOneAndUpdate with upsert
         const options = await DocumentOption.findOneAndUpdate(
             { userId },
-            { $set: updateData },
+            { $set: updates },
             { new: true, upsert: true, setDefaultsOnInsert: true }
         );
 

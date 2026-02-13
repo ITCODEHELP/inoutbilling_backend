@@ -73,8 +73,9 @@ const purchaseInvoiceSchema = new mongoose.Schema({
 
     paymentType: {
         type: String,
-        required: [true, 'Payment Type is required'],
-        enum: ['CREDIT', 'CASH', 'CHEQUE', 'ONLINE'],
+        required: [false, 'Payment Type is required'], // Made optional for 'None' or handle defaults
+        enum: ['CREDIT', 'CASH', 'CHEQUE', 'ONLINE', 'None', 'Credit', 'Cash', 'Cheque', 'Online'],
+        default: 'Credit',
         index: true
     },
 
@@ -82,7 +83,6 @@ const purchaseInvoiceSchema = new mongoose.Schema({
 
     status: {
         type: String,
-        enum: ['Active', 'Cancelled', 'Draft', 'Paid', 'Partial', 'Unpaid', 'Completed', 'Pending'],
         default: 'Active',
         index: true
     },

@@ -356,13 +356,15 @@ const handleCreateInvoiceLogic = async (req) => {
     if (validationError) throw new Error(validationError);
     // 3.5️⃣ BACKEND CALCULATION - Calculate totals from base inputs only
     // const { calculateDocumentTotals } = require('../../utils/documentHelper'); // Moved to top
-    const branchId = bodyData.branch || bodyData.branchId || null;
 
     // Ensure user exists before calculation (critical bug fix)
     const userId = req.user ? req.user._id : (req.userId || null);
     if (!userId) throw new Error("User ID is required for calculation");
 
-    const calculated = await calculateDocumentTotals(userId, bodyData, branchId);
+    // 3.5️⃣ BACKEND CALCULATION - Calculate totals from base inputs only
+    const { calculateDocumentTotals } = require('../../utils/documentHelper');
+    const branchId = bodyData.branch || bodyData.branchId || null;
+    const calculated = await calculateDocumentTotals(req.user._id, bodyData, branchId);
 
     // Replace frontend totals with backend-calculated values
     bodyData.items = calculated.items;
@@ -473,7 +475,7 @@ const handleCreateInvoiceLogic = async (req) => {
     const pdfBuffer = await generateSaleInvoicePDF(invoice, userData, options, 'Sale Invoice', printConfig);
 
     // Save PDF to disk (optional but recommended for persistence)
-    const pdfDir = 'src/uploads/invoices/pdf';
+    const pdfDir = path.join(__dirname, '../../uploads/invoices/pdf');
     if (!fs.existsSync(pdfDir)) {
         fs.mkdirSync(pdfDir, { recursive: true });
     }
@@ -985,7 +987,7 @@ const handleCreateDynamicInvoiceLogic = async (req) => {
     const options = getCopyOptions(req);
     const printConfig = await getSelectedPrintTemplate(req.user._id, 'Sale Invoice');
     const pdfBuffer = await generateSaleInvoicePDF(invoice, userData, options, 'Sale Invoice', printConfig);
-    const pdfDir = 'src/uploads/invoices/pdf';
+    const pdfDir = path.join(__dirname, '../../uploads/invoices/pdf');
     if (!fs.existsSync(pdfDir)) fs.mkdirSync(pdfDir, { recursive: true });
     const pdfFileName = `invoice-${invoice._id}.pdf`;
     const pdfPath = path.join(pdfDir, pdfFileName);
@@ -1741,6 +1743,15 @@ const updateInvoice = async (req, res) => {
         const validationError = validateSaleInvoice(bodyData);
         if (validationError) return res.status(400).json({ success: false, message: validationError });
 
+        // 3.5️⃣ BACKEND CALCULATION - Calculate totals from base inputs only
+        const { calculateDocumentTotals } = require('../../utils/documentHelper');
+        const branchId = bodyData.branch || bodyData.branchId || null;
+        const calculated = await calculateDocumentTotals(req.user._id, bodyData, branchId);
+
+        // Replace frontend totals with backend-calculated values
+        bodyData.items = calculated.items;
+        bodyData.totals = calculated.totals;
+
         // 4️⃣ Update invoice
         const invoice = await SaleInvoice.findOneAndUpdate(
             { _id: req.params.id, userId: req.user._id },
@@ -1764,7 +1775,7 @@ const updateInvoice = async (req, res) => {
         const options = getCopyOptions(req);
         const printConfig = await getSelectedPrintTemplate(req.user._id, 'Sale Invoice', bodyData.branch);
         const pdfBuffer = await generateSaleInvoicePDF(invoice, userData, options, 'Sale Invoice', printConfig);
-        const pdfDir = 'src/uploads/invoices/pdf';
+        const pdfDir = path.join(__dirname, '../../uploads/invoices/pdf');
         if (!fs.existsSync(pdfDir)) {
             fs.mkdirSync(pdfDir, { recursive: true });
         }

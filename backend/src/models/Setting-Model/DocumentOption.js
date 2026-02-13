@@ -145,6 +145,22 @@ const saleOrderSchema = new mongoose.Schema({
     resolvedConfig: { type: mongoose.Schema.Types.Mixed, default: {} }
 }, { _id: false });
 
+const purchaseInvoiceSchema = new mongoose.Schema({
+    invoiceSeries: [invoiceSeriesSchema],
+    statusSettings: statusSettingsSchema,
+    completionDate: completionDateSchema,
+    otherOptions: new mongoose.Schema({
+        printAsSaleInvoiceReceived: { type: Boolean, default: false },
+        defaultProductNote: { type: String, default: '' },
+        defaultPaymentType: {
+            type: String,
+            enum: ['NONE', 'CREDIT', 'CASH', 'CHEQUE', 'ONLINE'],
+            default: 'CREDIT'
+        }
+    }, { _id: false }),
+    resolvedConfig: { type: mongoose.Schema.Types.Mixed, default: {} }
+}, { _id: false });
+
 const jobWorkSchema = new mongoose.Schema({
     invoiceSeries: [invoiceSeriesSchema],
     statusSettings: statusSettingsSchema,
@@ -173,7 +189,7 @@ const documentOptionSchema = new mongoose.Schema({
 
     // Flexible placeholders for future
     jobWork: { type: jobWorkSchema, default: () => ({}) },
-    purchaseInvoice: { type: mongoose.Schema.Types.Mixed, default: {} },
+    purchaseInvoice: { type: purchaseInvoiceSchema, default: () => ({}) },
     creditNote: { type: mongoose.Schema.Types.Mixed, default: {} },
     debitNote: { type: mongoose.Schema.Types.Mixed, default: {} },
     multiCurrencyInvoice: { type: mongoose.Schema.Types.Mixed, default: {} },
