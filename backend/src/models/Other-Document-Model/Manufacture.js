@@ -54,7 +54,20 @@ const manufactureSchema = new mongoose.Schema({
     isDeleted: {
         type: Boolean,
         default: false
-    }
+    },
+    status: {
+        type: String,
+        enum: ['Active', 'Cancelled'],
+        default: 'Active'
+    },
+    attachments: [{
+        fileName: String,
+        filePath: String,
+        fileSize: Number,
+        mimeType: String,
+        uploadedAt: { type: Date, default: Date.now },
+        uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+    }]
 }, {
     timestamps: true
 });
