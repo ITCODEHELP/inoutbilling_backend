@@ -108,6 +108,12 @@ const saleInvoiceSchema = new mongoose.Schema({
         }
     },
 
+    // Conversion tracking (flat structure for frontend compatibility)
+    convertedFrom: { type: mongoose.Schema.Types.ObjectId },
+    convertedFromType: { type: String },
+    convertedFromDocNo: { type: String },
+    convertedAt: { type: Date },
+
     // E-Way Bill
     eWayBill: {
         generated: { type: Boolean, default: false },

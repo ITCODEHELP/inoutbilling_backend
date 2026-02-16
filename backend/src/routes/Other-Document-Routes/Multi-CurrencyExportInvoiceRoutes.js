@@ -16,6 +16,7 @@ const {
     shareExportInvoiceWhatsApp,
     generateExportInvoicePublicLink,
     viewPublicExportInvoice,
+    printExportInvoice,
     attachExportInvoiceFile,
     getExportInvoiceAttachments,
     updateExportInvoiceAttachment,
@@ -48,6 +49,7 @@ router.post('/:id/restore', restoreExportInvoice);
 // PDF and Sharing
 router.get('/:id/duplicate', getDuplicateExportInvoiceData);
 router.get('/:id/download-pdf', downloadExportInvoicePDF);
+router.get('/:id/print', printExportInvoice);
 router.post('/:id/share-email', shareExportInvoiceEmail);
 router.post('/:id/share-whatsapp', shareExportInvoiceWhatsApp);
 router.get('/:id/public-link', generateExportInvoicePublicLink);

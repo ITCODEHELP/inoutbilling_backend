@@ -15,7 +15,7 @@
     .page-copy-container-wrapper,
     .page-copy-container-wrapper-letter,
     body {
-      background: #dde0e4 !important;
+      background: var(--invoice-light-blue-bg) !important;
     }
 
     .page-wrapper-table,
@@ -130,7 +130,7 @@
     .customerdata td.customerdata_label {
       text-align: center;
       font-weight: bold;
-      border-bottom: 1px solid #0070c0;
+      border-bottom: 1px solid var(--invoice-border-dynamic);
       width: 100%;
       font-size: 10px;
     }
@@ -156,8 +156,8 @@
     }
 
     .billdetailsthead td {
-      background-color: #e8f3fd;
-      border: 1px solid #0070c0;
+      background-color: var(--invoice-light-blue-bg);
+      border: 1px solid var(--invoice-border-dynamic);
       border-collapse: collapse;
       text-align: center;
       font-weight: bold;
@@ -177,12 +177,12 @@
       top: 0;
       left: 0;
       z-index: 0;
-      border-bottom: 1px solid #0070c0;
+      border-bottom: 1px solid var(--invoice-border-dynamic);
     }
 
     .tableboxLine {
-      border-right: 1px solid #0070c0;
-      border-left: 1px solid #0070c0;
+      border-right: 1px solid var(--invoice-border-dynamic);
+      border-left: 1px solid var(--invoice-border-dynamic);
       border-collapse: collapse;
       height: 417px;
       top: 0;
@@ -194,9 +194,9 @@
 
     .invoicedataFooter td {
       font-size: 11px;
-      background-color: #e8f3fd;
+      background-color: var(--invoice-light-blue-bg);
       padding: 5px 1px 5px 0px;
-      border: 1px solid #0070c0;
+      border: 1px solid var(--invoice-border-dynamic);
     }
 
     .txt-right {
@@ -229,7 +229,7 @@
       font-size: 8px;
       line-height: 13px;
       font-weight: bold;
-      border-top: 1px solid #0070c0;
+      border-top: 1px solid var(--invoice-border-dynamic);
       text-align: center;
     }
 
@@ -261,9 +261,9 @@
 
     #section3 .section3_thead {
       border-width: 1px;
-      border-top: 2px solid #0070c0;
-      border-bottom: 2px solid #0070c0;
-      background-color: #0070c0;
+      border-top: 2px solid var(--invoice-border-dynamic);
+      border-bottom: 2px solid var(--invoice-border-dynamic);
+      background-color: var(--invoice-border-dynamic);
       color: #fff;
       font-size: 11px;
     }
@@ -295,7 +295,7 @@
     }
 
     #section3 .section3_tbl_border {
-      border-bottom: 2px solid #b3c0c7;
+      border-bottom: 2px solid var(--invoice-border-dynamic);
     }
 
     #section3 .section3_table td h4 {
@@ -314,7 +314,7 @@
     }
 
     #section4 .totalamountinword {
-      border-bottom: 3px solid #0070c0;
+      border-bottom: 3px solid var(--invoice-border-dynamic);
       padding-left: 4px;
     }
 
@@ -400,7 +400,7 @@
                   <tbody>
                     <tr>
                       <td>
-                        <h3 style="color: #0070c0">TAX INVOICE</h3>
+                        <h3 style="color: var(--invoice-border-dynamic)">TAX INVOICE</h3>
                       </td>
                       <td>
                         <h3 class="copyname">ORIGINAL FOR RECIPIENT</h3>
@@ -622,7 +622,7 @@
                         Total Amount
                       </td>
                       <td class="section4_td_right special hideonlyformat" data-editor="#section4 .special">
-                        ₹&nbsp; 5400
+                        ₹&nbsp; 98.00
                       </td>
                     </tr>
                   </tbody>
