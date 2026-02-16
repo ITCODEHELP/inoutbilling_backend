@@ -10,9 +10,6 @@ const User = require('../models/User-Model/User');
 const BankDetails = require('../models/Other-Document-Model/BankDetail');
 const QRCode = require('qrcode');
 
-/**
- * Centralized Template Mapping
- */
 const TEMPLATE_MAP = {
     'Default': 'Template-Default.html',
     'Designed': 'Template-Default.html',
@@ -40,9 +37,6 @@ const TEMPLATE_MAP = {
     'Thermal-4inch': 'Thermal-Template-3.html',
 };
 
-/**
- * Resolves template filename and validates existence
- */
 const resolveTemplateFile = (templateName) => {
     const filename = TEMPLATE_MAP[templateName] || 'saleinvoicedefault.html';
     const fullPath = path.join(__dirname, '..', 'Template', 'Sale-Invoice-Template', filename);
@@ -805,6 +799,42 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                     $('.footer-total-qty').text(totalQty.toFixed(2));
                     $('._footer_total').text((doc.totals.grandTotal || 0).toFixed(2));
                     $('.amount_in_words').text(doc.totals.totalInWords || "");
+
+                    // Fix: Update Grand Total in Summary Section (Standard & Thermal Templates)
+                    const grandFinal = (doc.totals.grandTotal || 0).toFixed(2);
+
+                    // 1. Standard Template Summary Row
+                    const summaryTotalRow = $('._total_amount_after_tax_filed');
+                    if (summaryTotalRow.length > 0) {
+                        // Target the specific amount cell (usually with .special or the last cell)
+                        const amountCell = summaryTotalRow.find('.special').last();
+                        // Fallback to last-child if .special not found
+                        const targetCell = amountCell.length > 0 ? amountCell : summaryTotalRow.find('td').last();
+
+                        if (targetCell.length > 0) {
+                            const currentText = targetCell.text();
+                            // Preserve currency symbol if it existed in the template placeholder
+                            if (currentText.includes('₹')) {
+                                targetCell.text(`₹ ${grandFinal}`);
+                            } else {
+                                targetCell.text(grandFinal);
+                            }
+                        }
+                    }
+
+                    // 2. Thermal Template Grand Total Row
+                    const thermalTotalRow = $('._grand_total');
+                    if (thermalTotalRow.length > 0) {
+                        const amountCell = thermalTotalRow.find('td').last();
+                        if (amountCell.length > 0) {
+                            const currentText = amountCell.text();
+                            if (currentText.includes('₹')) {
+                                amountCell.text(`₹${grandFinal}`);
+                            } else {
+                                amountCell.text(grandFinal);
+                            }
+                        }
+                    }
                 }
                 $('.footer_seal_name').text(`For ${user.companyName || "Company"}`);
 

@@ -124,8 +124,8 @@ const calculateDocumentTotals = async (userId, documentData, branchId = null) =>
     const sumOfItemTotals = calculatedItems.reduce((sum, item) => sum + item.total, 0);
     let grandTotal = sumOfItemTotals + totalChargeAmount + totalTaxOnCharges;
 
-    const finalGrandTotal = Math.round(grandTotal);
-    const roundOff = Math.round((finalGrandTotal - grandTotal) * 100) / 100;
+    const finalGrandTotal = Math.round(grandTotal * 100) / 100;
+    const roundOff = 0; // No rounding if we keep decimals, or keep it as 0
 
     // Calculate totalTaxable from base amounts (for reporting purposes)
     const totalTaxableForReporting = calculatedItems.reduce((sum, item) => sum + item.taxableValue, 0);
@@ -142,7 +142,7 @@ const calculateDocumentTotals = async (userId, documentData, branchId = null) =>
             totalTax: Math.round(totalTax * 100) / 100,
             grandTotal: finalGrandTotal,
             roundOff: roundOff,
-            totalInWords: numberToWords(finalGrandTotal)
+            totalInWords: numberToWords(Math.round(finalGrandTotal))
         }
     };
 };
