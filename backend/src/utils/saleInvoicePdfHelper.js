@@ -792,7 +792,20 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
 
                             // Discount: Handle standard and percentage
                             let discVal = (Number(item.discount) || Number(item.disc) || 0);
-                            setText('.td-body-disc', discVal > 0 ? discVal.toFixed(2) : (item.discount !== undefined && item.discount !== null && item.discount !== "" ? item.discount : ""));
+                            let discText = "";
+
+                            if (discVal > 0) {
+                                if (item.discountType === 'Percentage') {
+                                    discText = `${discVal.toFixed(2)}%`;
+                                } else {
+                                    // Flat or default
+                                    discText = `₹${discVal.toFixed(2)}`;
+                                }
+                            } else {
+                                discText = (item.discount !== undefined && item.discount !== null && item.discount !== "" ? item.discount : "");
+                            }
+
+                            setText('.td-body-disc', discText);
 
                             // Taxes (if columns exist)
                             setText('.td-body-igst', (Number(item.igst) || 0).toFixed(2));
