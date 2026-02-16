@@ -21,6 +21,7 @@ const {
     generateLabel,
     convertToSaleInvoice,
     convertToSaleInvoiceData,
+    convertToPurchaseInvoiceData,
     cancelDeliveryChallan,
     restoreDeliveryChallan,
     uploadAttachment,
@@ -78,6 +79,7 @@ router.get('/:id/duplicate', getDuplicateChallanData);
 
 router.post('/:id/convert-to-sale-invoice', convertToSaleInvoice);
 router.get('/:id/convert-to-invoice', convertToSaleInvoiceData);
+router.get('/:id/convert-to-purchase-invoice', convertToPurchaseInvoiceData);
 
 router.put('/:id/cancel', cancelDeliveryChallan);
 router.put('/:id/restore', restoreDeliveryChallan);

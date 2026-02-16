@@ -30,17 +30,17 @@ const shippingAddressSchema = new mongoose.Schema({
 });
 
 const exportShippingDetailsSchema = new mongoose.Schema({
-    shipBillNo: { type: String, required: [true, 'Shipping Bill Number is required'] },
-    shipBillDate: { type: Date, required: [true, 'Shipping Bill Date is required'] },
-    shipPortCode: { type: String, required: [true, 'Port Code is required'] },
+    shipBillNo: { type: String },
+    shipBillDate: { type: Date },
+    shipPortCode: { type: String },
     preCarriageBy: { type: String },
     placeOfPreCarriage: { type: String },
     vesselOrFlightNo: { type: String },
-    portOfLoading: { type: String, required: [true, 'Port of Loading is required'] },
-    portOfDischarge: { type: String, required: [true, 'Port of Discharge is required'] },
-    finalDestination: { type: String, required: [true, 'Final Destination is required'] },
-    countryOfOrigin: { type: String, required: [true, 'Country of Origin is required'] },
-    countryOfFinal: { type: String, required: [true, 'Country of Final Destination is required'] },
+    portOfLoading: { type: String },
+    portOfDischarge: { type: String },
+    finalDestination: { type: String },
+    countryOfOrigin: { type: String },
+    countryOfFinal: { type: String },
     weightKg: { type: Number, default: 0 },
     packages: { type: Number, default: 0 }
 });
@@ -57,6 +57,7 @@ const exportInvoiceSchema = new mongoose.Schema({
         address: { type: String },
         contactPerson: { type: String },
         phone: { type: String },
+        email: { type: String },
         gstinPan: { type: String },
         reverseCharge: { type: Boolean, default: false },
         placeOfSupply: { type: String, required: [true, 'Place of Supply is required'] }

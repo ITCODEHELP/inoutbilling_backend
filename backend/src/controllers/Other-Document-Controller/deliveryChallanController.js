@@ -5,6 +5,7 @@ const DeliveryChallanCustomField = require('../../models/Other-Document-Model/De
 const DeliveryChallanItemColumn = require('../../models/Other-Document-Model/DeliveryChallanItemColumn');
 const Staff = require('../../models/Setting-Model/Staff');
 const Customer = require('../../models/Customer-Vendor-Model/Customer');
+const Vendor = require('../../models/Customer-Vendor-Model/Vendor');
 const mongoose = require('mongoose');
 const { generateDeliveryChallanPDF } = require('../../utils/pdfHelper');
 const { sendDeliveryChallanEmail } = require('../../utils/emailHelper');
@@ -1044,6 +1045,143 @@ const convertToSaleInvoiceData = async (req, res) => {
     }
 };
 
+// @desc    Setup conversion to Purchase Invoice (Prefill Data)
+// @route   GET /api/delivery-challans/:id/convert-to-purchase-invoice
+const convertToPurchaseInvoiceData = async (req, res) => {
+    try {
+        const challan = await DeliveryChallan.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!challan) {
+            return res.status(404).json({ success: false, message: 'Delivery Challan not found' });
+        }
+
+        const data = challan.toObject();
+
+        // Try to find the vendor ID
+        const vendor = await Vendor.findOne({
+            userId: req.user._id,
+            companyName: data.customerInformation.ms
+        });
+
+        const mappedData = {
+            vendorId: vendor ? vendor._id : null,
+            vendorInformation: data.customerInformation, // Use the same info for vendor
+            shippingAddress: data.shippingAddress,
+            useSameShippingAddress: data.useSameShippingAddress,
+            deliveryMode: data.deliveryChallanDetails?.deliveryMode || 'HAND DELIVERY',
+
+            items: data.items.map(item => ({
+                productName: item.productName,
+                productGroup: item.productGroup,
+                itemNote: item.itemNote,
+                hsnSac: item.hsnSac,
+                qty: item.qty,
+                uom: item.uom,
+                price: item.price,
+                discountValue: item.discount,
+                discountType: 'Percentage',
+                igst: item.igst,
+                cgst: item.cgst,
+                sgst: item.sgst,
+                taxableValue: item.price * item.qty,
+                total: item.total
+            })),
+            additionalCharges: data.additionalCharges || [],
+            totals: data.totals,
+            paymentType: data.paymentType || 'CASH',
+            staff: data.staff,
+            branch: data.branch,
+            bankDetails: data.bankDetails,
+            termsTitle: data.termsTitle,
+            termsDetails: data.termsDetails,
+            documentRemarks: data.documentRemarks,
+            customFields: data.customFields || {},
+            conversions: {
+                convertedFrom: {
+                    docType: 'Delivery Challan',
+                    docId: challan._id
+                }
+            }
+        };
+
+        res.status(200).json({
+            success: true,
+            message: 'Delivery Challan data for conversion to Purchase Invoice retrieved',
+            data: mappedData
+        });
+
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Setup conversion to Purchase Order (Prefill Data)
+// @route   GET /api/delivery-challans/:id/convert-to-purchase-order
+const convertToPurchaseOrderData = async (req, res) => {
+    try {
+        const challan = await DeliveryChallan.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!challan) {
+            return res.status(404).json({ success: false, message: 'Delivery Challan not found' });
+        }
+
+        const data = challan.toObject();
+
+        // Try to find the vendor ID
+        const vendor = await Vendor.findOne({
+            userId: req.user._id,
+            companyName: data.customerInformation.ms
+        });
+
+        const mappedData = {
+            vendorId: vendor ? vendor._id : null,
+            vendorInformation: data.customerInformation,
+            shippingAddress: data.shippingAddress,
+            useSameShippingAddress: data.useSameShippingAddress,
+            deliveryMode: data.deliveryChallanDetails?.deliveryMode || 'HAND DELIVERY',
+
+            items: data.items.map(item => ({
+                productName: item.productName,
+                productGroup: item.productGroup,
+                itemNote: item.itemNote,
+                hsnSac: item.hsnSac,
+                qty: item.qty,
+                uom: item.uom,
+                price: item.price,
+                discountValue: item.discount,
+                discountType: 'Percentage',
+                igst: item.igst,
+                cgst: item.cgst,
+                sgst: item.sgst,
+                taxableValue: item.price * item.qty,
+                total: item.total
+            })),
+            additionalCharges: data.additionalCharges || [],
+            totals: data.totals,
+            paymentType: data.paymentType || 'CASH',
+            staff: data.staff,
+            branch: data.branch,
+            bankDetails: data.bankDetails,
+            termsTitle: data.termsTitle,
+            termsDetails: data.termsDetails,
+            documentRemarks: data.documentRemarks,
+            customFields: data.customFields || {},
+            conversions: {
+                convertedFrom: {
+                    docType: 'Delivery Challan',
+                    docId: challan._id
+                }
+            }
+        };
+
+        res.status(200).json({
+            success: true,
+            message: 'Delivery Challan data for conversion to Purchase Order retrieved',
+            data: mappedData
+        });
+
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
 
 // @desc    Cancel Delivery Challan
 // @route   PUT /api/delivery-challans/:id/cancel
@@ -1242,6 +1380,8 @@ module.exports = {
     generateLabel,
     convertToSaleInvoice,
     convertToSaleInvoiceData,
+    convertToPurchaseInvoiceData,
+    convertToPurchaseOrderData,
     cancelDeliveryChallan,
     restoreDeliveryChallan,
     uploadAttachment,
