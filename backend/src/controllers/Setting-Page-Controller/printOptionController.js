@@ -1,6 +1,26 @@
 const PrintOptions = require('../../models/Setting-Model/PrintOptions');
 
 /**
+ * Sanitizes boolean strings to actual booleans.
+ * Handles "true"/"false", "yes"/"no", and the legacy "always".
+ */
+const sanitizeBooleans = (obj) => {
+    if (!obj || typeof obj !== 'object') return obj;
+
+    Object.keys(obj).forEach(key => {
+        const val = obj[key];
+        if (typeof val === 'string') {
+            const lowerVal = val.toLowerCase().trim();
+            if (lowerVal === 'true' || lowerVal === 'yes' || lowerVal === 'always') obj[key] = true;
+            else if (lowerVal === 'false' || lowerVal === 'no') obj[key] = false;
+        } else if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+            sanitizeBooleans(val);
+        }
+    });
+    return obj;
+};
+
+/**
  * @desc    Save or Update print options (smart merge - only updates provided fields)
  * @route   POST /api/print-options
  * @access  Private (JWT Protected)
@@ -8,7 +28,10 @@ const PrintOptions = require('../../models/Setting-Model/PrintOptions');
 const savePrintOptions = async (req, res) => {
     try {
         const userId = req.user._id;
-        const providedSettings = req.body;
+        let providedSettings = req.body;
+
+        // Safety conversion for booleans
+        providedSettings = sanitizeBooleans(providedSettings);
 
         // Allow empty payload
         if (!providedSettings || typeof providedSettings !== 'object') {

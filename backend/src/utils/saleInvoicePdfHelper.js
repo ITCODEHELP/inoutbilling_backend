@@ -54,7 +54,7 @@ const resolveTemplateFile = (templateName) => {
     return fullPath;
 };
 
-const generateGlobalHeader = (businessData, userData, overrideLogoPath) => {
+const generateGlobalHeader = (businessData, userData, overrideLogoPath, printSettings = {}) => {
     // Priority: Explicit Override (Passed as Resolved Source)
     let logoSrc = '';
     let rawLogoPath = overrideLogoPath;
@@ -101,6 +101,31 @@ const generateGlobalHeader = (businessData, userData, overrideLogoPath) => {
         }
     }
 
+    const headerSettings = printSettings.headerPrintSettings || {};
+    const hideContact = headerSettings.hideContactDetailInHeader === true;
+    const showPan = headerSettings.showPanNumber !== false; // Default true if not set, key is showPanNumber
+    const showStaff = headerSettings.showStaffDetailsInHeader === true;
+
+    // Contact Section Logic
+    let contactSection = '';
+    if (!hideContact) {
+        contactSection = `
+            <div style="
+                text-align: right;
+                font-family: Arial, Helvetica, sans-serif;
+                font-size: 9px;
+                color: #333333;
+                line-height: 1.4;
+                min-width: 160px;
+            ">
+                ${showStaff ? `<div><strong>Name:</strong> ${userData.fullName || businessData.fullName || userData.name || ''}</div>` : ''}
+                <div><strong>Phone:</strong> ${userData.displayPhone || userData.phone || ''}</div>
+                <div><strong>Email:</strong> ${userData.email || businessData.email || ''}</div>
+                ${(showPan && (businessData.showPan || userData.showPan) && userData.pan) ? `<div><strong>PAN:</strong> ${userData.pan}</div>` : ''}
+            </div>
+        `;
+    }
+
     return `
         <div class="global-document-header" style="
             width: 100%;
@@ -120,6 +145,7 @@ const generateGlobalHeader = (businessData, userData, overrideLogoPath) => {
                         max-width: 60px;
                         max-height: 60px;
                         object-fit: contain;
+                        display: block;
                     " onerror="this.style.display='none'">
                 ` : ''}
                 <div style="flex: 1;">
@@ -143,19 +169,7 @@ const generateGlobalHeader = (businessData, userData, overrideLogoPath) => {
             </div>
  
             <!-- Right Section: Contact Details -->
-            <div style="
-                text-align: right;
-                font-family: Arial, Helvetica, sans-serif;
-                font-size: 9px;
-                color: #333333;
-                line-height: 1.4;
-                min-width: 160px;
-            ">
-                <div><strong>Name:</strong> ${userData.fullName || businessData.fullName || userData.name || ''}</div>
-                <div><strong>Phone:</strong> ${userData.displayPhone || userData.phone || ''}</div>
-                <div><strong>Email:</strong> ${userData.email || businessData.email || ''}</div>
-                ${((businessData.showPan || userData.showPan) && userData.pan) ? `<div><strong>PAN:</strong> ${userData.pan}</div>` : ''}
-            </div>
+            ${contactSection}
         </div>
     `;
 };
@@ -260,10 +274,12 @@ const generateTitleSection = (title, copyLabel) => {
  * Dynamically manages table columns based on data presence.
  * Removes empty columns (Header, Body, Vertical Lines) and adjusts layout.
  */
-const manageDynamicColumns = ($, doc) => {
+const manageDynamicColumns = ($, doc, printSettings = {}) => {
     if (!doc.items || !Array.isArray(doc.items) || doc.items.length === 0) return;
 
-    // 1. Determine Visibility based on Data
+    const productSettings = printSettings.productItemSettings || {};
+
+    // 1. Determine Visibility based on Data AND Settings
     // A column is visible if AT LEAST ONE item has a non-empty value for it.
     // Zero (0) is considered a valid value (e.g., Discount = 0).
     const hasValue = (val) => {
@@ -273,16 +289,21 @@ const manageDynamicColumns = ($, doc) => {
     };
 
     // Check for specific fields
-    const showHsn = doc.items.some(item => hasValue(item.hsnSac));
-    // Qty and Rate are usually always shown, but we check to be safe or if user wants to hide them (unlikely for invoice)
-    const showQty = doc.items.some(item => hasValue(item.qty));
-    const showRate = doc.items.some(item => hasValue(item.price) || hasValue(item.rate));
+    // Logic: Visible if (Data Exists) AND (Not Hidden in Settings)
+    const showHsn = !productSettings.hideHsnColumn && doc.items.some(item => hasValue(item.hsnSac));
+
+    // Qty and Rate are usually always shown, but we check to be safe or if user wants to hide them
+    const showQty = !productSettings.hideQuantityColumn && doc.items.some(item => hasValue(item.qty));
+    const showRate = !productSettings.hideRateColumn && doc.items.some(item => hasValue(item.price) || hasValue(item.rate));
+
     // Discount: Show if any item has discount OR if explicitly 0 is a valid discount
     const showDiscount = doc.items.some(item => hasValue(item.discount) || hasValue(item.disc));
 
-    // Tax fields (IGST, CGST, SGST) - Check if they exist in items
-    // Note: Some templates might not have these columns by default. 
-    // This logic removes them if they exist but data is empty.
+    // UOM Column (If template supports separate UOM column - usually 'showUomDifferentColumn' implies separating it)
+    // Current templates might mix Qty and UOM. If showUomDifferentColumn is true, we might need specific logic (if template supports it).
+    // For now, we stick to standard columns.
+
+    // Tax fields (IGST, CGST, SGST)
     const showIgst = doc.items.some(item => Number(item.igst) > 0);
     const showCgst = doc.items.some(item => Number(item.cgst) > 0);
     const showSgst = doc.items.some(item => Number(item.sgst) > 0);
@@ -701,7 +722,7 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
 
                 // Global Header Fallback
                 if ($('.org_orgname').length === 0 && $('.branding').length === 0) {
-                    const brandingHtml = generateGlobalHeader(headerLeftData, headerRightData, logoSrc);
+                    const brandingHtml = generateGlobalHeader(headerLeftData, headerRightData, logoSrc, printSettings);
                     const wrapper = $('.page-wrapper').length > 0 ? $('.page-wrapper') : $('body');
                     if (shouldShowTitle) { wrapper.prepend(generateTitleSection(titleToUse, copyLabel)); }
                     wrapper.prepend(brandingHtml);
@@ -709,6 +730,174 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                     const wrapper = $('.page-wrapper').length > 0 ? $('.page-wrapper') : $('body');
                     wrapper.prepend(generateTitleSection(titleToUse, copyLabel));
                 }
+
+                // --- DYNAMIC PRINT SETTINGS LOGIC ---
+                const pHeader = printSettings.headerPrintSettings || {};
+                const pCust = printSettings.customerDocumentPrintSettings || {};
+                const pProduct = printSettings.productItemSettings || {};
+                const pFooter = printSettings.footerPrintSettings || {};
+                const pStyle = printSettings.documentPrintSettings || {};
+
+                // 1. Header Rules
+                if (pHeader.hideDispatchFrom) {
+                    $('.dispatch_detail, .dispatch-section').remove();
+                }
+                if (pHeader.showExporterDetails === false) {
+                    $('.exporter_details').remove();
+                }
+                if (pHeader.showBlankCustomFields === false) {
+                    $('.custom_field_row:empty, .custom_field_row:contains("-")').remove();
+                }
+
+                // 2. Customer & Document Rules
+                if (pCust.hideDueDate) {
+                    $('.extra_field:contains("Due Date")').remove();
+                }
+                if (pCust.hideTransport) {
+                    $('.transport_documents').remove();
+                }
+                if (pCust.hideCurrencyRate) {
+                    $('.currency_rate_row').remove();
+                }
+                if (pCust.showPaymentReceived === false) {
+                    $('.payment_received_row').remove();
+                }
+                if (pCust.showTotalOutstanding === false) {
+                    $('.total_outstanding_row').remove();
+                }
+                if (pCust.showReverseCharge === false) {
+                    $('.reverse_charge_row').remove();
+                }
+
+                // Hide specific customer fields
+                if (pCust.showContactPerson === false) {
+                    $('.company_contact_name').remove();
+                }
+                if (pCust.showStateInCustomerDetail === false) {
+                    $('.cmp_state').remove();
+                }
+                // (Add more specific removals as needed based on template classes)
+
+
+                // 3. Product Rules
+                if (pProduct.hideSrNoAdditionalCharges) {
+                    $('.additional_charge_srno').html('&nbsp;');
+                }
+                if (pProduct.hideTotalQuantity) {
+                    $('.footer-total-qty').html('&nbsp;');
+                }
+
+                // 4. Footer Rules
+                if (pFooter.showRoundOff === false) {
+                    $('.round_off_row').remove();
+                }
+                if (pFooter.showPageNumber === false) {
+                    $('.page-number').remove();
+                }
+                if (pFooter.printSignatureImage === false) {
+                    $('.foot_table_signature img, .branding-signature-image').remove();
+                }
+                if (pFooter.showHsnSummary === false) {
+                    $('.hsn-summary-table, .hsn_summary_section').remove();
+                }
+                if (pFooter.showSubtotalDiscount === false) {
+                    $('.discount_row_footer').remove();
+                }
+                if (pFooter.showPaymentReceivedBalance === false) {
+                    $('.payment_balance_row').remove();
+                }
+                if (pFooter.showCustomerSignatureBox === false) {
+                    $('.customer_signature_box').remove();
+                }
+                if (pFooter.showFooterImage === false) {
+                    $('.branding-footer-image').remove();
+                }
+
+                // 4. Styling Logic (Fonts & Colors)
+                const fontFamily = pStyle.fontFamily || 'Roboto';
+
+                // Robust Color Fallback Logic
+                // Global Border Color (Default: #0070C0)
+                const borderColor = pStyle.printBlackWhite ? '#000000' :
+                    (pStyle.invoiceBorderColor && pStyle.invoiceBorderColor !== 'null' && pStyle.invoiceBorderColor !== 'undefined' ? pStyle.invoiceBorderColor : '#0070C0');
+
+                // Specific Light Blue Replacement Color (Default: #E8F3FD)
+                const lightBlueReplacementColor = pStyle.printBlackWhite ? '#f0f0f0' :
+                    (pStyle.invoiceBackgroundColor && pStyle.invoiceBackgroundColor !== 'null' && pStyle.invoiceBackgroundColor !== 'undefined' ? pStyle.invoiceBackgroundColor : '#E8F3FD');
+
+                // Inject Dynamic CSS
+                $('head').append(`
+                <style>
+                    :root {
+                        --invoice-border-color: ${borderColor};
+                        --invoice-border-dynamic: ${borderColor};
+                        --invoice-light-blue-color: ${lightBlueReplacementColor};
+                    }
+
+                    body, .page-wrapper, table, td, th, div, span, p {
+                        font-family: '${fontFamily}', 'Arial', sans-serif !important;
+                    }
+
+                    /* 🎯 Global Border Replacement */
+                    .main-border, .invoiceTotal td, .invoiceInfo td, .billdetailsthead td, .invoicedataFooter td, 
+                    .customerdata td.customerdata_label, .header-row, .tableboxLine, .tableboxLinetable td, 
+                    .invoice .main-border, hr, .sectionDivider, .divider-line,
+                    .section3_thead, .section3_tbl_border, .totalamountinword,
+                    .border-theme, .stroke-theme {
+                        border-color: var(--invoice-border-color) !important;
+                    }
+
+                    /* 🎯 Specific Light Blue Background Replacement */
+                    /* Targeted ONLY at areas that are typically light blue in templates */
+                    .billdetailsthead td, .invoicedataFooter td, .invoiceTotal td.special, 
+                    .info-highlight, .summary-highlight, .tax-summary-row-highlight,
+                    .section-header-highlight, .tableboxLine.total, .bg-light-theme {
+                         background-color: var(--invoice-light-blue-color) !important;
+                    }
+
+                    /* 🎯 Elements that use Border Color as Background (Full Accent) */
+                    .section3_thead, .bg-theme, .header-accent {
+                        background-color: var(--invoice-border-color) !important;
+                        color: #ffffff !important;
+                    }
+                    
+                    /* 🎯 Text Colors tied to theme */
+                    .invoice-title, .invoice_no b, .invoice_date b, .org_orgname, .total-heading,
+                    #headersec h3, .page-header h3, .text-theme, strong.invoice-title, 
+                    .section2_title, .customerdata_item_label.special {
+                        color: ${pStyle.printBlackWhite ? '#000000' : 'var(--invoice-border-color)'} !important;
+                    }
+
+                    /* Ensure hr tags use theme color */
+                    hr {
+                        border-top-color: var(--invoice-border-color) !important;
+                        background-color: var(--invoice-border-color) !important;
+                    }
+                </style>
+                `);
+
+                // 🎯 Dynamic Inline Style Replacement (Safety Net)
+                // This ensures that even inline styles like style="border: 1px solid #0070c0" are replaced
+                $('*[style]').each(function () {
+                    let style = $(this).attr('style');
+                    if (!style) return;
+
+                    let originalStyle = style;
+
+                    // Replace Hardcoded Blue Borders/Lines
+                    style = style.replace(/#0070c0/gi, borderColor);
+                    style = style.replace(/rgb\(\s*0\s*,\s*112\s*,\s*192\s*\)/gi, borderColor);
+
+                    // Replace Hardcoded Light Blue Backgrounds
+                    style = style.replace(/#e8f3fd/gi, lightBlueReplacementColor);
+                    style = style.replace(/rgb\(\s*232\s*,\s*243\s*,\s*253\s*\)/gi, lightBlueReplacementColor);
+                    style = style.replace(/rgba\(\s*232\s*,\s*243\s*,\s*253\s*,\s*1\s*\)/gi, lightBlueReplacementColor);
+
+                    if (style !== originalStyle) {
+                        $(this).attr('style', style);
+                    }
+                });
+
 
                 // Customer Info
                 if (doc.customerInformation) {
@@ -737,7 +926,7 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
 
                 // --- DYNAMIC COLUMNS MANAGEMENT ---
                 // Remove empty columns and adjust layout BEFORE generating rows
-                manageDynamicColumns($, doc);
+                manageDynamicColumns($, doc, printSettings);
 
                 // Items Table
                 // Handling for different template structures (Template 1-4 vs 5-13 vs Thermal)
@@ -876,7 +1065,7 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                                 // Inject QR Image into Bank Details (Side-by-side layout)
                                 bankHtml = `
                                 <tr>
-                                    <td colspan="2" style="font-weight: bold; border-bottom: 1px solid #0070c0; padding-bottom: 4px; margin-bottom: 4px;">Bank Details</td>
+                                    <td colspan="2" style="font-weight: bold; border-bottom: 1px solid var(--invoice-border-color); padding-bottom: 4px; margin-bottom: 4px;">Bank Details</td>
                                 </tr>
                                 <tr>
                                     <td style="vertical-align: top;">
