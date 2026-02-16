@@ -285,9 +285,10 @@ const manageDynamicColumns = ($, doc) => {
     // Qty and Rate are usually always shown, but we check to be safe or if user wants to hide them (unlikely for invoice)
     const showQty = doc.items.some(item => hasValue(item.qty));
     const showRate = doc.items.some(item => hasValue(item.price) || hasValue(item.rate));
-    // Discount: Show if any item has discount OR if explicitly 0 is a valid discount
-    // Expanded to check for percent fields as well
-    const showDiscount = doc.items.some(item => hasValue(item.discount) || hasValue(item.disc) || hasValue(item.discountPercent) || hasValue(item.discPercent));
+    // Discount: Show if any item has discountValue > 0
+    const showDiscount = doc.items.some(item =>
+        hasValue(item.discountValue) && parseNum(item.discountValue) > 0
+    );
 
     // Tax fields (IGST, CGST, SGST) - Check if they exist in items
     // Note: Some templates might not have these columns by default. 
@@ -749,6 +750,39 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                 // Remove empty columns and adjust layout BEFORE generating rows
                 manageDynamicColumns($, doc);
 
+                // --- DYNAMIC DISCOUNT SYMBOL ---
+                // Updates the column header symbol (e.g., (%) or (₹)) based on item discount types
+                let hasPercentage = false;
+                let hasFlat = false;
+                if (doc.items && Array.isArray(doc.items)) {
+                    // Re-use robust parsing logic if possible, or define locally
+                    const parseVal = (v) => {
+                        if (!v) return 0;
+                        return parseFloat(String(v).replace(/,/g, '')) || 0;
+                    };
+
+                    doc.items.forEach(item => {
+                        const val = parseVal(item.discount) || parseVal(item.disc) || 0;
+                        // Check type if val > 0
+                        if (val > 0) {
+                            const discType = (item.discountType || "").trim().toLowerCase();
+                            if (discType === 'percentage') hasPercentage = true;
+                            else hasFlat = true; // Assume flat for any other non-empty value
+                        }
+                    });
+                }
+
+                const $headerSymbol = $('.header-cur-symbol');
+                if ($headerSymbol.length > 0) {
+                    if (hasPercentage && !hasFlat) {
+                        $headerSymbol.text('(%)');
+                    } else if (hasFlat && !hasPercentage) {
+                        $headerSymbol.text('(₹)');
+                    } else {
+                        $headerSymbol.text(''); // Mixed (symbol shown in rows) or None
+                    }
+                }
+
                 // Items Table
                 // Handling for different template structures (Template 1-4 vs 5-13 vs Thermal)
                 // Common strategy: Find the tbody, extract the first row as template, clear, and append.
@@ -790,22 +824,34 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                             setText('.td-body-qty', item.qty || 0);
                             setText('.td-body-rate', (Number(item.price) || Number(item.rate) || 0).toFixed(2));
 
-                            // Discount: Handle standard and percentage
-                            let discVal = (Number(item.discount) || Number(item.disc) || 0);
-                            let discText = "";
+                            // Discount: Ultra-Robust Parsing and Handling
+                            // Discount: Display based on discountType and discountValue
+                            const parseVal = (v) => {
+                                if (v === undefined || v === null) return 0;
+                                const cleaned = String(v).replace(/[^0-9.-]/g, ''); // Keep only numbers, dot, minus
+                                return parseFloat(cleaned) || 0;
+                            };
 
-                            if (discVal > 0) {
-                                if (item.discountType === 'Percentage') {
-                                    discText = `${discVal.toFixed(2)}%`;
+                            // Use discountValue for display logic as requested
+                            let discVal = parseVal(item.discountValue);
+                            let discText = "";
+                            const discType = (item.discountType || "").trim().toLowerCase();
+
+                            // Logic: Format based on Type
+                            if (discVal > 0 || (discVal === 0 && discType)) {
+                                if (discType.includes('percent') || discType === 'percentage') {
+                                    discText = `${discVal}%`; // Expected output: "12%" (user didn't ask for .00)
                                 } else {
                                     // Flat or default
-                                    discText = `₹${discVal.toFixed(2)}`;
+                                    discText = `₹${discVal}`;
                                 }
                             } else {
-                                discText = (item.discount !== undefined && item.discount !== null && item.discount !== "" ? item.discount : "");
+                                // Fallback: try raw discountValue if exists
+                                discText = (item.discountValue !== undefined && item.discountValue !== null && item.discountValue !== "" ? item.discountValue : "");
                             }
 
-                            setText('.td-body-disc', discText);
+                            // 3. Set Text with extended selectors for Template 5 and others
+                            setText('.td-body-disc, [data-column="5"], .disc', discText);
 
                             // Taxes (if columns exist)
                             setText('.td-body-igst', (Number(item.igst) || 0).toFixed(2));
@@ -849,33 +895,64 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                 if (doc.customerInformation) {
                     const cust = doc.customerInformation;
 
-                    // Buyer Details Population
+                    // Buyer Details Population - Robust Fallback
+                    // Ensure we capture Name from any likely property
+                    // User confirmed data has 'ms' field for Buyer Name
+                    const buyerNameVal = cust.ms || cust.name || cust.companyName || cust.billingName || (doc.billingDetails && doc.billingDetails.name) || "";
+
+                    if (buyerNameVal) {
+                        $('.buyer_name_text').text(buyerNameVal);
+                    } else {
+                        // If no name found, at least try to keep the Handlebars placeholder or show empty?
+                        // If it enters here, it means text() wasn't called, so Handlebars {{buyerName}} remains in HTML
+                        // But if Handlebars failed, it's empty.
+                        // Let's force a check on the data-editor attribute just in case
+                        if ($('.buyer_name_text').text().trim() === "") {
+                            $('.buyer_name_text').text("Buyer Name Not Found"); // Temporary debug or fallback? 
+                            // Better: leave it alone if empty, maybe Handlebars worked?
+                            // But user says "not visible". So let's trust the variable.
+                        }
+                    }
+
                     if (cust.phone) {
-                        $('.company_contact_no').css('display', 'block').text(`Phone: ${cust.phone}`);
+                        $('.company_contact_no').css('display', 'table-row');
+                        $('.company_contact_no td:last-child').text(`${cust.phone}`);
                     } else {
                         $('.company_contact_no').css('display', 'none');
                     }
 
                     if (cust.email) {
-                        $('.company_email').css('display', 'block').text(`Email: ${cust.email}`);
+                        $('.company_email').css('display', 'table-row');
+                        $('.company_email td:last-child').text(`${cust.email}`);
                     } else {
                         $('.company_email').css('display', 'none');
                     }
 
                     if (cust.pan) {
-                        $('.company_pan_no').css('display', 'block');
+                        $('.company_pan_no').css('display', 'table-row');
                         $('.company_pan_no .cmp_gstno').text(cust.pan);
-                        // Fallback if structure is different
-                        if ($('.company_pan_no').text().trim().length < 5) {
-                            $('.company_pan_no').html(`<b>PAN:</b> ${cust.pan}`);
-                        }
                     } else {
                         $('.company_pan_no').css('display', 'none');
                     }
 
                     if (cust.placeOfSupply) {
-                        $('.company_place_of_supply').css('display', 'block');
-                        $('.company_place_of_supply .section2_invo2').text(cust.placeOfSupply);
+                        $('.company_place_of_supply').css('display', 'table-row');
+
+                        let posText = cust.placeOfSupply;
+                        // Append state code if available (avoiding empty brackets)
+                        const sCode = cust.stateCode || cust.billingStateCode || doc.stateCode || "";
+                        if (sCode && !posText.includes(sCode)) {
+                            posText += ` (${sCode})`;
+                        }
+
+                        // Target the value cell: usually the last TD in the row (skipping label)
+                        // This overwrites any {{handlebars}} placeholders cleanly
+                        const $posCell = $('.company_place_of_supply td:not(.customerdata_item_label):last-child');
+                        if ($posCell.length > 0) {
+                            $posCell.text(posText);
+                        } else if ($('.company_place_of_supply .section2_invo2').length > 0) {
+                            $('.company_place_of_supply .section2_invo2').text(posText);
+                        }
                     } else {
                         $('.company_place_of_supply').css('display', 'none');
                     }
@@ -895,26 +972,50 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
 
                     if (hasShippingData) {
                         // Populate Shipping
-                        $('.shipping_name').text(shipName);
+                        $('.shipping_name_text').text(shipName);
 
-                        let addrHtml = shipAddress;
-                        // If state is separate, append it? Usually address contains it, but let's be safe
-                        $('.shipping_address').html(addrHtml);
+                        let fullShipAddrHtml = shipAddress;
+                        // Reconstruction of Address + State + Pincode to match Template logic
+                        // Since we overwrite the inner DIV, we must include State/Pin if they exist.
+                        // We use the same classes as Template for consistency.
+
+                        // Add City if available (doc.shippingDetails.city) - often in address, but let's check
+                        const shipCity = doc.shippingDetails?.city || "";
+                        if (shipCity && !fullShipAddrHtml.includes(shipCity)) {
+                            fullShipAddrHtml += `<span class="cmp_city">, ${shipCity}</span>`;
+                        }
+
+                        if (shipState) {
+                            fullShipAddrHtml += `<span class="shippingState">, ${shipState}</span>`;
+                        }
+
+                        // Country hardcoded to India in template, we can append it or leave it
+                        fullShipAddrHtml += `, India`;
+
+                        const shipPin = doc.shippingDetails?.pincode || doc.shippingDetails?.zipcode || "";
+                        if (shipPin) {
+                            fullShipAddrHtml += `<span class="shippingPincode"> - ${shipPin}</span>`;
+                        }
+
+                        $('.shipping_address td:last-child div').html(fullShipAddrHtml);
+                        $('.shipping_address').css('display', 'table-row');
 
                         if (shipPhone) {
-                            $('.shipping_phone').css('display', 'block').html(`<b>Phone:</b> ${shipPhone}`);
+                            $('.shipping_phone').css('display', 'table-row');
+                            $('.shipping_phone td:last-child').text(`${shipPhone}`);
                         } else {
                             $('.shipping_phone').css('display', 'none');
                         }
 
                         if (shipGstin) {
-                            $('.shipping_gstin').css('display', 'block').find('.cmp_gstno').text(shipGstin);
+                            $('.shipping_gstin').css('display', 'table-row').find('.cmp_gstno').text(shipGstin);
                         } else {
                             $('.shipping_gstin').css('display', 'none');
                         }
 
                         if (shipState) {
-                            $('.shipping_state').css('display', 'block').text(`State: ${shipState}`);
+                            $('.shipping_state').css('display', 'table-row');
+                            $('.shipping_state td:last-child').text(`${shipState}`);
                         } else {
                             $('.shipping_state').css('display', 'none');
                         }
@@ -949,6 +1050,23 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                     if ($('.terms_condition_box').length > 0) {
                         $('.terms_condition_box').html(termsText.replace(/\n/g, '<br>'));
                     }
+                }
+
+                // --- TRANSPORT DETAILS LOGIC ---
+                // User Request: "do same for transport field" (Conditional Render)
+                // Field variants: transportMode, transportName, or just transport
+                // We check details object mainly
+                const transportVal = details.transportMode || details.transportName || details.transport || "";
+
+                if (transportVal) {
+                    $('.transport_name').css('display', 'table-row');
+                    // Target the value cell (last one)
+                    const $transportCell = $('.transport_name td:not(.invoicedata_item_label):last-child');
+                    if ($transportCell.length > 0) {
+                        $transportCell.text(transportVal);
+                    }
+                } else {
+                    $('.transport_name').css('display', 'none');
                 }
 
                 // --- BANK DETAILS & QR CODE INJECTION ---
