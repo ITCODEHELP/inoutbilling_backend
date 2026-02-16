@@ -420,7 +420,7 @@
                                       Name
                                     </td>
                                     <td class="special" data-editor=".customerdata td.special">
-                                      Shree Krishna Traders Pvt. Ltd.
+                                      {{customerName}}
                                     </td>
                                   </tr>
                                   <tr class="company_address">
@@ -429,7 +429,7 @@
                                     </td>
                                     <td style="">
                                       <div style="overflow: hidden">
-                                        Plot No. 45, GIDC Industrial Area
+                                        {{customerAddress}}
                                         Phase 2,Near Udyog Bhavan., Gujarat,
                                         India, Near Udyog Bhavan<span class="cmp_city">, Ahmedabad</span><span
                                           class="cmp_state">, Gujarat</span><span class="cmp_pincode">
@@ -441,7 +441,7 @@
                                     <td class="customerdata_item_label">
                                       Phone
                                     </td>
-                                    <td style="">+91 98765 43210</td>
+                                    <td style="">+91 {{customerPhone}}</td>
                                   </tr>
                                   <tr class="company_email">
                                     <td class="customerdata_item_label">
@@ -456,22 +456,22 @@
                                       GSTIN
                                     </td>
                                     <td class="cmp_gstno" data-editor=".customerdata td.cmp_gstno">
-                                      24ABCDE1234F1Z5
+                                      {{customerGSTIN}}
                                     </td>
                                   </tr>
                                   <tr class="company_pan_no">
                                     <td class="customerdata_item_label">
                                       PAN
                                     </td>
-                                    <td class="cmp_gstno">ABCDE1234F</td>
+                                    <td class="cmp_gstno">{{customerPAN}}</td>
                                   </tr>
                                   <tr class="company_place_of_supply">
                                     <td class="customerdata_item_label">
                                       Place of Supply
                                     </td>
                                     <td style="">
-                                      Gujarat
-                                      <span class="supply_state_code">( 24 )</span>
+                                      {{customerPlaceOfSupply}}
+                                      <span class="supply_state_code">( {{customerSupplyStateCode}} )</span>
                                     </td>
                                   </tr>
                                 </tbody>
