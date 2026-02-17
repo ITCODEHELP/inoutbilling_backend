@@ -10,6 +10,73 @@ const User = require('../models/User-Model/User');
 const BankDetails = require('../models/Other-Document-Model/BankDetail');
 const QRCode = require('qrcode');
 
+const pathToBase64 = (rawPath) => {
+    if (!rawPath) return null;
+    if (rawPath.startsWith('http') || rawPath.startsWith('data:image')) return rawPath;
+    try {
+        let fullPath = path.resolve(rawPath);
+        if (!fs.existsSync(fullPath)) {
+            const pathsToTry = [
+                path.join(process.cwd(), rawPath),
+                path.join(process.cwd(), 'backend', rawPath),
+                path.join(__dirname, '..', '..', rawPath),
+                path.join(__dirname, '..', rawPath),
+                path.join(process.cwd(), 'src', rawPath),
+                path.join(process.cwd(), 'backend', 'src', rawPath)
+            ];
+            for (const p of pathsToTry) {
+                if (fs.existsSync(p)) {
+                    fullPath = p;
+                    break;
+                }
+            }
+        }
+        if (fs.existsSync(fullPath)) {
+            const bitmap = fs.readFileSync(fullPath);
+            const ext = path.extname(fullPath).split('.').pop() || 'png';
+            return `data:image/${ext};base64,${bitmap.toString('base64')}`;
+        }
+    } catch (e) {
+        console.error(`[PDF Generator] Error resolving image path: ${rawPath}`, e);
+    }
+    return null;
+};
+
+const generateHsnSummary = (items) => {
+    const summary = {};
+    items.forEach(item => {
+        const hsn = item.hsnSac || 'Others';
+        if (!summary[hsn]) {
+            summary[hsn] = { hsn, taxableValue: 0, igst: 0, cgst: 0, sgst: 0, totalTax: 0 };
+        }
+        const qty = Number(item.qty) || 0;
+        const rate = Number(item.price) || Number(item.rate) || 0;
+        const discValue = Number(item.discountValue || item.discount || item.disc || 0);
+
+        // Use pre-calculated taxableValue if available, otherwise calculate
+        const taxable = item.taxableValue !== undefined ? Number(item.taxableValue) : ((qty * rate) - discValue);
+
+        const iRate = Number(item.igst || 0);
+        const cRate = Number(item.cgst || 0);
+        const sRate = Number(item.sgst || 0);
+
+        summary[hsn].taxableValue += taxable;
+
+        if (iRate > 0) {
+            const iAmt = Number(item.igstAmount || (taxable * (iRate / 100)) || 0);
+            summary[hsn].igst += iAmt;
+            summary[hsn].totalTax += iAmt;
+        } else {
+            const caurate = Number(item.cgstAmount || (taxable * (cRate / 100)) || 0);
+            const saurate = Number(item.sgstAmount || (taxable * (sRate / 100)) || 0);
+            summary[hsn].cgst += caurate;
+            summary[hsn].sgst += saurate;
+            summary[hsn].totalTax += (caurate + saurate);
+        }
+    });
+    return Object.values(summary);
+};
+
 const TEMPLATE_MAP = {
     'Default': 'Template-Default.html',
     'Designed': 'Template-Default.html',
@@ -97,12 +164,17 @@ const generateGlobalHeader = (businessData, userData, overrideLogoPath, printSet
 
     const headerSettings = printSettings.headerPrintSettings || {};
     const hideContact = headerSettings.hideContactDetailInHeader === true;
-    const showPan = headerSettings.showPanNumber !== false; // Default true if not set, key is showPanNumber
+    const showPan = headerSettings.showPanNumber !== false;
     const showStaff = headerSettings.showStaffDetailsInHeader === true;
+    const showExporter = headerSettings.showExporterDetails !== false;
 
     // Contact Section Logic
     let contactSection = '';
     if (!hideContact) {
+        const phone = userData.displayPhone || userData.phone || businessData.phone;
+        const email = userData.email || businessData.email;
+        const name = userData.fullName || businessData.fullName || userData.name;
+
         contactSection = `
             <div style="
                 text-align: right;
@@ -112,10 +184,10 @@ const generateGlobalHeader = (businessData, userData, overrideLogoPath, printSet
                 line-height: 1.4;
                 min-width: 160px;
             ">
-                ${showStaff ? `<div><strong>Name:</strong> ${userData.fullName || businessData.fullName || userData.name || ''}</div>` : ''}
-                <div><strong>Phone:</strong> ${userData.displayPhone || userData.phone || ''}</div>
-                <div><strong>Email:</strong> ${userData.email || businessData.email || ''}</div>
-                ${(showPan && (businessData.showPan || userData.showPan) && userData.pan) ? `<div><strong>PAN:</strong> ${userData.pan}</div>` : ''}
+                ${(showStaff && name) ? `<div><strong>Name:</strong> ${name}</div>` : ''}
+                ${phone ? `<div><strong>Phone:</strong> ${phone}</div>` : ''}
+                ${email ? `<div><strong>Email:</strong> ${email}</div>` : ''}
+                ${(showPan && userData.pan) ? `<div><strong>PAN:</strong> ${userData.pan}</div>` : ''}
             </div>
         `;
     }
@@ -197,31 +269,7 @@ const resolveBrandingImages = async (userId) => {
         for (const { field, key } of imageFields) {
             const rawPath = settings[field];
             if (rawPath) {
-                try {
-                    let fullPath = path.resolve(rawPath);
-                    if (!fs.existsSync(fullPath)) {
-                        const pathsToTry = [
-                            path.join(process.cwd(), rawPath),
-                            path.join(process.cwd(), 'backend', rawPath),
-                            path.join(__dirname, '..', '..', rawPath),
-                            path.join(__dirname, '..', rawPath)
-                        ];
-                        for (const p of pathsToTry) {
-                            if (fs.existsSync(p)) {
-                                fullPath = p;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (fs.existsSync(fullPath)) {
-                        const bitmap = fs.readFileSync(fullPath);
-                        const ext = path.extname(fullPath).split('.').pop() || 'png';
-                        branding[key] = `data:image/${ext};base64,${bitmap.toString('base64')}`;
-                    }
-                } catch (e) {
-                    console.error(`[PDF Generator] Error resolving branding ${key}:`, e);
-                }
+                branding[key] = pathToBase64(rawPath);
             }
         }
     } catch (e) {
@@ -290,8 +338,9 @@ const manageDynamicColumns = ($, doc, printSettings = {}) => {
     const showQty = !productSettings.hideQuantityColumn && doc.items.some(item => hasValue(item.qty));
     const showRate = !productSettings.hideRateColumn && doc.items.some(item => hasValue(item.price) || hasValue(item.rate));
 
-    // Discount: Show if any item has discount OR if explicitly 0 is a valid discount
-    const showDiscount = doc.items.some(item => hasValue(item.discount) || hasValue(item.disc));
+    // Discount: Show if (NOT hidden in settings) AND (any item has discount data)
+    const showDiscount = !productSettings.hideDiscountColumn && doc.items.some(item => hasValue(item.discount) || hasValue(item.disc));
+
 
     // UOM Column (If template supports separate UOM column - usually 'showUomDifferentColumn' implies separating it)
     // Current templates might mix Qty and UOM. If showUomDifferentColumn is true, we might need specific logic (if template supports it).
@@ -336,12 +385,11 @@ const manageDynamicColumns = ($, doc, printSettings = {}) => {
             key: 'discount',
             visible: showDiscount,
             selectors: [
-                '.disc', '.header-disc', '.td-body-disc',
+                '.disc', '.header-disc', '.td-body-disc', '.td-body-discount',
                 '[data-column="5"]', '.header-cur-symbol',
-                '.footer-total-disc', '.footer-disc'
+                '.footer-total-disc', '.footer-disc', '.discount-column'
             ]
         },
-        // Tax columns often don't have standard classes in all templates, but adding here for those that do
         {
             key: 'igst',
             visible: showIgst,
@@ -359,15 +407,67 @@ const manageDynamicColumns = ($, doc, printSettings = {}) => {
         }
     ];
 
-    // 3. Remove Hidden Columns
+    // 🎯 INJECT DISCOUNT COLUMN IF MISSING
+    if (showDiscount && $('.header-disc, .disc, [data-column="5"], .discount-column').length === 0) {
+        // Find Rate column to insert after
+        const $rateHeader = $('.header-rate, .rate, [data-column="4"]').first();
+        if ($rateHeader.length > 0) {
+            $rateHeader.after('<td class="valign-mid header-disc discount-column">Disc.</td>');
+            $('.td-body-rate').after('<td class="txt-center td-body-disc discount-column"></td>');
+            $('col.rate').after('<col class="discount-column" style="width: 8%">');
+            // Adjust product name width to compensate
+            const $pNameCol = $('col.productname');
+            const currentWidth = parseInt($pNameCol.attr('style')?.match(/width:\s*(\d+)%/)?.[1]) || 43;
+            $pNameCol.css('width', `${currentWidth - 8}%`);
+            // Add background line
+            const rateLine = $('.tableboxLine.rate');
+            if (rateLine.length > 0) {
+                const discLine = rateLine.clone().removeClass('rate').addClass('discount-column').css('width', '8%');
+                rateLine.after(discLine);
+            }
+        }
+    }
+
+    // 3. Redistribute Widths
+    // Initial widths from Template-Default.html for reference
+    const widths = {
+        hsnSac: 13,
+        qty: 12,
+        rate: 14,
+        discount: 8
+    };
+
+    let removedWidth = 0;
     colConfig.forEach(col => {
         if (!col.visible) {
+            removedWidth += (widths[col.key] || 0);
             col.selectors.forEach(selector => {
-                // Remove headers, body cells, and background lines
                 $(selector).remove();
             });
         }
     });
+
+    if (removedWidth > 0) {
+        const $productNameCol = $('col.productname');
+        if ($productNameCol.length > 0) {
+            const currentWidth = parseInt($productNameCol.attr('style')?.match(/width:\s*(\d+)%/)?.[1]) || 43;
+            $productNameCol.css('width', `${currentWidth + removedWidth}%`);
+            // Also update background line widths if necessary
+            $('.tableboxLine.productname').css('width', `${currentWidth + removedWidth}%`);
+
+            // Recalculate 'left' positions for background lines
+            let currentLeft = 0;
+            $('col').each(function () {
+                const colClass = $(this).attr('class');
+                const colWidthStr = $(this).attr('style')?.match(/width:\s*(\d+)%/)?.[1];
+                if (colWidthStr) {
+                    const colWidth = parseInt(colWidthStr);
+                    $(`.tableboxLine.${colClass}`).css('left', `${currentLeft}%`);
+                    currentLeft += colWidth;
+                }
+            });
+        }
+    }
 
     // 4. Adjust Colspan for Footer/Total Rows
     // If columns are removed, the total colspan needs to be reduced.
@@ -425,18 +525,39 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
 
         const rawUserId = user.userId || user._id;
 
-        // 1. Resolve actual user profile
+        // 1. Resolve actual user profile (Check both User and Staff collections)
         try {
+            const searchId = rawUserId;
+            const isOid = mongoose.Types.ObjectId.isValid(searchId);
+
             fullUser = await User.findOne({
                 $or: [
-                    { userId: rawUserId },
-                    { _id: mongoose.Types.ObjectId.isValid(rawUserId) ? rawUserId : null }
-                ]
-            }).lean() || user;
+                    { userId: searchId },
+                    { _id: isOid ? searchId : null }
+                ].filter(q => q._id !== null || q.userId)
+            }).lean();
+
+            if (!fullUser) {
+                const Staff = require('../models/Setting-Model/Staff');
+                fullUser = await Staff.findOne({
+                    $or: [
+                        { userId: searchId },
+                        { _id: isOid ? searchId : null }
+                    ].filter(q => q._id !== null || q.userId)
+                }).lean();
+                if (fullUser) {
+                    fullUser._isStaff = true;
+                }
+            }
+
+            if (!fullUser) fullUser = user;
         } catch (e) {
-            console.error('[PDF Generator] User fetch failed:', e);
+            console.error('[PDF Generator] User/Staff fetch failed:', e);
             fullUser = user;
         }
+
+        // 🎯 RESOLVE SETTINGS OWNER (If Staff, use OwnerRef)
+        const settingsOwnerId = fullUser.ownerRef || fullUser._id || rawUserId;
 
         // Use the definite string userId for all other related queries
         // logic: favor string userId if available (for Business/Settings), but keep implicit _id for refs
@@ -460,11 +581,10 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
             }
         }
 
-        // 3. Fetch Print Settings (Uses DB _id)
+        // 3. Fetch Print Settings (Uses Settings Owner ID)
         try {
-            const printSearchId = actualObjectId || businessData._id || null;
-            if (printSearchId && mongoose.Types.ObjectId.isValid(printSearchId)) {
-                printSettings = await PrintOptions.findOne({ userId: printSearchId }).lean() || {};
+            if (settingsOwnerId && mongoose.Types.ObjectId.isValid(settingsOwnerId)) {
+                printSettings = await PrintOptions.findOne({ userId: settingsOwnerId }).lean() || {};
             }
         } catch (e) {
             console.error('[PDF Generator] PrintOptions fetch failed:', e);
@@ -544,16 +664,16 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
             businessLogo: brandingAssets.logo || ''
         };
 
+        const pHeader = printSettings?.headerPrintSettings || {};
+        const showStaff = pHeader.showStaffDetailsInHeader === true;
+        const showPan = pHeader.showPanNumber !== false;
+
         headerRightData = {
-            fullName: fullUser.fullName || businessData.fullName || fullUser.name || '',
+            fullName: showStaff ? (fullUser.fullName || businessData.fullName || fullUser.name || '') : '',
             email: fullUser.email || businessData.email || '',
             phone: fullUser.displayPhone || fullUser.phone || businessData.phone || '',
-            pan: null
+            pan: (showPan && (fullUser.pan || businessData.pan)) ? (fullUser.pan || businessData.pan) : null
         };
-
-        if (printSettings?.headerPrintSettings?.showPan && (fullUser.pan || businessData.pan)) {
-            headerRightData.pan = fullUser.pan || businessData.pan;
-        }
 
         // --- TEMPLATE RESOLUTION ---
         const config = typeof printConfig === 'string' ?
@@ -678,13 +798,29 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                 // Populate Contact Info
                 $('.org_contact_name, .company_contact_name').html(headerRightData.fullName ? `<b>Name</b> : ${headerRightData.fullName}` : "").css('text-align', 'right');
                 $('.org_phone').html(headerRightData.phone ? `<b>Phone</b> : ${headerRightData.phone}` : "").css('text-align', 'right');
+
+                const $emailEl = $('.org_email');
                 if (headerRightData.email) {
-                    if ($('.org_email').length > 0) { $('.org_email').html(`<b>Email</b> : ${headerRightData.email}`).css('text-align', 'right'); }
+                    if ($emailEl.length > 0) { $emailEl.html(`<b>Email</b> : ${headerRightData.email}`).css('text-align', 'right'); }
                     else { $('.org_phone').closest('tr').parent().append(`<tr><td class="contact_details org_email" style="text-align: right;"><b>Email</b> : ${headerRightData.email}</td></tr>`); }
+                } else {
+                    $emailEl.remove(); // Remove if empty to keep it perfect
                 }
+
+                const $panEl = $('.org_pan_row');
                 if (headerRightData.pan) {
-                    if ($('.org_pan_row').length > 0) { $('.org_pan_row').html(`<b>PAN</b> : ${headerRightData.pan}`).css('text-align', 'right'); }
+                    if ($panEl.length > 0) { $panEl.html(`<b>PAN</b> : ${headerRightData.pan}`).css('text-align', 'right'); }
                     else { $('.org_phone').closest('tr').parent().append(`<tr><td class="contact_details org_pan_row" style="text-align: right;"><b>PAN</b> : ${headerRightData.pan}</td></tr>`); }
+                } else {
+                    $panEl.remove();
+                }
+
+                // Force population if template fields are empty but data exists
+                if ($('.org_orgname').length > 0 && !$('.org_orgname').text().trim()) {
+                    $('.org_orgname').text(headerLeftData.companyName || "");
+                }
+                if ($('.org_address').length > 0 && !$('.org_address').text().trim()) {
+                    $('.org_address').html(addressHtml);
                 }
 
                 $('.company_contact_no, .company_email').css('display', 'none');
@@ -742,13 +878,26 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                 if (pHeader.showBlankCustomFields === false) {
                     $('.custom_field_row:empty, .custom_field_row:contains("-")').remove();
                 }
+                if (pHeader.hideContactDetailInHeader) {
+                    $('.contact_details, .org_contact_name, .org_phone, .org_email, .org_pan_row').remove();
+                }
+
+                // Header/Footer Size Adjustments
+                if (pHeader.letterpadHeaderSize) {
+                    const size = parseInt(pHeader.letterpadHeaderSize) || 105;
+                    $('.page-header').css('min-height', `${size}px`);
+                }
+                if (pFooter.letterpadFooterSize) {
+                    const size = parseInt(pFooter.letterpadFooterSize) || 100;
+                    $('.page-footer').css('min-height', `${size}px`);
+                }
 
                 // 2. Customer & Document Rules
                 if (pCust.hideDueDate) {
                     $('.extra_field:contains("Due Date")').remove();
                 }
                 if (pCust.hideTransport) {
-                    $('.transport_documents').remove();
+                    $('.transport_documents, .transport_name, .transport_detail').remove();
                 }
                 if (pCust.hideCurrencyRate) {
                     $('.currency_rate_row').remove();
@@ -761,6 +910,14 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                 }
                 if (pCust.showReverseCharge === false) {
                     $('.reverse_charge_row').remove();
+                }
+                if (pCust.printShipToDetails === false) {
+                    $('.shipping_label, .shipping_name, .shipping_address, .shipping_country, .shipping_phone, .shipping_gstin, .shipping_state').remove();
+                    // Also find tables that are purely for shipping and remove them
+                    $('.customerdata:contains("Shipped to"), .customerdata:contains("Consignee")').remove();
+                    // If shipping is removed, broaden the buyer column if possible
+                    $('.customerdata:contains("Buyer")').closest('td').attr('width', '55%');
+                    $('.invoice_details').closest('td').attr('width', '45%');
                 }
 
                 // Hide specific customer fields
@@ -779,6 +936,10 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                 }
                 if (pProduct.hideTotalQuantity) {
                     $('.footer-total-qty').html('&nbsp;');
+                }
+                if (pProduct.hideSrNoColumn) {
+                    $('.header-sr-no, .td-body-sr-no, .sr_no, [data-column="0"]').remove();
+                    // Adjust colgroup if possible? Hard with cheerio, but removing the cells is a start.
                 }
 
                 // 4. Footer Rules
@@ -801,10 +962,123 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                     $('.payment_balance_row').remove();
                 }
                 if (pFooter.showCustomerSignatureBox === false) {
-                    $('.customer_signature_box').remove();
+                    $('.customer_signature_box, .customer_sign_box').remove();
+                }
+                if (pFooter.showInvoiceTerms === false) {
+                    $('.terms_condition_section, .terms-section, .terms-condition-placeholder').remove();
+                }
+                if (pFooter.showInvoiceBankDetails === false) {
+                    $('.footer_bank_detail, .bank-details-section, .bank-details-placeholder, .bank_details').remove();
                 }
                 if (pFooter.showFooterImage === false) {
                     $('.branding-footer-image').remove();
+                }
+
+                // 🎯 INJECT PAGE NUMBER
+                if (pFooter.showPageNumber !== false) {
+                    const pageNumHtml = `
+                        <div class="page-number-container" style="position: absolute; bottom: 10px; right: 28px; font-size: 8px; color: #777;">
+                            Page <span class="page-num">1</span>
+                        </div>
+                    `;
+                    // Inject into each page (if multibody)
+                    $('.page-wrapper').each(function () {
+                        $(this).append(pageNumHtml);
+                    });
+                }
+
+                // Bank Details Logic
+                if (pFooter.showInvoiceBankDetails !== false) {
+                    const bank = await BankDetails.findOne({ userId: fullUser._id, isDefault: true });
+                    if (bank) {
+                        let bankHtml = `
+                            <div class="bank-info-container" style="font-size: 10px; margin-top: 5px; line-height: 1.2;">
+                                ${pFooter.showBankLogo && bank.bankLogo ? `<img src="${bank.bankLogo}" style="max-height: 35px; margin-bottom: 3px; display: block;">` : ''}
+                                <strong>Bank Details:</strong> <span style="font-size: 9px;">${bank.bankName} | A/c: ${bank.accountNumber} | IFSC: ${bank.ifscCode} | Branch: ${bank.branchName}</span>
+                            </div>
+                        `;
+
+                        const $bankTarget = $('.footer_bank_detail, .bank-details-placeholder, .bank_details');
+                        if ($bankTarget.length > 0) {
+                            $bankTarget.html(bankHtml);
+                        } else {
+                            $('.terms_condition_section').before(bankHtml);
+                        }
+                    }
+                }
+                if (pFooter.hideTotalGrossAmount) {
+                    $('.total_gross_amount_row, .gross_amount_row').remove();
+                }
+                if (pFooter.hideSubTotal) {
+                    $('.subtotal_row, .subtotal-row').remove();
+                }
+                if (pFooter.hideTotalTaxAmount) {
+                    $('.tax_total_row, .total_tax_row').remove();
+                }
+                if (pFooter.hideTotalDiscountAmount) {
+                    $('.discount_total_row, .footer-total-disc').remove();
+                }
+
+                // HSN Summary logic
+                if (pFooter.showHsnSummary !== false && doc.items) {
+                    const hsnSummaryData = generateHsnSummary(doc.items);
+                    const option = pFooter.hsnSummaryOption || 'Default';
+                    const hasTax = hsnSummaryData.some(r => r.totalTax > 0);
+
+                    let hsnHtml = `
+                        <div class="hsn-summary-container" style="margin-top: 15px; border: 1px solid var(--invoice-border-dynamic); border-radius: 4px; overflow: hidden; page-break-inside: avoid;">
+                            <div style="background: var(--invoice-light-blue-bg); padding: 5px 10px; font-weight: bold; font-size: 10px; border-bottom: 1px solid var(--invoice-border-dynamic); color: #333;">HSN / SAC Summary</div>
+                            <table class="hsn-summary-table" style="width: 100%; border-collapse: collapse; font-size: 9px;">
+                                <thead>
+                                    <tr style="background-color: #fcfcfc;">
+                                        <th style="border-right: 1px solid var(--invoice-border-dynamic); border-bottom: 1px solid var(--invoice-border-dynamic); padding: 6px; text-align: left;">HSN/SAC</th>
+                                        <th style="border-right: 1px solid var(--invoice-border-dynamic); border-bottom: 1px solid var(--invoice-border-dynamic); padding: 6px; text-align: right;">Taxable Value</th>
+                                        ${option.includes('GST') ? `
+                                            <th style="border-right: 1px solid var(--invoice-border-dynamic); border-bottom: 1px solid var(--invoice-border-dynamic); padding: 6px; text-align: right;">IGST</th>
+                                            <th style="border-right: 1px solid var(--invoice-border-dynamic); border-bottom: 1px solid var(--invoice-border-dynamic); padding: 6px; text-align: right;">CGST</th>
+                                            <th style="border-right: 1px solid var(--invoice-border-dynamic); border-bottom: 1px solid var(--invoice-border-dynamic); padding: 6px; text-align: right;">SGST</th>
+                                        ` : ''}
+                                        ${option.includes('UOM') ? `<th style="border-right: 1px solid var(--invoice-border-dynamic); border-bottom: 1px solid var(--invoice-border-dynamic); padding: 6px; text-align: center;">UOM</th>` : ''}
+                                        ${hasTax ? `<th style="border-bottom: 1px solid var(--invoice-border-dynamic); padding: 6px; text-align: right;">Total Tax</th>` : ''}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${hsnSummaryData.map((row, idx) => `
+                                        <tr style="${idx === hsnSummaryData.length - 1 ? '' : 'border-bottom: 1px solid #eee;'}">
+                                            <td style="border-right: 1px solid var(--invoice-border-dynamic); padding: 6px; text-align: left;">${row.hsn}</td>
+                                            <td style="border-right: 1px solid var(--invoice-border-dynamic); padding: 6px; text-align: right;">${row.taxableValue.toFixed(2)}</td>
+                                            ${option.includes('GST') ? `
+                                                <td style="border-right: 1px solid var(--invoice-border-dynamic); padding: 6px; text-align: right;">${row.igst.toFixed(2)}</td>
+                                                <td style="border-right: 1px solid var(--invoice-border-dynamic); padding: 6px; text-align: right;">${row.cgst.toFixed(2)}</td>
+                                                <td style="border-right: 1px solid var(--invoice-border-dynamic); padding: 6px; text-align: right;">${row.sgst.toFixed(2)}</td>
+                                            ` : ''}
+                                            ${option.includes('UOM') ? `<td style="border-right: 1px solid var(--invoice-border-dynamic); padding: 6px; text-align: center;">${doc.items.find(i => i.hsnSac === row.hsn)?.uom || '-'}</td>` : ''}
+                                            ${hasTax ? `<td style="padding: 6px; text-align: right;">${row.totalTax.toFixed(2)}</td>` : ''}
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+
+                    const $hsnTarget = $('.hsn_summary_section, .hsn-summary-placeholder');
+                    if ($hsnTarget.length > 0) {
+                        $hsnTarget.html(hsnHtml);
+                    } else {
+                        // If no specific placeholder, append before any terms or bank info
+                        $('.page-footer').prepend(hsnHtml);
+                    }
+                }
+                if (pFooter.footerText) {
+                    $('.footer-text').text(pFooter.footerText);
+                }
+                if (pFooter.customerSignatureLabel) {
+                    $('.footer_seal_signature, .signature-label, .customer_signature_label').text(pFooter.customerSignatureLabel);
+                }
+
+                // Final check for contact person in header (Branding section)
+                if (pHeader.showContactPersonInHeader === false) {
+                    $('.org_contact_name').remove();
                 }
 
                 // 4. Styling Logic (Fonts & Colors)
@@ -896,8 +1170,56 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                 // Customer Info
                 if (doc.customerInformation) {
                     $('.company_name .special').text(doc.customerInformation.ms || "");
-                    $('.company_address td:last-child div').text(doc.customerInformation.address || "");
+
+                    // Fix: Populate address without wiping city/state spans
+                    const $addrDiv = $('.company_address td:last-child div');
+                    if ($addrDiv.length > 0) {
+                        const addr = doc.customerInformation.address || "";
+                        // If we have distinct city/state in data, we could use them, 
+                        // but usually it's one address string.
+                        $addrDiv.contents().filter(function () {
+                            return this.nodeType === 3; // text nodes
+                        }).first().replaceWith(addr + " ");
+
+                        if (pCust.showStateInCustomerDetail === false) {
+                            $('.cmp_city, .cmp_state').remove();
+                        } else {
+                            if (doc.customerInformation.city) $('.cmp_city').text(", " + doc.customerInformation.city);
+                            if (doc.customerInformation.state) $('.cmp_state').text(", " + doc.customerInformation.state);
+                        }
+                    } else {
+                        // Fallback
+                        $('.company_address td:last-child').text(doc.customerInformation.address || "");
+                    }
+
                     $('.cmp_gstno').text(doc.customerInformation.gstinPan || "");
+
+                    // 🎯 SHOW CONTACT PERSON
+                    if (pCust.showContactPerson && doc.customerInformation.contactPerson) {
+                        const contactRow = `
+                            <tr class="company_contact_person">
+                                <td class="customerdata_item_label">Contact</td>
+                                <td class="special">${doc.customerInformation.contactPerson}</td>
+                            </tr>
+                         `;
+                        $('.company_name').after(contactRow);
+                    }
+                }
+
+                // 🎯 SHOW EXPORTER DETAILS
+                if (pHeader.showExporterDetails && doc.exporterDetails) {
+                    const exporterHtml = `
+                        <div class="exporter_details" style="margin: 10px 0; padding: 6px; border: 1px dashed var(--invoice-border-color); font-size: 10px; background: #fafafa;">
+                            <strong style="color: #333;">Exporter Details:</strong> ${doc.exporterDetails}
+                        </div>
+                    `;
+                    // More reliable injection points
+                    const $headerTable = $('.branding, .header, .page-header').first();
+                    if ($headerTable.length > 0) {
+                        $headerTable.after(exporterHtml);
+                    } else {
+                        $('.page-wrapper').prepend(exporterHtml);
+                    }
                 }
 
                 // Invoice Details
@@ -923,7 +1245,7 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                 manageDynamicColumns($, doc, printSettings);
 
                 // Items Table
-                // Handling for different template structures (Template 1-4 vs 5-13 vs Thermal)
+                // Handling for different template structures (Template 1-4 vs 5-11 vs Thermal)
                 // Common strategy: Find the tbody, extract the first row as template, clear, and append.
 
                 // Try standard selector (Template 1-4, 12, 13)
@@ -947,10 +1269,49 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                             // Populate standard fields
                             $row.find('.td-body-sr-no').text(index + 1);
 
-                            // Product Name (Handle various field names)
-                            const pName = item.productName || item.name || item.productDescription || "N/A";
-                            // Check if we need to append description? User didn't ask, but good practice.
-                            $row.find('.td-body-product-name, .productname h4').html(`<h4>${pName}</h4>${item.description ? `<p>${item.description}</p>` : ''}`);
+                            // Product Name and Image logic
+                            let pName = item.productName || item.name || item.productDescription || "N/A";
+                            if (pProduct.showProductGroup && item.productGroup) {
+                                pName = `<span style="font-size: 80%; color: #666; font-weight: normal;">[${item.productGroup}]</span><br>${pName}`;
+                            }
+                            let productCellHtml = `<b style="margin: 0; padding: 2px 0; font-size: 11px;">${pName}</b>`;
+
+                            if (item.description) {
+                                productCellHtml += `<p style="margin: 0; font-size: 9px; color: #555; line-height: 1.2;">${item.description}</p>`;
+                            }
+
+                            // Handle product image location if setting is provided and image exists
+                            if (pProduct.productImageLocation && pProduct.productImageLocation !== 'None' && item.productImageUrl) {
+                                const resolvedImg = pathToBase64(item.productImageUrl);
+                                if (resolvedImg) {
+                                    const imgSize = pProduct.productImageLocation.includes('(Large)') ? '80px' : '40px';
+                                    const imgHtml = `<img src="${resolvedImg}" style="max-height: ${imgSize}; max-width: ${imgSize}; object-fit: contain; display: block; margin: 4px 0;">`;
+
+                                    if (pProduct.productImageLocation.startsWith('Above')) {
+                                        productCellHtml = imgHtml + productCellHtml;
+                                    } else if (pProduct.productImageLocation.startsWith('Below')) {
+                                        productCellHtml = productCellHtml + imgHtml;
+                                    } else if (pProduct.productImageLocation.startsWith('Before')) {
+                                        productCellHtml = `<div style="display: flex; align-items: start; gap: 8px;">${imgHtml}<div>${productCellHtml}</div></div>`;
+                                    } else if (pProduct.productImageLocation.startsWith('After')) {
+                                        productCellHtml = `<div style="display: flex; align-items: start; gap: 8px;"><div>${productCellHtml}</div>${imgHtml}</div>`;
+                                    }
+                                }
+                            }
+
+                            const $pNameCell = $row.find('.td-body-product-name, .productname b, .productname h4').first();
+                            if ($pNameCell.length > 0) {
+                                if ($pNameCell.is('b') || $pNameCell.is('h4')) {
+                                    $pNameCell.parent().html(productCellHtml);
+                                } else {
+                                    $pNameCell.html(productCellHtml);
+                                }
+                            }
+                            // Ensure the cell has proper alignment and padding
+                            $row.find('.td-body-product-name, .productname').css({
+                                'padding': '6px 8px',
+                                'vertical-align': 'top'
+                            });
 
                             // Helper to safely set text if element exists (it might have been removed by dynamic logic)
                             const setText = (selector, val) => {
@@ -960,7 +1321,19 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                             };
 
                             setText('.td-body-hsn-sac', item.hsnSac || "");
-                            setText('.td-body-qty', item.qty || 0);
+                            // Qty with Uom logic
+                            let qtyHtml = `${item.qty || 0}`;
+                            if (item.uom) {
+                                if (pProduct.showUomDifferentColumn) {
+                                    qtyHtml += `<br><span style="font-size: 8px; color: #666;">${item.uom}</span>`;
+                                } else {
+                                    qtyHtml += ` ${item.uom}`;
+                                }
+                            }
+                            setText('.td-body-qty', qtyHtml);
+                            if (pProduct.showUomDifferentColumn) {
+                                $row.find('.td-body-qty').html(qtyHtml);
+                            }
                             setText('.td-body-rate', (Number(item.price) || Number(item.rate) || 0).toFixed(2));
 
                             // Discount: Handle standard and percentage
@@ -992,6 +1365,47 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                     // Fix: Update Grand Total in Summary Section (Standard & Thermal Templates)
                     const grandFinal = (doc.totals.grandTotal || 0).toFixed(2);
 
+                    // 🎯 DYNAMIC FOOTER ROWS INJECTION (Subtotal, Tax, RoundOff)
+                    const $summaryTable = $('.invoiceTotal tbody, .invoicedataFooter tbody').first();
+                    if ($summaryTable.length > 0) {
+                        // Clear placeholders if we are going to reconstruct
+                        // (Usually it's better to just prepend rows to the summaryTotalRow)
+                        const $totalRow = $('._total_amount_after_tax_filed, ._grand_total').first();
+
+                        // 1. Subtotal
+                        if (pFooter.hideSubTotal === false && doc.totals.totalTaxable > 0) {
+                            $totalRow.before(`
+                                <tr class="subtotal_row">
+                                    <td class="txt-right">Sub Total</td>
+                                    <td class="txt-right special">₹ ${doc.totals.totalTaxable.toFixed(2)}</td>
+                                </tr>
+                            `);
+                        }
+
+                        // 2. Tax Rows
+                        if (pFooter.hideTotalTaxAmount === false) {
+                            if (doc.totals.totalCGST > 0) {
+                                $totalRow.before(`<tr><td class="txt-right">CGST</td><td class="txt-right special">₹ ${doc.totals.totalCGST.toFixed(2)}</td></tr>`);
+                            }
+                            if (doc.totals.totalSGST > 0) {
+                                $totalRow.before(`<tr><td class="txt-right">SGST</td><td class="txt-right special">₹ ${doc.totals.totalSGST.toFixed(2)}</td></tr>`);
+                            }
+                            if (doc.totals.totalIGST > 0) {
+                                $totalRow.before(`<tr><td class="txt-right">IGST</td><td class="txt-right special">₹ ${doc.totals.totalIGST.toFixed(2)}</td></tr>`);
+                            }
+                        }
+
+                        // 3. Round Off
+                        if (pFooter.showRoundOff !== false && Math.abs(doc.totals.roundOff) > 0) {
+                            $totalRow.before(`
+                                <tr class="round_off_row">
+                                    <td class="txt-right">Round Off</td>
+                                    <td class="txt-right special">₹ ${doc.totals.roundOff.toFixed(2)}</td>
+                                </tr>
+                            `);
+                        }
+                    }
+
                     // 1. Standard Template Summary Row
                     const summaryTotalRow = $('._total_amount_after_tax_filed');
                     if (summaryTotalRow.length > 0) {
@@ -1009,6 +1423,17 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                                 targetCell.text(grandFinal);
                             }
                         }
+                    }
+
+                    // 🎯 SUBTOTAL DISCOUNT
+                    if (pFooter.showSubtotalDiscount !== false && (doc.totals.totalDiscount > 0 || doc.totals.discountValue > 0)) {
+                        const discRow = `
+                            <tr class="discount_row_footer">
+                                <td class="txt-right" style="font-weight: bold;">Discount</td>
+                                <td class="txt-right special">₹ ${(doc.totals.totalDiscount || 0).toFixed(2)}</td>
+                            </tr>
+                        `;
+                        summaryTotalRow.before(discRow);
                     }
 
                     // 2. Thermal Template Grand Total Row
