@@ -35,18 +35,24 @@ class SalesOutstandingReportModel {
 
         // Stage 1: Match stage for filtering with optimized indexing
         const matchStage = {};
-        
+
         // Add userId filter for data isolation (always required)
         if (filters.userId) {
             matchStage.userId = filters.userId;
         }
-        
+
         // Customer/Vendor filter - indexed field
         if (customerVendor) {
-            matchStage['customerInformation.ms'] = { 
-                $regex: customerVendor, 
-                $options: 'i' 
-            };
+            const customersArr = typeof customerVendor === 'string'
+                ? customerVendor.split(',').map(c => c.trim()).filter(Boolean)
+                : [customerVendor];
+
+            if (customersArr.length > 0) {
+                matchStage['customerInformation.ms'] = {
+                    $regex: customersArr.join('|'),
+                    $options: 'i'
+                };
+            }
         }
 
         // Product Group filter - requires unwind
@@ -56,17 +62,17 @@ class SalesOutstandingReportModel {
 
         // Invoice number filter - indexed field
         if (invoiceNumber) {
-            matchStage['invoiceDetails.invoiceNumber'] = { 
-                $regex: invoiceNumber, 
-                $options: 'i' 
+            matchStage['invoiceDetails.invoiceNumber'] = {
+                $regex: invoiceNumber,
+                $options: 'i'
             };
         }
 
         // Invoice series/prefix filter
         if (invoiceSeries) {
-            matchStage['invoiceDetails.invoicePrefix'] = { 
-                $regex: invoiceSeries, 
-                $options: 'i' 
+            matchStage['invoiceDetails.invoicePrefix'] = {
+                $regex: invoiceSeries,
+                $options: 'i'
             };
         }
 
@@ -107,12 +113,12 @@ class SalesOutstandingReportModel {
         }
 
         // Stage 2: Unwind items if product-level filtering or columns are needed
-        const needsItemUnwind = this.needsItemLevelData(selectedColumns) || 
-                               productGroup?.length > 0;
+        const needsItemUnwind = this.needsItemLevelData(selectedColumns) ||
+            productGroup?.length > 0;
 
         if (needsItemUnwind) {
             pipeline.push({ $unwind: '$items' });
-            
+
             // Re-apply product filters after unwind if needed
             if (productGroup && productGroup.length > 0) {
                 pipeline.push({
@@ -230,15 +236,15 @@ class SalesOutstandingReportModel {
             'outstandingAmount',
             'dueDaysCategory'
         ];
-        
+
         // Validate field for security and index usage
         if (!allowedFields.includes(field)) {
             console.warn('WARNING: Advanced filter field not allowed:', field);
             return null;
         }
-        
+
         const condition = {};
-        
+
         switch (operator) {
             case 'equals':
                 condition[field] = value;
@@ -267,7 +273,7 @@ class SalesOutstandingReportModel {
                 console.warn('WARNING: Invalid operator:', operator);
                 return null;
         }
-        
+
         return Object.keys(condition).length > 0 ? condition : null;
     }
 
@@ -280,10 +286,10 @@ class SalesOutstandingReportModel {
         if (!selectedColumns || selectedColumns.length === 0) {
             return false;
         }
-        
-        return selectedColumns.some(col => 
-            col.startsWith('items.') || 
-            col.includes('product') || 
+
+        return selectedColumns.some(col =>
+            col.startsWith('items.') ||
+            col.includes('product') ||
             col.includes('hsn') ||
             col.includes('qty') ||
             col.includes('price') ||
@@ -305,7 +311,7 @@ class SalesOutstandingReportModel {
         }
 
         const groupStage = {};
-        
+
         // Group by fields
         const groupFields = [];
         if (groupByDueDays) {
@@ -317,7 +323,7 @@ class SalesOutstandingReportModel {
         if (groupByCurrency) {
             groupFields.push('$originalCurrency');
         }
-        
+
         if (groupFields.length > 0) {
             groupStage._id = groupFields.length === 1 ? groupFields[0] : groupFields;
         } else {
@@ -330,7 +336,7 @@ class SalesOutstandingReportModel {
         groupStage.totalOutstanding = { $sum: '$outstandingAmount' };
         groupStage.avgDaysOverdue = { $avg: '$daysOverdue' };
         groupStage.maxDaysOverdue = { $max: '$daysOverdue' };
-        
+
         if (hasItemLevel) {
             groupStage.totalQuantity = { $sum: '$items.qty' };
             groupStage.totalItems = { $sum: '$items.total' };
@@ -365,19 +371,19 @@ class SalesOutstandingReportModel {
             if (selectedColumns.includes('dueDaysCategory')) {
                 projectStage.dueDaysCategory = '$_id.dueDaysCategory';
             }
-            
+
             // Include aggregation results
             projectStage.totalInvoices = 1;
             projectStage.totalGrandTotal = 1;
             projectStage.totalOutstanding = 1;
             projectStage.avgDaysOverdue = 1;
             projectStage.maxDaysOverdue = 1;
-            
+
             if (hasItemLevel) {
                 projectStage.totalQuantity = 1;
                 projectStage.totalItems = 1;
             }
-            
+
             // Include invoice details if requested
             if (selectedColumns.some(col => !col.includes('total'))) {
                 projectStage.invoices = {
@@ -498,10 +504,10 @@ class SalesOutstandingReportModel {
     static async getSalesOutstandingReport(filters = {}, options = {}) {
         try {
             const pipeline = this.buildOutstandingPipeline(filters, options);
-            
+
             // Get count pipeline (without pagination for performance)
             const countPipeline = pipeline.slice(0, -2); // Remove skip and limit
-            
+
             // Execute both queries in parallel for performance
             const [results, countResult] = await Promise.all([
                 SaleInvoice.aggregate(pipeline).allowDiskUse(true), // Allow disk use for large datasets
@@ -541,7 +547,7 @@ class SalesOutstandingReportModel {
     static async getOutstandingStatistics(filters = {}) {
         try {
             const basePipeline = this.buildOutstandingPipeline(filters, {});
-            
+
             // Remove pagination and projection for statistics
             const statsPipeline = basePipeline.slice(0, -3);
 

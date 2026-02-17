@@ -847,9 +847,10 @@ const generateSaleInvoicePDF = async (documents, user, options = { original: tru
                 if (brandingAssets.background) {
                     const bgSelector = $('.page-content').length > 0 ? '.page-content' : ($('.page-wrapper').length > 0 ? '.page-wrapper' : 'body');
                     const bgPositioning = bgSelector === 'body' ? 'fixed' : 'absolute';
-                    $('head').append(`<style>${bgSelector}::before { content: ""; position: ${bgPositioning}; top: 0; left: 0; width: 100%; height: 100%; background-image: url("${brandingAssets.background}") !important; background-size: contain !important; background-repeat: no-repeat !important; background-position: center !important; z-index: -1; pointer-events: none; }</style>`);
+                    $('head').append(`<style>${bgSelector}::before { content: ""; position: ${bgPositioning}; top: 0; left: 0; width: 100%; height: 100%; background-image: url("${brandingAssets.background}") !important; background-size: 100% 100% !important; background-repeat: no-repeat !important; background-position: center !important; z-index: -1; pointer-events: none; }</style>`);
                 }
-                if (brandingAssets.footer) { $('head').append(`<style>body::after { content: ""; position: fixed; bottom: 0; left: 0; width: 100%; height: 60px; background-image: url("${brandingAssets.footer}") !important; background-size: contain !important; background-position: center bottom !important; z-index: -1; pointer-events: none; }</style>`); }
+                if (brandingAssets.footer) { $('head').append(`<style>body::after { content: ""; position: fixed; bottom: 0; left: 0; width: 100%; height: 60px; background-image: url("${brandingAssets.footer}") !important; background-size: 100% 100% !important; background-repeat: no-repeat !important; background-position: center bottom !important; z-index: -1; pointer-events: none; }</style>`); }
+
                 if (brandingAssets.signature) {
                     const sigHtml = `<img src="${brandingAssets.signature}" style="max-height: 40px; max-width: 150px; display: block; margin: 0 auto; object-fit: contain;">`;
                     if ($('.foot_table_signature td').length > 0) { $('.foot_table_signature td').html(sigHtml); }
