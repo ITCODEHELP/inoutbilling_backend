@@ -35,18 +35,24 @@ class SalesReportModel {
 
         // Stage 1: Match stage for filtering
         const matchStage = {};
-        
+
         // Add userId filter for data isolation (always required)
         if (filters.userId) {
             matchStage.userId = filters.userId;
         }
-        
+
         // Customer/Vendor filter
         if (customerVendor) {
-            matchStage['customerInformation.ms'] = { 
-                $regex: customerVendor, 
-                $options: 'i' 
-            };
+            const customersArr = typeof customerVendor === 'string'
+                ? customerVendor.split(',').map(c => c.trim()).filter(Boolean)
+                : [customerVendor];
+
+            if (customersArr.length > 0) {
+                matchStage['customerInformation.ms'] = {
+                    $regex: customersArr.join('|'),
+                    $options: 'i'
+                };
+            }
         }
 
         // Products filter
@@ -81,17 +87,17 @@ class SalesReportModel {
 
         // Invoice number filter
         if (invoiceNumber) {
-            matchStage['invoiceDetails.invoiceNumber'] = { 
-                $regex: invoiceNumber, 
-                $options: 'i' 
+            matchStage['invoiceDetails.invoiceNumber'] = {
+                $regex: invoiceNumber,
+                $options: 'i'
             };
         }
 
         // Invoice series/prefix filter
         if (invoiceSeries) {
-            matchStage['invoiceDetails.invoicePrefix'] = { 
-                $regex: invoiceSeries, 
-                $options: 'i' 
+            matchStage['invoiceDetails.invoicePrefix'] = {
+                $regex: invoiceSeries,
+                $options: 'i'
             };
         }
 
@@ -125,20 +131,20 @@ class SalesReportModel {
         }
 
         // Stage 2: Unwind items if product-level filtering or columns are needed
-        const needsItemUnwind = this.needsItemLevelData(selectedColumns) || 
-                               products?.length > 0 || 
-                               productGroup?.length > 0;
+        const needsItemUnwind = this.needsItemLevelData(selectedColumns) ||
+            products?.length > 0 ||
+            productGroup?.length > 0;
 
         if (needsItemUnwind) {
             pipeline.push({ $unwind: '$items' });
-            
+
             // Re-apply product filters after unwind if needed
             if (products && products.length > 0) {
                 pipeline.push({
                     $match: { 'items.productName': { $in: products } }
                 });
             }
-            
+
             if (productGroup && productGroup.length > 0) {
                 pipeline.push({
                     $match: { 'items.productGroup': { $in: productGroup } }
@@ -209,15 +215,15 @@ class SalesReportModel {
             'items.sgst',
             'items.igst'
         ];
-        
+
         // Validate field
         if (!allowedFields.includes(field)) {
             console.warn('WARNING: Advanced filter field not allowed:', field);
             return null;
         }
-        
+
         const condition = {};
-        
+
         switch (operator) {
             case 'equals':
                 condition[field] = value;
@@ -246,7 +252,7 @@ class SalesReportModel {
                 console.warn('WARNING: Invalid operator:', operator);
                 return null;
         }
-        
+
         return Object.keys(condition).length > 0 ? condition : null;
     }
 
@@ -259,10 +265,10 @@ class SalesReportModel {
         if (!selectedColumns || selectedColumns.length === 0) {
             return false;
         }
-        
-        return selectedColumns.some(col => 
-            col.startsWith('items.') || 
-            col.includes('product') || 
+
+        return selectedColumns.some(col =>
+            col.startsWith('items.') ||
+            col.includes('product') ||
             col.includes('hsn') ||
             col.includes('qty') ||
             col.includes('price') ||
@@ -283,7 +289,7 @@ class SalesReportModel {
         }
 
         const groupStage = {};
-        
+
         // Group by fields
         const groupFields = [];
         if (groupByCustomer) {
@@ -293,7 +299,7 @@ class SalesReportModel {
         // if (groupByCurrency) {
         //     groupFields.push('$originalCurrency');
         // }
-        
+
         if (groupFields.length > 0) {
             groupStage._id = groupFields.length === 1 ? groupFields[0] : groupFields;
         } else {
@@ -305,7 +311,7 @@ class SalesReportModel {
         groupStage.totalGrandTotal = { $sum: '$totals.grandTotal' };
         groupStage.totalTaxable = { $sum: '$totals.totalTaxable' };
         groupStage.totalTax = { $sum: '$totals.totalTax' };
-        
+
         if (hasItemLevel) {
             groupStage.totalQuantity = { $sum: '$items.qty' };
             groupStage.totalItems = { $sum: '$items.total' };
@@ -341,18 +347,18 @@ class SalesReportModel {
             // if (selectedColumns.includes('originalCurrency')) {
             //     projectStage.currency = '$_id.originalCurrency';
             // }
-            
+
             // Include aggregation results
             projectStage.totalInvoices = 1;
             projectStage.totalGrandTotal = 1;
             projectStage.totalTaxable = 1;
             projectStage.totalTax = 1;
-            
+
             if (hasItemLevel) {
                 projectStage.totalQuantity = 1;
                 projectStage.totalItems = 1;
             }
-            
+
             // Include invoice details if requested
             if (selectedColumns.some(col => !col.includes('total'))) {
                 projectStage.invoices = {
@@ -457,12 +463,12 @@ class SalesReportModel {
             if (filters.userId) {
                 filters.userId = filters.userId;
             }
-            
+
             const pipeline = this.buildSalesReportPipeline(filters, options);
-            
+
             // Get count pipeline (without pagination)
             const countPipeline = pipeline.slice(0, -2); // Remove skip and limit
-            
+
             // Execute both queries in parallel
             const [results, countResult] = await Promise.all([
                 SaleInvoice.aggregate(pipeline),
