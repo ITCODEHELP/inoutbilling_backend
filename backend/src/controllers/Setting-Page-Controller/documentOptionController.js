@@ -68,7 +68,7 @@ exports.saveDocumentOptions = async (req, res) => {
             'purchaseInvoice': 'Purchase Invoice',
             'creditNote': 'Credit Note',
             'debitNote': 'Debit Note',
-            'multiCurrencyInvoice': 'Packing List',
+            'multiCurrencyInvoice': 'Multi Currency Invoice',
             'inwardPayment': 'Inward Payment',
             'outwardPayment': 'Outward Payment'
         };

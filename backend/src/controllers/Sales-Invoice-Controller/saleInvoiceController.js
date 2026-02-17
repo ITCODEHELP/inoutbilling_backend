@@ -14,7 +14,7 @@ const Staff = require('../../models/Setting-Model/Staff');
 const { sendInvoiceEmail } = require('../../utils/emailHelper');
 const { generateSaleInvoicePDF } = require('../../utils/saleInvoicePdfHelper');
 const { getCopyOptions } = require('../../utils/pdfHelper');
-const { getSelectedPrintTemplate } = require('../../utils/documentHelper');
+const { getSelectedPrintTemplate, calculateDocumentTotals } = require('../../utils/documentHelper');
 const { recordActivity } = require('../../utils/activityLogHelper');
 const fs = require('fs');
 const path = require('path');
@@ -354,6 +354,12 @@ const handleCreateInvoiceLogic = async (req) => {
     // 3️⃣ Validate
     const validationError = validateSaleInvoice(bodyData);
     if (validationError) throw new Error(validationError);
+    // 3.5️⃣ BACKEND CALCULATION - Calculate totals from base inputs only
+    // const { calculateDocumentTotals } = require('../../utils/documentHelper'); // Moved to top
+
+    // Ensure user exists before calculation (critical bug fix)
+    const userId = req.user ? req.user._id : (req.userId || null);
+    if (!userId) throw new Error("User ID is required for calculation");
 
     // 3.5️⃣ BACKEND CALCULATION - Calculate totals from base inputs only
     const { calculateDocumentTotals } = require('../../utils/documentHelper');
@@ -469,7 +475,7 @@ const handleCreateInvoiceLogic = async (req) => {
     const pdfBuffer = await generateSaleInvoicePDF(invoice, userData, options, 'Sale Invoice', printConfig);
 
     // Save PDF to disk (optional but recommended for persistence)
-    const pdfDir = 'src/uploads/invoices/pdf';
+    const pdfDir = path.join(__dirname, '../../uploads/invoices/pdf');
     if (!fs.existsSync(pdfDir)) {
         fs.mkdirSync(pdfDir, { recursive: true });
     }
@@ -981,7 +987,7 @@ const handleCreateDynamicInvoiceLogic = async (req) => {
     const options = getCopyOptions(req);
     const printConfig = await getSelectedPrintTemplate(req.user._id, 'Sale Invoice');
     const pdfBuffer = await generateSaleInvoicePDF(invoice, userData, options, 'Sale Invoice', printConfig);
-    const pdfDir = 'src/uploads/invoices/pdf';
+    const pdfDir = path.join(__dirname, '../../uploads/invoices/pdf');
     if (!fs.existsSync(pdfDir)) fs.mkdirSync(pdfDir, { recursive: true });
     const pdfFileName = `invoice-${invoice._id}.pdf`;
     const pdfPath = path.join(pdfDir, pdfFileName);
@@ -1769,7 +1775,7 @@ const updateInvoice = async (req, res) => {
         const options = getCopyOptions(req);
         const printConfig = await getSelectedPrintTemplate(req.user._id, 'Sale Invoice', bodyData.branch);
         const pdfBuffer = await generateSaleInvoicePDF(invoice, userData, options, 'Sale Invoice', printConfig);
-        const pdfDir = 'src/uploads/invoices/pdf';
+        const pdfDir = path.join(__dirname, '../../uploads/invoices/pdf');
         if (!fs.existsSync(pdfDir)) {
             fs.mkdirSync(pdfDir, { recursive: true });
         }

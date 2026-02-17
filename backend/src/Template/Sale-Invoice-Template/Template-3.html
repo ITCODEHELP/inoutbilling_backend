@@ -421,8 +421,8 @@
                       <table>
                         <colgroup>
                           <col style="width: 35%" />
-                          <col style="width: 30%" />
                           <col style="width: 35%" />
+                          <col style="width: 30%" />
                         </colgroup>
                         <tbody>
                           <tr>
@@ -440,17 +440,11 @@
                                 <tbody>
                                   <tr class="customer_label">
                                     <td colspan="2" class="customerdata_label"
-                                      data-editor=".customerdata td.customerdata_label">
-                                      Details of Buyer | Billed to :
-                                    </td>
-                                  </tr>
-                                  <tr class="company_name">
-                                    <td class="customerdata_item_label"
-                                      data-editor=".customerdata td.customerdata_item_label">
-                                      Name
-                                    </td>
-                                    <td class="special" data-editor=".customerdata td.special">
-                                      Shree Krishna Traders Pvt. Ltd.
+                                      data-editor=".customerdata td.customerdata_label"
+                                      style="text-align: left; padding-left: 5px;">
+                                      <div>Details of Buyer | Billed to :</div>
+                                      <div class="buyer_name_text"
+                                        style="font-size: 10px !important; font-weight: bold;">{{buyerName}}</div>
                                     </td>
                                   </tr>
                                   <tr class="company_address">
@@ -459,11 +453,9 @@
                                     </td>
                                     <td style="">
                                       <div style="overflow: hidden">
-                                        Plot No. 45, GIDC Industrial Area
-                                        Phase 2,Near Udyog Bhavan., Gujarat,
-                                        India, Near Udyog Bhavan<span class="cmp_city">, Ahmedabad</span><span
-                                          class="cmp_state">, Gujarat</span><span class="cmp_pincode">
-                                          - 380015</span>
+                                        {{buyerAddress}}<span class="cmp_city">, {{buyerCity}}</span><span
+                                          class="cmp_state">, {{buyerState}}</span><span class="cmp_pincode"> -
+                                          {{buyerPincode}}</span>
                                       </div>
                                     </td>
                                   </tr>
@@ -472,14 +464,14 @@
                                     <td class="customerdata_item_label">
                                       Phone
                                     </td>
-                                    <td style="">+91 98765 43210</td>
+                                    <td style="">{{buyerPhone}}</td>
                                   </tr>
                                   <tr class="company_email">
                                     <td class="customerdata_item_label">
                                       Email
                                     </td>
                                     <td style="">
-                                      accounts@shreekrishnatraders.com,info@shreekrishnatraders.com
+                                      {{buyerEmail}}
                                     </td>
                                   </tr>
                                   <tr class="company_gstin">
@@ -487,22 +479,20 @@
                                       GSTIN
                                     </td>
                                     <td class="cmp_gstno" data-editor=".customerdata td.cmp_gstno">
-                                      24ABCDE1234F1Z5
+                                      {{buyerGstin}}
                                     </td>
                                   </tr>
                                   <tr class="company_pan_no">
                                     <td class="customerdata_item_label">
                                       PAN
                                     </td>
-                                    <td class="cmp_gstno">ABCDE1234F</td>
+                                    <td class="cmp_gstno">{{buyerPan}}</td>
                                   </tr>
                                   <tr class="company_place_of_supply">
                                     <td class="customerdata_item_label">
                                       Place of Supply
                                     </td>
-                                    <td style="">
-                                      Gujarat
-                                      <span class="supply_state_code">( 24 )</span>
+                                    <td style="">{{buyerState}} <span class="supply_state_code">({{stateCode}})</span>
                                     </td>
                                   </tr>
                                 </tbody>
@@ -518,18 +508,14 @@
                                   <col style="width: 27%" />
                                   <col style="width: 73%" />
                                 </colgroup>
-                                <tbody>
+                                <tbody class="consignee-body">
                                   <tr class="shipping_label">
-                                    <td colspan="2" class="customerdata_label">
-                                      Details of Consignee | Shipped to :
-                                    </td>
-                                  </tr>
-                                  <tr class="shipping_name">
-                                    <td class="customerdata_item_label">
-                                      Name
-                                    </td>
-                                    <td class="special" data-editor=".customerdata td.special">
-                                      Shree Krishna Traders – Warehouse
+                                    <td colspan="2" class="customerdata_label"
+                                      data-editor=".customerdata td.customerdata_label"
+                                      style="text-align: left; padding-left: 5px;">
+                                      <div>Details of Consignee | Shipped to :</div>
+                                      <div class="shipping_name_text"
+                                        style="font-size: 10px !important; font-weight: bold;">{{consigneeName}}</div>
                                     </td>
                                   </tr>
                                   <tr class="shipping_address">
@@ -538,10 +524,8 @@
                                     </td>
                                     <td style="">
                                       <div style="overflow: hidden">
-                                        Warehouse No. 12, GIDC Industrial
-                                        Estate, Phase-3<span class="shippingState">, Gujarat</span>, India<span
-                                          class="shippingPincode">
-                                          - 390010</span>
+                                        {{consigneeAddress}}<span class="shippingState">, {{placeOfSupply}}</span>,
+                                        India<span class="shippingPincode"> - {{consigneePincode}}</span>
                                       </div>
                                     </td>
                                   </tr>
@@ -560,20 +544,20 @@
                                     <td class="customerdata_item_label">
                                       Phone
                                     </td>
-                                    <td style="">+91 91234 56789</td>
+                                    <td style="">{{consigneePhone}}</td>
                                   </tr>
 
                                   <tr class="shipping_gstin">
                                     <td class="customerdata_item_label">
                                       GSTIN
                                     </td>
-                                    <td class="cmp_gstno">24PQRSX6789L1Z2</td>
+                                    <td class="cmp_gstno">{{consigneeGstin}}</td>
                                   </tr>
                                   <tr class="shipping_state">
                                     <td class="customerdata_item_label">
                                       State
                                     </td>
-                                    <td style="">Gujarat ( 24 )</td>
+                                    <td style="">{{consigneeState}}</td>
                                   </tr>
                                 </tbody>
                               </table>
@@ -594,22 +578,20 @@
                                       data-editor=".invoicedata td.invoicedata_item_label">
                                       Invoice No.
                                     </td>
-                                    <td class="special" data-editor=".invoicedata td.special">
-                                      A24
-                                    </td>
+                                    <td class="special" data-editor=".invoicedata td.special">{{invoiceNo}}</td>
                                   </tr>
                                   <tr class="invoice_date">
                                     <td class="invoicedata_item_label">
                                       Invoice Date
                                     </td>
-                                    <td>02-Feb-2026</td>
+                                    <td>{{invoiceDate}}</td>
                                   </tr>
 
                                   <tr class="transport_name">
                                     <td class="invoicedata_item_label">
                                       Transport
                                     </td>
-                                    <td>Hand Delivery</td>
+                                    <td>{{transportMode}}</td>
                                   </tr>
                                 </tbody>
                               </table>

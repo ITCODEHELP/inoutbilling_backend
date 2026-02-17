@@ -42,7 +42,7 @@ const mapSchemaKeyToDefaultTitle = (schemaKey) => {
         'saleOrder': 'SALE ORDER',
         'purchaseInvoice': 'PURCHASE INVOICE',
         'jobWork': 'JOB WORK',
-        'multiCurrencyInvoice': 'PACKING LIST',
+        'multiCurrencyInvoice': 'MULTI CURRENCY INVOICE',
         'inwardPayment': 'RECEIPT VOUCHER',
         'outwardPayment': 'PAYMENT VOUCHER',
         'dailyExpense': 'EXPENSE VOUCHER',

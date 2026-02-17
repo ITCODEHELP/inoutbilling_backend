@@ -43,15 +43,19 @@ const calculateDocumentTotals = async (userId, documentData, branchId = null) =>
     let totalTax = 0;
 
     const items = Array.isArray(documentData.items) ? documentData.items : [];
+
     const calculatedItems = items.map(item => {
         const qty = Number(item.qty || 0);
         const price = Number(item.price || 0);
+
         const discount = Number(item.discount || item.discountValue || 0); // Accept both field names
         const discountType = item.discountType || 'Percentage';
         const igstRate = Number(item.igst || 0);
 
         // Step 1: Calculate base amount (qty × price)
         const baseAmount = qty * price;
+
+        // Step 2: Calculate tax on base amount
 
         // Step 2: Calculate tax on base amount
         let cgst = 0, sgst = 0, igst = 0;
@@ -90,11 +94,9 @@ const calculateDocumentTotals = async (userId, documentData, branchId = null) =>
         totalCGST += cgst;
         totalSGST += sgst;
         totalIGST += igst;
-        totalTax += taxAmount;
+        totalTaxable += taxAmount;
 
-        // For taxable value, we need to back-calculate from final total
-        // taxableValue = finalItemTotal - taxAmount (from discounted amount)
-        const taxableValue = baseAmount; // Keep base as taxable for reporting
+        const taxableValue = baseAmount;
 
         return {
             ...item,
@@ -120,16 +122,14 @@ const calculateDocumentTotals = async (userId, documentData, branchId = null) =>
         totalTaxOnCharges += Number(charge.tax || 0);
     });
 
-    // 5. Calculate invoice totals from final item totals
+    // 5. Aggregates
     const sumOfItemTotals = calculatedItems.reduce((sum, item) => sum + item.total, 0);
     let grandTotal = sumOfItemTotals + totalChargeAmount + totalTaxOnCharges;
 
     const finalGrandTotal = Math.round(grandTotal * 100) / 100;
     const roundOff = 0; // No rounding if we keep decimals, or keep it as 0
 
-    // Calculate totalTaxable from base amounts (for reporting purposes)
     const totalTaxableForReporting = calculatedItems.reduce((sum, item) => sum + item.taxableValue, 0);
-
     return {
         items: calculatedItems,
         totals: {

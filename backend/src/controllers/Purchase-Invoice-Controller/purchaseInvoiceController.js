@@ -591,10 +591,10 @@ const updatePurchaseInvoice = async (req, res) => {
             };
         }
 
-        // 1.7️⃣ Normalize paymentType to uppercase
-        if (bodyData.paymentType && typeof bodyData.paymentType === 'string') {
-            bodyData.paymentType = bodyData.paymentType.toUpperCase();
-        }
+        // 1.7️⃣ Normalize paymentType to uppercase - REMOVED to support Title Case and 'None'
+        // if (bodyData.paymentType && typeof bodyData.paymentType === 'string') {
+        //     bodyData.paymentType = bodyData.paymentType.toUpperCase();
+        // }
 
         // 2️⃣ Handle attachments
         if (req.files && req.files.length > 0) {
@@ -647,7 +647,7 @@ const updatePurchaseInvoice = async (req, res) => {
         const userData = await User.findById(req.user._id);
         const options = getCopyOptions(req);
         const pdfBuffer = await generatePurchaseInvoicePDF(invoice, userData || {}, options);
-        const pdfDir = 'src/uploads/invoices/pdf';
+        const pdfDir = path.join(__dirname, '../../uploads/invoices/pdf');
         if (!fs.existsSync(pdfDir)) {
             fs.mkdirSync(pdfDir, { recursive: true });
         }
