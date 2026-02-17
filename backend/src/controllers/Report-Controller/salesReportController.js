@@ -12,8 +12,18 @@ class SalesReportController {
             // Validate request body
             const {
                 filters = {},
-                options = {}
+                options = {},
+                selectedFields = [],
+                groupByCustomer = false,
+                groupByCurrency = false,
+                includeCancelled = false
             } = req.body;
+
+            // Merge top-level parameters into filters for backward compatibility and model structure
+            filters.selectedFields = selectedFields;
+            filters.groupByCustomer = groupByCustomer;
+            filters.groupByCurrency = groupByCurrency;
+            filters.includeCancelled = includeCancelled;
 
             // Validate filters
             const validationErrors = SalesReportController.validateFilters(filters);
@@ -101,15 +111,15 @@ class SalesReportController {
         // Validate date range
         if (filters.dateRange) {
             const { from, to } = filters.dateRange;
-            
+
             if (from && !this.isValidDate(from)) {
                 errors.push('Invalid date range "from" value');
             }
-            
+
             if (to && !this.isValidDate(to)) {
                 errors.push('Invalid date range "to" value');
             }
-            
+
             if (from && to && new Date(from) > new Date(to)) {
                 errors.push('Date range "from" cannot be after "to"');
             }
@@ -173,7 +183,7 @@ class SalesReportController {
                 'createdAt',
                 'updatedAt'
             ];
-            
+
             if (!allowedSortFields.includes(options.sortBy)) {
                 errors.push(`Invalid sort field. Allowed fields: ${allowedSortFields.join(', ')}`);
             }
@@ -283,7 +293,7 @@ class SalesReportController {
     static async getReportStatistics(req, res) {
         try {
             const { filters = {} } = req.body;
-            
+
             // Add user ID to filters
             filters.userId = req.user._id;
 

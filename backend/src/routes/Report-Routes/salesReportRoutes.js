@@ -39,7 +39,7 @@ router.post('/sales', protect, SalesReportController.generateSalesReport);
  */
 router.get('/sales/metadata', protect, SalesReportController.getFilterMetadata);
 
-/**
+/** 
  * @route   POST /api/reports/sales/statistics
  * @desc    Get report statistics (dashboard data)
  * @access  Private
