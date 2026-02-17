@@ -34,6 +34,9 @@ const saleInvoiceSchema = new mongoose.Schema({
         title: { type: String },
         ms: { type: String, required: [true, 'ms is required'] },
         address: { type: String },
+        city: { type: String },
+        state: { type: String },
+        pincode: { type: String },
         contactPerson: { type: String },
         phone: { type: String },
         gstinPan: { type: String },
@@ -41,6 +44,7 @@ const saleInvoiceSchema = new mongoose.Schema({
         shipTo: { type: String },
         placeOfSupply: { type: String, required: [true, 'placeOfSupply is required'] }
     },
+    exporterDetails: { type: String },
     // Section 2: Invoice Details
     invoiceDetails: {
         invoiceType: { type: String, index: true },
