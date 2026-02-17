@@ -74,8 +74,8 @@ const purchaseInvoiceSchema = new mongoose.Schema({
     paymentType: {
         type: String,
         required: [false, 'Payment Type is required'], // Made optional for 'None' or handle defaults
-        enum: ['CREDIT', 'CASH', 'CHEQUE', 'ONLINE', 'None', 'Credit', 'Cash', 'Cheque', 'Online'],
-        default: 'Credit',
+        enum: ['NONE', 'CREDIT', 'CASH', 'CHEQUE', 'ONLINE'],
+        default: 'CREDIT',
         index: true
     },
 
