@@ -598,6 +598,7 @@ const resolveItemLogic = async (userId, itemInput) => {
         hsnSac: itemInput.hsnSac || itemInput.hsnCode || product.hsnSac,
         uom: itemInput.uom || product.unitOfMeasurement,
         productGroup: itemInput.productGroup || product.productGroup,
+        productImageUrl: (product.images && product.images.length > 0) ? product.images[0].filePath : (itemInput.productImageUrl || ''),
         qty: Number(itemInput.qty || 1),
         discountType: itemInput.discountType || (product.inventoryType === 'Serial' ? (product.serialData?.saleDiscount?.type || (product.saleDiscount?.type || 'Flat')) : (product.saleDiscount?.type || 'Flat'))
     };
@@ -642,7 +643,20 @@ const resolveItemLogic = async (userId, itemInput) => {
     const igstAmount = taxableValue * (resolvedItem.igst / 100);
     const cgstAmount = taxableValue * (resolvedItem.cgst / 100);
     const sgstAmount = taxableValue * (resolvedItem.sgst / 100);
-    const total = taxableValue + igstAmount + cgstAmount + sgstAmount;
+
+    // 🎯 Fix: total should be taxableValue + (IGST OR CGST+SGST)
+    // If IGST is non-zero, assume it's inter-state.
+    let taxAmount = 0;
+    if (resolvedItem.igst > 0) {
+        taxAmount = igstAmount;
+        // If IGST is explicitly provided, zero out CGST/SGST to avoid confusion in downstream totals
+        resolvedItem.cgst = 0;
+        resolvedItem.sgst = 0;
+    } else {
+        taxAmount = cgstAmount + sgstAmount;
+    }
+
+    const total = taxableValue + taxAmount;
 
     resolvedItem.taxableValue = Number(taxableValue.toFixed(2));
     resolvedItem.total = Number(total.toFixed(2));
@@ -853,6 +867,32 @@ const handleCreateDynamicInvoiceLogic = async (req) => {
 
     if (!bodyData.items || !Array.isArray(bodyData.items)) throw new Error("Items array is required");
 
+    // 🎯 1.5 Auto-resolve Customer Details if missing (city, state, pincode, contact person)
+    if (bodyData.customerInformation && bodyData.customerInformation.ms) {
+        try {
+            const searchUserId = req.user.isStaff ? req.user.ownerRef : req.user._id;
+            const customer = await Customer.findOne({
+                userId: searchUserId,
+                companyName: bodyData.customerInformation.ms
+            }).lean();
+
+            if (customer) {
+                // Map billing address fields if missing in the payload
+                if (customer.billingAddress) {
+                    bodyData.customerInformation.city = bodyData.customerInformation.city || customer.billingAddress.city;
+                    bodyData.customerInformation.state = bodyData.customerInformation.state || customer.billingAddress.state;
+                    bodyData.customerInformation.pincode = bodyData.customerInformation.pincode || customer.billingAddress.pincode;
+                }
+                // Map contact person if missing
+                if (customer.contactPerson) {
+                    bodyData.customerInformation.contactPerson = bodyData.customerInformation.contactPerson || customer.contactPerson;
+                }
+            }
+        } catch (err) {
+            console.error("Customer Auto-Resolution Error:", err.message);
+        }
+    }
+
     // 2. Resolve Products and Calculate Item Totals
     let totalTaxable = 0;
     let totalCGST = 0;
@@ -897,9 +937,14 @@ const handleCreateDynamicInvoiceLogic = async (req) => {
         const taxableVal = Number(resolved.taxableValue || 0);
 
         totalTaxable += taxableVal;
-        totalIGST += taxableVal * (igstRate / 100);
-        totalCGST += taxableVal * (cgstRate / 100);
-        totalSGST += taxableVal * (sgstRate / 100);
+
+        // Mutually exclusive: IGST OR CGST+SGST
+        if (igstRate > 0) {
+            totalIGST += taxableVal * (igstRate / 100);
+        } else {
+            totalCGST += taxableVal * (cgstRate / 100);
+            totalSGST += taxableVal * (sgstRate / 100);
+        }
 
         resolvedItems.push(resolved);
     }

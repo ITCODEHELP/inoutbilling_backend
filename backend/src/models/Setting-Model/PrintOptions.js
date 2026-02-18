@@ -39,6 +39,7 @@ const printOptionsSchema = new mongoose.Schema({
         hideRateColumn: { type: Boolean, default: false },
         hideQuantityColumn: { type: Boolean, default: false },
         hideHsnColumn: { type: Boolean, default: false },
+        hideDiscountColumn: { type: Boolean, default: false },
         showUomDifferentColumn: { type: Boolean, default: false },
         hideSrNoAdditionalCharges: { type: Boolean, default: false },
         hideTotalQuantity: { type: Boolean, default: false }

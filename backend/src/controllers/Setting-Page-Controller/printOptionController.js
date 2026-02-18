@@ -93,6 +93,39 @@ const savePrintOptions = async (req, res) => {
     }
 };
 
+/**
+ * @desc    Get print options for the authenticated user
+ * @route   GET /api/print-options
+ * @access  Private (JWT Protected)
+ */
+const getPrintOptions = async (req, res) => {
+    try {
+        const userId = req.user._id;
+        const printOptions = await PrintOptions.findOne({ userId });
+
+        if (!printOptions) {
+            return res.status(200).json({
+                success: true,
+                data: null,
+                message: 'No print options found'
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            data: printOptions
+        });
+    } catch (error) {
+        console.error('Error fetching print options:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to fetch print options',
+            error: error.message
+        });
+    }
+};
+
 module.exports = {
-    savePrintOptions
+    savePrintOptions,
+    getPrintOptions
 };

@@ -5,7 +5,7 @@ class SalesProductReportModel {
     static async getSalesProductReport(filters = {}) {
         try {
             const pipeline = [];
-            
+
             // Match by userId
             if (filters.userId) {
                 pipeline.push({
@@ -23,9 +23,15 @@ class SalesProductReportModel {
 
             // Customer/Vendor filter
             if (filters.customerVendor) {
-                pipeline.push({
-                    $match: { 'customerInformation.ms': new RegExp(filters.customerVendor, 'i') }
-                });
+                const customersArr = typeof filters.customerVendor === 'string'
+                    ? filters.customerVendor.split(',').map(c => c.trim()).filter(Boolean)
+                    : [filters.customerVendor];
+
+                if (customersArr.length > 0) {
+                    pipeline.push({
+                        $match: { 'customerInformation.ms': new RegExp(customersArr.join('|'), 'i') }
+                    });
+                }
             }
 
             // Invoice number filter
@@ -66,7 +72,7 @@ class SalesProductReportModel {
                             'lessThanOrEqual': '$lte',
                             'contains': '$regex'
                         };
-                        
+
                         const operator = operatorMap[filter.operator];
                         if (operator) {
                             if (operator === '$regex') {
@@ -83,15 +89,15 @@ class SalesProductReportModel {
             // Group by product
             const groupBy = filters.groupProductBy || 'Title with GST%';
             let groupId = {};
-            
-            switch(groupBy) {
+
+            switch (groupBy) {
                 case 'Title with GST%':
                     groupId = {
                         productName: '$items.productName',
                         gstPercentage: {
                             $cond: {
                                 if: { $gt: ['$items.totalTax', 0] },
-                                then: { 
+                                then: {
                                     $multiply: [
                                         { $divide: ['$items.totalTax', '$items.total'] },
                                         100
@@ -111,7 +117,7 @@ class SalesProductReportModel {
                         gstPercentage: {
                             $cond: {
                                 if: { $gt: ['$items.totalTax', 0] },
-                                then: { 
+                                then: {
                                     $multiply: [
                                         { $divide: ['$items.totalTax', '$items.total'] },
                                         100
@@ -129,7 +135,7 @@ class SalesProductReportModel {
                         gstPercentage: {
                             $cond: {
                                 if: { $gt: ['$items.totalTax', 0] },
-                                then: { 
+                                then: {
                                     $multiply: [
                                         { $divide: ['$items.totalTax', '$items.total'] },
                                         100
@@ -183,7 +189,7 @@ class SalesProductReportModel {
             }
 
             const result = await SaleInvoice.aggregate(pipeline);
-            
+
             return {
                 success: true,
                 data: result,
