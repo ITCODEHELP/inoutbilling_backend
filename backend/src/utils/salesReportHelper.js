@@ -165,7 +165,7 @@ const generateSalesReportHtml = (data, filters, user = {}) => {
                 </div>
 
                 <div class="report-title">
-                    <h2>Sales Register</h2>
+                    <h2>Sales Report</h2>
                     <div>${dateRangeStr}</div>
                 </div>
 

@@ -624,7 +624,7 @@ Extends the standard filter object with email details.
     "to": "recipient@example.com",
     "cc": "manager@example.com", 
     "bcc": "archive@example.com",
-    "subject": "Sales Register - Feb 2026",
+    "subject": "Sales Report - Feb 2026",
     "body": "<p>Dear User, please find...</p>"
     }
 }
