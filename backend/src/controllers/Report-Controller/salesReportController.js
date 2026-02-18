@@ -1,5 +1,12 @@
 const SalesReportModel = require('../../models/Report-Model/salesReportModel');
 const SaleInvoice = require('../../models/Sales-Invoice-Model/SaleInvoice');
+const { generateSalesReportHtml: generateNewSalesReportHtml } = require('../../utils/salesReportTemplate');
+const {
+    generateSalesReportPdf: generateNewSalesReportPdf,
+    generateSalesReportExcel: generateNewSalesReportExcel
+} = require('../../utils/salesReportExportHelper');
+const { sendExportSalesReportEmail } = require('../../utils/emailHelper');
+
 
 class SalesReportController {
     /**
@@ -355,6 +362,160 @@ class SalesReportController {
             });
         }
     }
+
+    /**
+     * Generate HTML for printing
+     */
+    static async printSalesReport(req, res) {
+        try {
+            const { filters = {}, options = {}, selectedFields = [], groupByCustomer = false, groupByCurrency = false, includeCancelled = false } = req.body;
+
+            // Setup filters (same as generateSalesReport)
+            filters.selectedColumns = selectedFields; // Map frontend field
+            filters.groupByCustomer = groupByCustomer;
+            filters.groupByCurrency = groupByCurrency;
+            filters.includeCancelled = includeCancelled;
+            filters.userId = req.user._id;
+
+            // Fetch all data for print
+            const reportOptions = { ...options, limit: 1000000, page: 1 };
+
+            const result = await SalesReportModel.getSalesReport(filters, reportOptions);
+
+            if (!result.success || !result.data.reports || result.data.reports.length === 0) {
+                return res.status(400).json({ success: false, message: 'No data available to generate report' });
+            }
+
+            const html = generateNewSalesReportHtml(result.data, filters, req.user);
+            res.send(html);
+
+        } catch (error) {
+            console.error('Print Report Error:', error);
+            res.status(500).json({ success: false, message: 'Internal server error' });
+        }
+    }
+
+    /**
+     * Download PDF
+     */
+    static async downloadSalesReportPdf(req, res) {
+        try {
+            const { filters = {}, options = {}, selectedFields = [], groupByCustomer = false, groupByCurrency = false, includeCancelled = false } = req.body;
+
+            filters.selectedColumns = selectedFields;
+            filters.groupByCustomer = groupByCustomer;
+            filters.groupByCurrency = groupByCurrency;
+            filters.includeCancelled = includeCancelled;
+            filters.userId = req.user._id;
+
+            const reportOptions = { ...options, limit: 1000000, page: 1 };
+
+            const result = await SalesReportModel.getSalesReport(filters, reportOptions);
+
+            if (!result.success || !result.data.reports || result.data.reports.length === 0) {
+                return res.status(400).json({ success: false, message: 'No data available to generate report' });
+            }
+
+            const pdfBuffer = await generateNewSalesReportPdf(result.data, filters, req.user);
+
+            res.set({
+                'Content-Type': 'application/pdf',
+                'Content-Disposition': `attachment; filename="Sales_Report.pdf"`,
+                'Content-Length': pdfBuffer.length
+            });
+            res.send(pdfBuffer);
+
+        } catch (error) {
+            console.error('PDF Download Error:', error);
+            res.status(500).json({ success: false, message: 'Internal server error' });
+        }
+    }
+
+    /**
+     * Export Excel
+     */
+    static async exportSalesReportExcel(req, res) {
+        try {
+            const { filters = {}, options = {}, selectedFields = [], groupByCustomer = false, groupByCurrency = false, includeCancelled = false } = req.body;
+
+            filters.selectedColumns = selectedFields;
+            filters.groupByCustomer = groupByCustomer;
+            filters.groupByCurrency = groupByCurrency;
+            filters.includeCancelled = includeCancelled;
+            filters.userId = req.user._id;
+
+            const reportOptions = { ...options, limit: 1000000, page: 1 };
+
+            const result = await SalesReportModel.getSalesReport(filters, reportOptions);
+
+            if (!result.success || !result.data.reports || result.data.reports.length === 0) {
+                return res.status(400).json({ success: false, message: 'No data available to generate report' });
+            }
+
+            const buffer = await generateNewSalesReportExcel(result.data, filters, req.user);
+
+            res.set({
+                'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'Content-Disposition': `attachment; filename="Sales_Report.xlsx"`,
+                'Content-Length': buffer.length
+            });
+            res.send(buffer);
+
+        } catch (error) {
+            console.error('Excel Export Error:', error);
+            res.status(500).json({ success: false, message: 'Internal server error' });
+        }
+    }
+
+    /**
+     * Email Report
+     */
+    static async emailSalesReport(req, res) {
+        try {
+            const {
+                to, cc, bcc, subject, body,
+                filters = {}, options = {}, selectedFields = [],
+                groupByCustomer = false, groupByCurrency = false, includeCancelled = false
+            } = req.body;
+
+            // Validation
+            if (!to) {
+                return res.status(400).json({ success: false, message: 'Recipient email (to) is required' });
+            }
+            if (!subject) {
+                return res.status(400).json({ success: false, message: 'Email subject is required' });
+            }
+            if (!body) {
+                return res.status(400).json({ success: false, message: 'Email body is required' });
+            }
+
+            filters.selectedColumns = selectedFields;
+            filters.groupByCustomer = groupByCustomer;
+            filters.groupByCurrency = groupByCurrency;
+            filters.includeCancelled = includeCancelled;
+            filters.userId = req.user._id;
+
+            const reportOptions = { ...options, limit: 1000000, page: 1 };
+
+            const result = await SalesReportModel.getSalesReport(filters, reportOptions);
+
+            if (!result.success || !result.data.reports || result.data.reports.length === 0) {
+                return res.status(400).json({ success: false, message: 'No data available to generate report' });
+            }
+
+            // Prepare email params
+            const emailParams = { to, cc, bcc, subject, body };
+
+            await sendExportSalesReportEmail(result.data, filters, req.user, emailParams);
+
+            res.json({ success: true, message: 'Email sent successfully' });
+
+        } catch (error) {
+            console.error('Email Report Error:', error);
+            res.status(500).json({ success: false, message: 'Internal server error' });
+        }
+    }
 }
+
 
 module.exports = SalesReportController;

@@ -5,6 +5,60 @@ const { generatePurchaseInvoicePDF } = require('./purchaseInvoicePdfHelper');
 const { generateReceiptVoucherPDF } = require('./receiptPdfHelper');
 const User = require('../models/User-Model/User');
 const { getSelectedPrintTemplate } = require('./documentHelper');
+const { generateSalesReportPdf } = require('./salesReportHelper');
+const { generateSalesReportPdf: generateProprietarySalesReportPdf } = require('./salesReportExportHelper');
+
+// ... existing imports ...
+
+const sendExportSalesReportEmail = async (data, filters, user = {}, emailParams = {}) => {
+    try {
+        const { to, cc, bcc, subject, body } = emailParams;
+
+        if (!to) {
+            console.error('No recipient email provided for sales report.');
+            return { success: false, message: 'Recipient email is required' };
+        }
+
+        // Use the new proprietary Sales Report PDF generator
+        const pdfBuffer = await generateProprietarySalesReportPdf(data, filters, user);
+
+        const transporter = nodemailer.createTransport({
+            host: process.env.SMTP_HOST,
+            port: Number(process.env.SMTP_PORT),
+            secure: Number(process.env.SMTP_PORT) === 465,
+            auth: {
+                user: process.env.SMTP_USER,
+                pass: process.env.SMTP_PASS,
+            },
+            tls: {
+                rejectUnauthorized: false,
+                minVersion: 'TLSv1.2'
+            }
+        });
+
+        const mailOptions = {
+            from: `"${process.env.FROM_NAME}" <${process.env.FROM_EMAIL}>`,
+            to,
+            cc,
+            bcc,
+            subject: subject || `Sales Report`,
+            html: body || `<p>Please find attached the Sales Report PDF.</p>`,
+            attachments: [
+                {
+                    filename: `Sales_Report.pdf`,
+                    content: pdfBuffer,
+                    contentType: 'application/pdf'
+                }
+            ]
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        return { success: true, messageId: info.messageId };
+    } catch (error) {
+        console.error('Error sending sales report email:', error);
+        throw error;
+    }
+};
 
 const sendInvoiceEmail = async (invoices, email, isPurchase = false, options = { original: true }, docType = 'Sale Invoice') => {
     try {
@@ -352,4 +406,53 @@ const sendLedgerEmail = async (ledgerData, email) => {
     }
 };
 
-module.exports = { sendInvoiceEmail, sendReceiptEmail, sendOutwardPaymentEmail, sendProformaEmail, sendDeliveryChallanEmail, sendLedgerEmail };
+const sendSalesReportEmail = async (data, filters, email, message, user = {}) => {
+    try {
+        if (!email) return;
+
+        const pdfBuffer = await generateSalesReportPdf(data, filters, user);
+
+        const transporter = nodemailer.createTransport({
+            host: process.env.SMTP_HOST,
+            port: Number(process.env.SMTP_PORT),
+            secure: Number(process.env.SMTP_PORT) === 465,
+            auth: {
+                user: process.env.SMTP_USER,
+                pass: process.env.SMTP_PASS,
+            },
+            tls: {
+                rejectUnauthorized: false,
+                minVersion: 'TLSv1.2'
+            }
+        });
+
+        const dateStr = new Date().toLocaleDateString();
+
+        const mailOptions = {
+            from: `"${process.env.FROM_NAME}" <${process.env.FROM_EMAIL}>`,
+            to: email,
+            subject: `Sales Report - ${dateStr}`,
+            html: `
+                <p>Dear User,</p>
+                <p>Please find attached the Sales Report.</p>
+                ${message ? `<p><strong>Message:</strong> ${message}</p>` : ''}
+                <p>Thank you!</p>
+            `,
+            attachments: [
+                {
+                    filename: `Sales_Report_${new Date().toISOString().split('T')[0]}.pdf`,
+                    content: pdfBuffer,
+                    contentType: 'application/pdf'
+                }
+            ]
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        return { success: true, messageId: info.messageId };
+    } catch (error) {
+        console.error('Error sending sales report email:', error);
+        throw error;
+    }
+};
+
+module.exports = { sendInvoiceEmail, sendReceiptEmail, sendOutwardPaymentEmail, sendProformaEmail, sendDeliveryChallanEmail, sendLedgerEmail, sendSalesReportEmail, sendExportSalesReportEmail };

@@ -32,6 +32,34 @@ const { protect } = require('../../middlewares/authMiddleware');
 router.post('/sales', protect, SalesReportController.generateSalesReport);
 
 /**
+ * @route   POST /api/reports/sales/print
+ * @desc    Generate HTML for printing
+ * @access  Private
+ */
+router.post('/sales/print', protect, SalesReportController.printSalesReport);
+
+/**
+ * @route   POST /api/reports/sales/download
+ * @desc    Download Sales Report PDF
+ * @access  Private
+ */
+router.post('/sales/download', protect, SalesReportController.downloadSalesReportPdf);
+
+/**
+ * @route   POST /api/reports/sales/export
+ * @desc    Export Sales Report to Excel
+ * @access  Private
+ */
+router.post('/sales/export', protect, SalesReportController.exportSalesReportExcel);
+
+/**
+ * @route   POST /api/reports/sales/email
+ * @desc    Email Sales Report PDF
+ * @access  Private
+ */
+router.post('/sales/email', protect, SalesReportController.emailSalesReport);
+
+/**
  * @route   GET /api/reports/sales/metadata
  * @desc    Get available filter fields and column options
  * @access  Private
