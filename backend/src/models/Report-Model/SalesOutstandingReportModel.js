@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const SaleInvoice = require('../Sales-Invoice-Model/SaleInvoice');
 
 class SalesOutstandingReportModel {
@@ -14,6 +15,7 @@ class SalesOutstandingReportModel {
             staffName,
             invoiceNumber,
             invoiceSeries,
+            invoiceDateRange,
             dueDateRange,
             dueDaysRange,
             includePaid = false,
@@ -38,7 +40,9 @@ class SalesOutstandingReportModel {
 
         // Add userId filter for data isolation (always required)
         if (filters.userId) {
-            matchStage.userId = filters.userId;
+            matchStage.userId = typeof filters.userId === 'string'
+                ? new mongoose.Types.ObjectId(filters.userId)
+                : filters.userId;
         }
 
         // Customer/Vendor filter - indexed field
@@ -76,35 +80,60 @@ class SalesOutstandingReportModel {
             };
         }
 
+        // Staff name filter
+        if (staffName) {
+            matchStage['invoiceDetails.createdBy'] = {
+                $regex: staffName,
+                $options: 'i'
+            };
+        }
+
         // Due date range filter - indexed field
         if (dueDateRange && (dueDateRange.from || dueDateRange.to)) {
             const dateFilter = {};
-            if (dueDateRange.from) {
-                dateFilter.$gte = new Date(dueDateRange.from);
-            }
-            if (dueDateRange.to) {
-                dateFilter.$lte = new Date(dueDateRange.to);
-            }
+            if (dueDateRange.from) dateFilter.$gte = new Date(dueDateRange.from);
+            if (dueDateRange.to) dateFilter.$lte = new Date(dueDateRange.to);
             matchStage.dueDate = dateFilter;
         }
 
-        // Include/exclude paid invoices
-        if (!includePaid) {
-            matchStage.$or = [
-                { 'totals.grandTotal': { $gt: 0 } },
-                { 'totals.grandTotal': { $exists: true, $ne: 0 } }
-            ];
+        // Invoice date range filter - indexed field
+        if (invoiceDateRange && (invoiceDateRange.from || invoiceDateRange.to)) {
+            const dateFilter = {};
+            if (invoiceDateRange.from) dateFilter.$gte = new Date(invoiceDateRange.from);
+            if (invoiceDateRange.to) dateFilter.$lte = new Date(invoiceDateRange.to);
+            matchStage['invoiceDetails.date'] = dateFilter;
         }
 
+        // Initial match stage is for DB-indexed fields only.
+        // We will filter by outstandingAmount > 0 in the calculated stage below.
+
         // Advanced dynamic filters with field validation
+        const calculatedFieldNames = ['daysOverdue', 'outstandingAmount', 'dueDaysCategory'];
+        const dbFilters = [];
+        const calculatedFilters = [];
+
         if (advanceFilters && advanceFilters.length > 0) {
             advanceFilters.forEach(filter => {
                 const { field, operator, value } = filter;
                 const condition = this.buildAdvanceFilterCondition(field, operator, value);
                 if (condition) {
-                    Object.assign(matchStage, condition);
+                    if (calculatedFieldNames.includes(field)) {
+                        calculatedFilters.push(condition);
+                    } else {
+                        dbFilters.push(condition);
+                    }
                 }
             });
+        }
+
+        // Fix: If not including paid, also ensure outstandingAmount > 0
+        if (!includePaid) {
+            calculatedFilters.push({ outstandingAmount: { $gt: 0 } });
+        }
+
+        // Apply db-level advanced filters
+        if (dbFilters.length > 0) {
+            dbFilters.forEach(cond => Object.assign(matchStage, cond));
         }
 
         // Add match stage if there are conditions
@@ -132,21 +161,16 @@ class SalesOutstandingReportModel {
             $addFields: {
                 // Calculate days overdue
                 daysOverdue: {
-                    $max: [
-                        0,
-                        {
-                            $divide: [
-                                { $subtract: [new Date(), '$dueDate'] },
-                                1000 * 60 * 60 * 24 // Convert to days
-                            ]
-                        }
+                    $divide: [
+                        { $subtract: [new Date(), '$dueDate'] },
+                        1000 * 60 * 60 * 24 // Convert to days
                     ]
                 },
-                // Calculate outstanding amount (simplified - in real app, track payments)
+                // Calculate outstanding amount using paidAmount from schema
                 outstandingAmount: {
                     $max: [
                         0,
-                        { $subtract: ['$totals.grandTotal', { $ifNull: ['$receivedAmount', 0] }] }
+                        { $subtract: [{ $ifNull: ['$totals.grandTotal', 0] }, { $ifNull: ['$paidAmount', 0] }] }
                     ]
                 },
                 // Due days category for grouping
@@ -164,6 +188,13 @@ class SalesOutstandingReportModel {
                 }
             }
         });
+
+        // Apply calculated-level advanced filters
+        if (calculatedFilters.length > 0) {
+            const calculatedMatch = {};
+            calculatedFilters.forEach(cond => Object.assign(calculatedMatch, cond));
+            pipeline.push({ $match: calculatedMatch });
+        }
 
         // Stage 4: Filter by due days range if specified
         if (dueDaysRange && (dueDaysRange.from !== undefined || dueDaysRange.to !== undefined)) {
@@ -232,6 +263,17 @@ class SalesOutstandingReportModel {
             'items.qty',
             'items.price',
             'items.total',
+            'customerInformation.city',
+            'customerInformation.state',
+            'customerInformation.shipToName',
+            'customerInformation.shipToState',
+            'customerInformation.shipToCity',
+            'invoiceDetails.vehicleNo',
+            'invoiceDetails.lrNo',
+            'invoiceDetails.ewayNo',
+            'items.itemNote',
+            'additionalNotes',
+            'totals.otherTaxAmounts',
             'daysOverdue',
             'outstandingAmount',
             'dueDaysCategory'
@@ -258,8 +300,17 @@ class SalesOutstandingReportModel {
             case 'greaterThan':
                 condition[field] = { $gt: value };
                 break;
+            case 'greaterThanEquals':
+                condition[field] = { $gte: value };
+                break;
             case 'lessThan':
                 condition[field] = { $lt: value };
+                break;
+            case 'lessThanEquals':
+                condition[field] = { $lte: value };
+                break;
+            case 'blank':
+                condition[field] = { $in: [null, '', undefined] };
                 break;
             case 'between':
                 if (Array.isArray(value) && value.length === 2) {
@@ -289,11 +340,7 @@ class SalesOutstandingReportModel {
 
         return selectedColumns.some(col =>
             col.startsWith('items.') ||
-            col.includes('product') ||
-            col.includes('hsn') ||
-            col.includes('qty') ||
-            col.includes('price') ||
-            col.includes('discount')
+            ['productName', 'hsnSac', 'productGroup', 'qty', 'price', 'discount', 'total'].some(key => col.includes(`items.${key}`))
         );
     }
 
@@ -457,6 +504,20 @@ class SalesOutstandingReportModel {
             }
         });
 
+        // Always include essential fields for payment reminders
+        if (!projection.customerInformation) projection.customerInformation = {};
+        projection.customerInformation.phone = 1;
+        projection.customerInformation.email = 1;
+        projection.customerInformation.ms = 1;
+
+        if (!projection.invoiceDetails) projection.invoiceDetails = {};
+        projection.invoiceDetails.invoiceNumber = 1;
+
+        if (!projection.totals) projection.totals = {};
+        projection.totals.grandTotal = 1;
+
+        projection.dueDate = 1;
+
         return projection;
     }
 
@@ -597,23 +658,33 @@ class SalesOutstandingReportModel {
     }
 
     /**
-     * Get available filter fields and their metadata for outstanding report
-     * @returns {Object} Available filters and columns
+     * Get available filter fields and their metadata for outstanding report with dynamic values
+     * @param {string} userId - User ID for data isolation
+     * @returns {Promise<Object>} Available filters, columns, and dynamic data
      */
-    static getFilterMetadata() {
+    static async getFilterMetadata(userId) {
+        // Fetch dynamic lists for filters
+        const [customers, productGroups, invoicePrefixes] = await Promise.all([
+            SaleInvoice.distinct('customerInformation.ms', { userId }),
+            SaleInvoice.distinct('items.productGroup', { userId }),
+            SaleInvoice.distinct('invoiceDetails.invoicePrefix', { userId })
+        ]);
+
         return {
             filterFields: {
                 customerVendor: {
                     label: 'Customer/Vendor',
                     type: 'string',
                     field: 'customerInformation.ms',
-                    operators: ['equals', 'contains']
+                    operators: ['equals', 'contains'],
+                    options: customers.sort()
                 },
                 productGroup: {
                     label: 'Product Group',
                     type: 'array',
                     field: 'items.productGroup',
-                    operators: ['equals', 'contains']
+                    operators: ['equals', 'contains'],
+                    options: productGroups.sort()
                 },
                 invoiceNumber: {
                     label: 'Invoice Number',
@@ -625,7 +696,8 @@ class SalesOutstandingReportModel {
                     label: 'Invoice Series',
                     type: 'string',
                     field: 'invoiceDetails.invoicePrefix',
-                    operators: ['equals', 'contains']
+                    operators: ['equals', 'contains'],
+                    options: invoicePrefixes.sort()
                 },
                 dueDateRange: {
                     label: 'Due Date Range',
@@ -675,9 +747,7 @@ class SalesOutstandingReportModel {
                     { field: 'totals.totalSGST', label: 'Total SGST' },
                     { field: 'totals.totalIGST', label: 'Total IGST' },
                     { field: 'totals.roundOff', label: 'Round Off' },
-                    { field: 'totals.totalInvoiceValue', label: 'Total Invoice Value' },
-                    { field: 'createdAt', label: 'Created At' },
-                    { field: 'updatedAt', label: 'Updated At' }
+                    { field: 'totals.totalInvoiceValue', label: 'Total Invoice Value' }
                 ],
                 itemLevel: [
                     { field: 'items.productName', label: 'Product Name' },
@@ -706,7 +776,12 @@ class SalesOutstandingReportModel {
                 { value: 'groupByDueDays', label: 'Group by Due Days' },
                 { value: 'groupByCustomer', label: 'Group by Customer' },
                 { value: 'groupByCurrency', label: 'Group by Currency' }
-            ]
+            ],
+            dynamicValues: {
+                customers: customers.sort(),
+                productGroups: productGroups.sort(),
+                invoicePrefixes: invoicePrefixes.sort()
+            }
         };
     }
 }

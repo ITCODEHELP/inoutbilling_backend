@@ -211,9 +211,17 @@ class SalesReportModel {
             'items.qty',
             'items.price',
             'items.total',
-            'items.cgst',
-            'items.sgst',
-            'items.igst'
+            'items.itemNote',
+            'customerInformation.city',
+            'customerInformation.state',
+            'customerInformation.shipToName',
+            'customerInformation.shipToState',
+            'customerInformation.shipToCity',
+            'invoiceDetails.vehicleNo',
+            'invoiceDetails.lrNo',
+            'invoiceDetails.ewayNo',
+            'additionalNotes',
+            'totals.otherTaxAmounts'
         ];
 
         // Validate field
@@ -237,8 +245,17 @@ class SalesReportModel {
             case 'greaterThan':
                 condition[field] = { $gt: value };
                 break;
+            case 'greaterThanEquals':
+                condition[field] = { $gte: value };
+                break;
             case 'lessThan':
                 condition[field] = { $lt: value };
+                break;
+            case 'lessThanEquals':
+                condition[field] = { $lte: value };
+                break;
+            case 'blank':
+                condition[field] = { $in: [null, '', undefined] };
                 break;
             case 'between':
                 if (Array.isArray(value) && value.length === 2) {
@@ -501,29 +518,48 @@ class SalesReportModel {
     }
 
     /**
-     * Get available filter fields and their metadata
-     * @returns {Object} Available filters and columns
+     * Get available filter fields and their metadata with dynamic values
+     * @param {string} userId - User ID for data isolation
+     * @returns {Promise<Object>} Available filters, columns, and dynamic data
      */
-    static getFilterMetadata() {
+    static async getFilterMetadata(userId) {
+        // Fetch dynamic lists for filters
+        const [customers, products, productGroups, invoicePrefixes] = await Promise.all([
+            SaleInvoice.distinct('customerInformation.ms', { userId }),
+            SaleInvoice.distinct('items.productName', { userId }),
+            SaleInvoice.distinct('items.productGroup', { userId }),
+            SaleInvoice.distinct('invoiceDetails.invoicePrefix', { userId })
+        ]);
+
         return {
             filterFields: {
                 customerVendor: {
                     label: 'Customer/Vendor',
                     type: 'string',
                     field: 'customerInformation.ms',
-                    operators: ['equals', 'contains']
+                    operators: ['equals', 'contains'],
+                    options: customers.sort()
                 },
                 products: {
                     label: 'Products',
                     type: 'array',
                     field: 'items.productName',
-                    operators: ['equals', 'contains']
+                    operators: ['equals', 'contains'],
+                    options: products.sort()
                 },
                 productGroup: {
                     label: 'Product Group',
                     type: 'array',
                     field: 'items.productGroup',
-                    operators: ['equals', 'contains']
+                    operators: ['equals', 'contains'],
+                    options: productGroups.sort()
+                },
+                invoiceSeries: {
+                    label: 'Invoice Series',
+                    type: 'string',
+                    field: 'invoiceDetails.invoicePrefix',
+                    operators: ['equals', 'contains'],
+                    options: invoicePrefixes.sort()
                 },
                 dateRange: {
                     label: 'Date Range',
@@ -531,32 +567,12 @@ class SalesReportModel {
                     field: 'invoiceDetails.date',
                     operators: ['between']
                 },
-                // REMOVED: staffName field not in schema
-                // staffName: {
-                //     label: 'Staff Name',
-                //     type: 'string',
-                //     field: 'staff.name',
-                //     operators: ['equals', 'contains']
-                // },
                 invoiceNumber: {
                     label: 'Invoice Number',
                     type: 'string',
                     field: 'invoiceDetails.invoiceNumber',
                     operators: ['equals', 'contains']
-                },
-                invoiceSeries: {
-                    label: 'Invoice Series',
-                    type: 'string',
-                    field: 'invoiceDetails.invoicePrefix',
-                    operators: ['equals', 'contains']
-                },
-                // REMOVED: serialNumber field not in schema
-                // serialNumber: {
-                //     label: 'Serial Number',
-                //     type: 'string',
-                //     field: 'serialNumber',
-                //     operators: ['equals', 'contains']
-                // }
+                }
             },
             availableColumns: {
                 invoiceLevel: [
@@ -585,9 +601,7 @@ class SalesReportModel {
                     { field: 'totals.totalSGST', label: 'Total SGST' },
                     { field: 'totals.totalIGST', label: 'Total IGST' },
                     { field: 'totals.roundOff', label: 'Round Off' },
-                    { field: 'totals.totalInvoiceValue', label: 'Total Invoice Value' },
-                    { field: 'createdAt', label: 'Created At' },
-                    { field: 'updatedAt', label: 'Updated At' }
+                    { field: 'totals.totalInvoiceValue', label: 'Total Invoice Value' }
                 ],
                 itemLevel: [
                     { field: 'items.productName', label: 'Product Name' },
@@ -611,7 +625,14 @@ class SalesReportModel {
                 { value: 'greaterThan', label: 'Greater Than' },
                 { value: 'lessThan', label: 'Less Than' },
                 { value: 'between', label: 'Between' }
-            ]
+            ],
+            // For select dropdowns directly
+            dynamicValues: {
+                customers: customers.sort(),
+                products: products.sort(),
+                productGroups: productGroups.sort(),
+                invoicePrefixes: invoicePrefixes.sort()
+            }
         };
     }
 }

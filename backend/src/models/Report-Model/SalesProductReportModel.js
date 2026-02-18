@@ -86,6 +86,19 @@ class SalesProductReportModel {
                 });
             }
 
+            // Add totalTax field for aggregation
+            pipeline.push({
+                $addFields: {
+                    'items.totalTax': {
+                        $add: [
+                            { $ifNull: ['$items.igst', 0] },
+                            { $ifNull: ['$items.cgst', 0] },
+                            { $ifNull: ['$items.sgst', 0] }
+                        ]
+                    }
+                }
+            });
+
             // Group by product
             const groupBy = filters.groupProductBy || 'Title with GST%';
             let groupId = {};
@@ -146,6 +159,9 @@ class SalesProductReportModel {
                         }
                     };
                     break;
+                case 'Product Group':
+                    groupId = { productGroup: '$items.productGroup' };
+                    break;
                 default:
                     groupId = { productName: '$items.productName' };
             }
@@ -155,8 +171,13 @@ class SalesProductReportModel {
                     _id: groupId,
                     totalQuantity: { $sum: '$items.qty' },
                     totalAmount: { $sum: '$items.total' },
+                    totalTaxableAmount: { $sum: { $ifNull: ['$items.taxableValue', 0] } },
+                    totalCGST: { $sum: { $ifNull: ['$items.cgst', 0] } },
+                    totalSGST: { $sum: { $ifNull: ['$items.sgst', 0] } },
+                    totalIGST: { $sum: { $ifNull: ['$items.igst', 0] } },
                     totalTax: { $sum: '$items.totalTax' },
                     avgPrice: { $avg: '$items.price' },
+                    primaryUOM: { $first: '$items.uom' },
                     invoiceCount: { $sum: 1 }
                 }
             });
@@ -164,19 +185,21 @@ class SalesProductReportModel {
             // Project final result
             const projectFields = {
                 _id: 0,
-                productName: '$_id.productName',
-                hsnSac: '$_id.hsnSac',
-                gstPercentage: '$_id.gstPercentage',
+                productName: { $ifNull: ['$_id.productName', null] },
+                hsnSac: { $ifNull: ['$_id.hsnSac', null] },
+                productGroup: { $ifNull: ['$_id.productGroup', null] },
+                gstPercentage: { $ifNull: ['$_id.gstPercentage', null] },
                 totalQuantity: 1,
                 totalAmount: 1,
-                totalTax: 1,
+                totalTaxableAmount: 1,
+                totalCGST: { $round: ['$totalCGST', 2] },
+                totalSGST: { $round: ['$totalSGST', 2] },
+                totalIGST: { $round: ['$totalIGST', 2] },
+                totalTax: { $round: ['$totalTax', 2] },
                 avgPrice: { $round: ['$avgPrice', 2] },
+                primaryUOM: 1,
                 invoiceCount: 1
             };
-
-            if (filters.showPrimaryUOM) {
-                projectFields.primaryUOM = '$items.uom';
-            }
 
             pipeline.push({ $project: projectFields });
 
@@ -205,37 +228,59 @@ class SalesProductReportModel {
         }
     }
 
-    static async getFilterMetadata() {
-        return {
-            success: true,
-            data: {
-                groupingOptions: [
-                    'Title with GST%',
-                    'HSN',
-                    'HSN with GST%',
-                    'Title with HSN with GST%'
-                ],
-                operators: [
-                    'equals',
-                    'notEquals',
-                    'greaterThan',
-                    'lessThan',
-                    'greaterThanOrEqual',
-                    'lessThanOrEqual',
-                    'contains'
-                ],
-                availableFields: [
-                    'items.productName',
-                    'items.total',
-                    'items.qty',
-                    'items.price',
-                    'items.totalTax',
-                    'customerInformation.ms',
-                    'invoiceDetails.invoiceNumber',
-                    'invoiceDetails.date'
-                ]
-            }
-        };
+    static async getFilterMetadata(userId) {
+        try {
+            const [customers, products, productGroups, invoicePrefixes] = await Promise.all([
+                SaleInvoice.distinct('customerInformation.ms', { userId }),
+                SaleInvoice.distinct('items.productName', { userId }),
+                SaleInvoice.distinct('items.productGroup', { userId }),
+                SaleInvoice.distinct('invoiceDetails.invoicePrefix', { userId })
+            ]);
+
+            return {
+                success: true,
+                data: {
+                    groupingOptions: [
+                        'Title with GST%',
+                        'HSN',
+                        'HSN with GST%',
+                        'Title with HSN with GST%',
+                        'Product Group'
+                    ],
+                    operators: [
+                        'equals',
+                        'notEquals',
+                        'greaterThan',
+                        'lessThan',
+                        'greaterThanOrEqual',
+                        'lessThanOrEqual',
+                        'contains'
+                    ],
+                    availableFields: [
+                        'items.productName',
+                        'items.total',
+                        'items.qty',
+                        'items.price',
+                        'items.totalTax',
+                        'customerInformation.ms',
+                        'invoiceDetails.invoiceNumber',
+                        'invoiceDetails.date'
+                    ],
+                    dynamicValues: {
+                        customers: customers.sort(),
+                        products: products.sort(),
+                        productGroups: productGroups.sort(),
+                        invoicePrefixes: invoicePrefixes.sort()
+                    }
+                }
+            };
+        } catch (error) {
+            return {
+                success: false,
+                message: error.message,
+                error: error
+            };
+        }
     }
 }
 

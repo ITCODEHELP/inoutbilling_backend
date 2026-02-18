@@ -71,7 +71,7 @@ class SalesOutstandingReportController {
      */
     static async getFilterMetadata(req, res) {
         try {
-            const metadata = SalesOutstandingReportModel.getFilterMetadata();
+            const metadata = await SalesOutstandingReportModel.getFilterMetadata(req.user._id);
 
             res.json({
                 success: true,
@@ -149,15 +149,16 @@ class SalesOutstandingReportController {
         // Validate date range
         if (filters.dueDateRange) {
             const { from, to } = filters.dueDateRange;
-            if (from && isNaN(Date.parse(from))) {
-                errors.push('Invalid due date range start date');
-            }
-            if (to && isNaN(Date.parse(to))) {
-                errors.push('Invalid due date range end date');
-            }
-            if (from && to && new Date(from) > new Date(to)) {
-                errors.push('Due date range start date must be before end date');
-            }
+            if (from && isNaN(Date.parse(from))) errors.push('Invalid due date range start date');
+            if (to && isNaN(Date.parse(to))) errors.push('Invalid due date range end date');
+            if (from && to && new Date(from) > new Date(to)) errors.push('Due date range start date must be before end date');
+        }
+
+        if (filters.invoiceDateRange) {
+            const { from, to } = filters.invoiceDateRange;
+            if (from && isNaN(Date.parse(from))) errors.push('Invalid invoice date range start date');
+            if (to && isNaN(Date.parse(to))) errors.push('Invalid invoice date range end date');
+            if (from && to && new Date(from) > new Date(to)) errors.push('Invoice date range start date must be before end date');
         }
 
         // Validate due days range
@@ -228,7 +229,7 @@ class SalesOutstandingReportController {
             'invoiceDetails.invoiceNumber',
             'createdAt'
         ];
-        
+
         if (options.sortBy && !allowedSortFields.includes(options.sortBy)) {
             errors.push('Invalid sort field');
         }

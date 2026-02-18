@@ -28,9 +28,9 @@ const bankDetailsSchema = new mongoose.Schema({
         validate: {
             validator: function (v) {
                 if (!v) return true; // Optional field
-                return /^[A-Z]{4}0[A-Z0-9]{6}$/.test(v);
+                return /^[A-Z]{4}[0-9][A-Z0-9]{6}$/.test(v);
             },
-            message: 'Invalid IFSC code format'
+            message: 'Invalid IFSC code format (Example: HDFC0001234)'
         }
     },
     swiftCode: {
@@ -40,7 +40,7 @@ const bankDetailsSchema = new mongoose.Schema({
         validate: {
             validator: function (v) {
                 if (!v) return true; // Optional field
-                return /^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/.test(v);
+                return /^[A-Z0-9]{8,11}$/.test(v);
             },
             message: 'Invalid SWIFT code format'
         }
@@ -73,9 +73,9 @@ const bankDetailsSchema = new mongoose.Schema({
         validate: {
             validator: function (v) {
                 if (!v) return true; // Optional field
-                return /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/.test(v);
+                return /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z0-9.\-]{2,64}$/.test(v);
             },
-            message: 'Invalid UPI ID format'
+            message: 'Invalid UPI ID format (Example: user@bank)'
         }
     },
     printUpiQrOnInvoice: {

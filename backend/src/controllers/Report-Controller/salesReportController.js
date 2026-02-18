@@ -72,7 +72,7 @@ class SalesReportController {
      */
     static async getFilterMetadata(req, res) {
         try {
-            const metadata = SalesReportModel.getFilterMetadata();
+            const metadata = await SalesReportModel.getFilterMetadata(req.user._id);
 
             res.json({
                 success: true,
@@ -101,15 +101,15 @@ class SalesReportController {
         // Validate date range
         if (filters.dateRange) {
             const { from, to } = filters.dateRange;
-            
+
             if (from && !this.isValidDate(from)) {
                 errors.push('Invalid date range "from" value');
             }
-            
+
             if (to && !this.isValidDate(to)) {
                 errors.push('Invalid date range "to" value');
             }
-            
+
             if (from && to && new Date(from) > new Date(to)) {
                 errors.push('Date range "from" cannot be after "to"');
             }
@@ -173,7 +173,7 @@ class SalesReportController {
                 'createdAt',
                 'updatedAt'
             ];
-            
+
             if (!allowedSortFields.includes(options.sortBy)) {
                 errors.push(`Invalid sort field. Allowed fields: ${allowedSortFields.join(', ')}`);
             }
@@ -206,7 +206,7 @@ class SalesReportController {
         }
 
         // Validate operator
-        const validOperators = ['equals', 'notEquals', 'contains', 'greaterThan', 'lessThan', 'between'];
+        const validOperators = ['equals', 'notEquals', 'contains', 'greaterThan', 'lessThan', 'greaterThanOrEqual', 'lessThanOrEqual', 'between', 'blank'];
         if (filter.operator && !validOperators.includes(filter.operator)) {
             errors.push(`${filterPrefix}: invalid operator. Valid operators: ${validOperators.join(', ')}`);
         }
@@ -283,7 +283,7 @@ class SalesReportController {
     static async getReportStatistics(req, res) {
         try {
             const { filters = {} } = req.body;
-            
+
             // Add user ID to filters
             filters.userId = req.user._id;
 

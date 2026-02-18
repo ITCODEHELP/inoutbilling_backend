@@ -5,7 +5,7 @@ class SalesProductReportController {
         try {
             // Handle both POST (req.body) and GET (req.query) requests
             const source = req.method === 'POST' ? req.body : req.query;
-            
+
             const {
                 customerVendor,
                 products,
@@ -75,7 +75,7 @@ class SalesProductReportController {
 
     static async getFilterMetadata(req, res) {
         try {
-            const result = await SalesProductReportModel.getFilterMetadata();
+            const result = await SalesProductReportModel.getFilterMetadata(req.user._id);
 
             if (!result.success) {
                 return res.status(500).json({
