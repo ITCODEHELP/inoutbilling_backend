@@ -537,6 +537,109 @@ Retrieves statistical summary data for dashboard display. Supports optional filt
 
 ---
 
+## 4. Export Sales Report
+
+The export endpoints reuse the same filter and option structure as the main report generation endpoint.
+
+### 4.1 Print Report
+
+#### Endpoint
+```
+POST /api/reports/sales/print
+```
+
+#### Description
+Generates a printer-friendly HTML version of the report.
+
+#### Request Body
+Same as [Generate Sales Report](#1-generate-sales-report).
+
+#### Response
+Returns HTML string with `Content-Type: text/html`.
+
+---
+
+### 4.2 Download PDF
+
+#### Endpoint
+```
+POST /api/reports/sales/download
+```
+
+#### Description
+Generates and downloads the report as a PDF file.
+
+#### Request Body
+Same as [Generate Sales Report](#1-generate-sales-report).
+
+#### Response
+Returns PDF file stream with `Content-Type: application/pdf`.
+
+---
+
+### 4.3 Export Excel
+
+#### Endpoint
+```
+POST /api/reports/sales/export
+```
+
+#### Description
+Generates and downloads the report as an Excel (.xlsx) file.
+
+#### Request Body
+Same as [Generate Sales Report](#1-generate-sales-report).
+
+#### Response
+Returns Excel file stream with `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
+
+---
+
+### 4.4 Email Report
+
+#### Endpoint
+```
+POST /api/reports/sales/email
+```
+
+#### Description
+Generates the report as a PDF and emails it to the specified recipient.
+
+#### Request Body
+Extends the standard filter object with email details.
+
+```json
+{
+    
+    "filters": {
+        "dateRange": {
+            "from": "2024-01-01",
+            "to": "2024-01-31"
+        }
+    },
+    "options": {
+        "sortBy": "invoiceDetails.date"
+    },
+    {
+    "to": "recipient@example.com",
+    "cc": "manager@example.com", 
+    "bcc": "archive@example.com",
+    "subject": "Sales Register - Feb 2026",
+    "body": "<p>Dear User, please find...</p>"
+    }
+}
+```
+
+#### Response
+```json
+{
+    "success": true,
+    "message": "Email sent successfully"
+}
+```
+
+---
+
 ## Usage Examples
 
 ### Example 1: Basic Monthly Report
@@ -711,3 +814,36 @@ When no `selectedColumns` are provided, the system returns default columns:
 - Quantity
 - Price
 - Item Total
+
+---
+
+## Testing Data
+
+Use the following JSON payload to test the export endpoints.
+
+### Sample Payload
+
+```json
+{
+    "filters": {
+        "dateRange": {
+            "from": "2024-04-01",
+            "to": "2024-04-30"
+        },
+        "selectedColumns": [
+            "invoiceDetails.date",
+            "invoiceDetails.invoiceNumber",
+            "customerInformation.ms",
+            "totals.grandTotal"
+        ]
+    },
+    "options": {
+        "sortBy": "invoiceDetails.date",
+        "sortOrder": "desc"
+    },
+    "email": "test@example.com", 
+    "message": "Attached is the requested sales report."
+}
+```
+
+> **Note**: The `email` and `message` fields are only required for the **Email Report** endpoint (`POST /api/reports/sales/email`). For other endpoints, these fields are ignored.

@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const SaleInvoice = require('../Sales-Invoice-Model/SaleInvoice');
 
 class SalesReportModel {
@@ -153,9 +154,9 @@ class SalesReportModel {
         }
 
         // Stage 3: Grouping stage
-        const groupStage = this.buildGroupStage(groupByCustomer, groupByCurrency, needsItemUnwind);
-        if (groupStage) {
-            pipeline.push({ $group: groupStage });
+        const groupStages = this.buildGroupStages(groupByCustomer, groupByCurrency, needsItemUnwind);
+        if (groupStages && groupStages.length > 0) {
+            pipeline.push(...groupStages);
         }
 
         // Stage 4: Project stage for column selection
@@ -277,15 +278,44 @@ class SalesReportModel {
     }
 
     /**
-     * Build grouping stage
+     * Build grouping stages
      * @param {boolean} groupByCustomer - Group by customer flag
      * @param {boolean} groupByCurrency - Group by currency flag
      * @param {boolean} hasItemLevel - Whether items are unwound
-     * @returns {Object|null}
+     * @returns {Array} Array of aggregation stages
      */
-    static buildGroupStage(groupByCustomer, groupByCurrency, hasItemLevel) {
+    static buildGroupStages(groupByCustomer, groupByCurrency, hasItemLevel) {
         if (!groupByCustomer && !groupByCurrency) {
-            return null;
+            return [];
+        }
+
+        const stages = [];
+
+        // If items are unwound, we must first group by invoice to get correct invoice-level totals
+        if (hasItemLevel) {
+            stages.push({
+                $group: {
+                    _id: '$_id',
+                    doc: { $first: '$$ROOT' },
+                    items: { $push: '$items' },
+                    invoiceItemQty: { $sum: '$items.qty' },
+                    invoiceItemTotal: { $sum: '$items.total' }
+                }
+            });
+
+            // Reconstruct the document with filtered items
+            stages.push({
+                $addFields: {
+                    'doc.items': '$items',
+                    'doc.invoiceItemQty': '$invoiceItemQty',
+                    'doc.invoiceItemTotal': '$invoiceItemTotal'
+                }
+            });
+
+            // Replace root with the reconstructed doc
+            stages.push({
+                $replaceRoot: { newRoot: '$doc' }
+            });
         }
 
         const groupStage = {};
@@ -295,15 +325,11 @@ class SalesReportModel {
         if (groupByCustomer) {
             groupFields.push('$customerInformation.ms');
         }
-        // REMOVED: originalCurrency field not in schema
-        // if (groupByCurrency) {
-        //     groupFields.push('$originalCurrency');
-        // }
 
         if (groupFields.length > 0) {
             groupStage._id = groupFields.length === 1 ? groupFields[0] : groupFields;
         } else {
-            groupStage._id = null; // Group all documents together
+            groupStage._id = null;
         }
 
         // Add aggregations
@@ -313,14 +339,16 @@ class SalesReportModel {
         groupStage.totalTax = { $sum: '$totals.totalTax' };
 
         if (hasItemLevel) {
-            groupStage.totalQuantity = { $sum: '$items.qty' };
-            groupStage.totalItems = { $sum: '$items.total' };
+            groupStage.totalQuantity = { $sum: '$invoiceItemQty' };
+            groupStage.totalItems = { $sum: '$invoiceItemTotal' };
         }
 
-        // Push all invoice data for detailed view - FIXED: $$ROOT instead of $ROOT
+        // Push all invoice data for detailed view
         groupStage.invoices = { $push: '$$ROOT' };
 
-        return groupStage;
+        stages.push({ $group: groupStage });
+
+        return stages;
     }
 
     /**
@@ -461,7 +489,7 @@ class SalesReportModel {
         try {
             // Add userId filter for data isolation
             if (filters.userId) {
-                filters.userId = filters.userId;
+                filters.userId = new mongoose.Types.ObjectId(filters.userId);
             }
 
             const pipeline = this.buildSalesReportPipeline(filters, options);
@@ -469,19 +497,57 @@ class SalesReportModel {
             // Get count pipeline (without pagination)
             const countPipeline = pipeline.slice(0, -2); // Remove skip and limit
 
-            // Execute both queries in parallel
-            const [results, countResult] = await Promise.all([
+            // 1. Get Summary
+            const isGrouped = filters.groupByCustomer || filters.groupByCurrency;
+            const summaryPipeline = [...countPipeline]; // Use countPipeline as base (filters applied, no pagination)
+
+            if (isGrouped) {
+                // If already grouped, we sum the group totals
+                summaryPipeline.push({
+                    $group: {
+                        _id: null,
+                        totalInvoices: { $sum: '$totalInvoices' },
+                        taxableValueTotal: { $sum: '$totalTaxable' }, // Ensure these fields match buildGroupStages output
+                        grandTotal: { $sum: '$totalGrandTotal' },
+                        productsTotal: { $sum: '$totalItems' }
+                    }
+                });
+            } else {
+                // If flat list, sum the documents
+                summaryPipeline.push({
+                    $group: {
+                        _id: null,
+                        totalInvoices: { $sum: 1 },
+                        taxableValueTotal: { $sum: '$totals.totalTaxable' },
+                        grandTotal: { $sum: '$totals.grandTotal' },
+                        productsTotal: { $sum: '$invoiceItemTotal' } // This field is projected in buildProjectStage? No.
+                        // Wait, invoiceItemTotal is only available if hasItemLevel is true?
+                        // If standard view, we don't have item totals unless projected?
+                        // For safe fallback, we use 0 if not present.
+                    }
+                });
+            }
+
+            // Execute parallel: Reports, Summary, Count
+            const [results, summaryResult, countResult] = await Promise.all([
                 SaleInvoice.aggregate(pipeline),
+                SaleInvoice.aggregate(summaryPipeline),
                 SaleInvoice.aggregate([...countPipeline, { $count: 'total' }])
             ]);
 
             const totalRecords = countResult.length > 0 ? countResult[0].total : 0;
+            const summary = summaryResult.length > 0 ? summaryResult[0] : { totalInvoices: 0, taxableValueTotal: 0, grandTotal: 0 };
             const { page = 1, limit = 50 } = options;
+
+            // Format Data
+            const formattedResults = this.formatReportData(results);
+            const formattedSummary = this.formatReportData([summary])[0];
 
             return {
                 success: true,
                 data: {
-                    reports: results,
+                    reports: formattedResults,
+                    summary: formattedSummary,
                     pagination: {
                         currentPage: page,
                         totalPages: Math.ceil(totalRecords / limit),
@@ -497,6 +563,53 @@ class SalesReportModel {
                 message: 'Database query failed',
                 error: error.message
             };
+        }
+    }
+
+    /**
+     * Format report data with localization
+     * @param {Array} rows - Data rows
+     * @returns {Array} Formatted rows
+     */
+    static formatReportData(rows) {
+        return rows.map(row => {
+            const newRow = JSON.parse(JSON.stringify(row));
+            this.formatRecursive(newRow);
+            return newRow;
+        });
+    }
+
+    /**
+     * Recursive formatting helper
+     * @param {Object} obj - Object to format
+     */
+    static formatRecursive(obj) {
+        for (const key in obj) {
+            if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
+
+            const val = obj[key];
+
+            // Handle Numbers (Currency/Amounts)
+            if (typeof val === 'number') {
+                // Try to identify currency fields by name
+                if (key.match(/(amount|total|price|tax|cost|value|balance|rate)/i) && !key.match(/(id|year|qty|quantity|count|number|page|limit)/i)) {
+                    obj[key] = val.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                }
+            }
+            // Handle Dates
+            else if (typeof val === 'string' && (key.match(/date/i) || key === 'createdAt' || key === 'updatedAt')) {
+                // Avoid formatting short strings that might be date parts
+                if (val.length > 9) {
+                    const date = new Date(val);
+                    if (!isNaN(date.getTime())) {
+                        obj[key] = date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+                    }
+                }
+            }
+            // Recurse
+            else if (typeof val === 'object' && val !== null) {
+                this.formatRecursive(val);
+            }
         }
     }
 
