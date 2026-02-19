@@ -90,3 +90,40 @@ Search other incomes with advanced filters and column selection.
     "error": "Error details..."
 }
 ```
+
+---
+
+## Report Actions (Print, PDF, Excel, Email)
+
+You can generate Print Views, PDFs, Excel files, or Email this report using the **Report Action Engine**.
+
+### Endpoints
+- **Print (HTML)**: `POST /api/reports/action/print`
+- **PDF (Download)**: `POST /api/reports/action/pdf`
+- **Excel (Download)**: `POST /api/reports/action/excel`
+- **Email (Send PDF)**: `POST /api/reports/action/email`
+
+### Request Body
+Use the following payload for all the above endpoints.  
+**Note**: `reportType` must be set to `other-income`.
+
+```json
+{
+  "reportType": "other-income", 
+
+  "filters": {
+    "fromDate": "2026-01-01",
+    "toDate": "2026-12-31"
+  },
+  "options": {
+    "page": 1,
+    "limit": 50
+  },
+
+  "reportTitle": "Other Income Report",
+  
+  // For Email Action Only
+  "email": "user@example.com",
+  "message": "Please find attached report."
+}
+```

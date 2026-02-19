@@ -300,3 +300,43 @@ For API support and questions, contact the development team or refer to the main
 ---
 
 *Last updated: January 2024*
+
+---
+
+## Report Actions (Print, PDF, Excel, Email)
+
+You can generate Print Views, PDFs, Excel files, or Email this report using the **Report Action Engine**.
+
+### Endpoints
+- **Print (HTML)**: `POST /api/reports/action/print`
+- **PDF (Download)**: `POST /api/reports/action/pdf`
+- **Excel (Download)**: `POST /api/reports/action/excel`
+- **Email (Send PDF)**: `POST /api/reports/action/email`
+
+### Request Body
+Use the following payload for all the above endpoints.  
+**Note**: `reportType` must be set to `sales-product`.
+
+```json
+{
+  "reportType": "sales-product", 
+
+  "filters": {
+    "customerVendor": "", 
+    "fromDate": "2026-01-01",
+    "toDate": "2026-12-31"
+  },
+  "options": {
+    "page": 1,
+    "limit": 50,
+    "sortBy": "totalAmount", // Default
+    "sortOrder": "desc" // asc | desc
+  },
+
+  "reportTitle": "Sales Product Report",
+  
+  // For Email Action Only
+  "email": "user@example.com",
+  "message": "Please find attached report."
+}
+```

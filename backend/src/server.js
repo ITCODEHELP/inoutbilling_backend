@@ -64,6 +64,7 @@ const manufactureRoutes = require('./routes/Other-Document-Routes/manufactureRou
 const creditNoteRoutes = require('./routes/Other-Document-Routes/creditNoteRoutes');
 const debitNoteRoutes = require('./routes/Other-Document-Routes/debitNoteRoutes');
 const exportInvoiceRoutes = require('./routes/Other-Document-Routes/Multi-CurrencyExportInvoiceRoutes');
+const reportActionRoutes = require('./routes/Report-Routes/reportActionRoutes');
 const reportRoutes = require('./routes/Report-Routes/salesReportRoutes');
 const salesOutstandingReportRoutes = require('./routes/Report-Routes/SalesOutstandingReportRoutes');
 const salesProductReportRoutes = require('./routes/Report-Routes/SalesProductReportRoutes');
@@ -183,6 +184,7 @@ app.use('/api/manufacture', manufactureRoutes);
 app.use('/api/credit-note', creditNoteRoutes);
 app.use('/api/debit-note', debitNoteRoutes);
 app.use('/api/export-invoice', exportInvoiceRoutes);
+app.use('/api/reports', reportActionRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/reports', salesOutstandingReportRoutes);
 app.use('/api/reports', salesProductReportRoutes);

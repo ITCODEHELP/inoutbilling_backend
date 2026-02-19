@@ -661,3 +661,45 @@ For technical support and API questions:
 - Documentation: [API Documentation Portal]
 - Support: [Support Email]
 - Status: [API Status Page]
+
+---
+
+## Report Actions (Print, PDF, Excel, Email)
+
+You can generate Print Views, PDFs, Excel files, or Email this report using the **Report Action Engine**.
+
+### Endpoints
+- **Print (HTML)**: `POST /api/reports/action/print`
+- **PDF (Download)**: `POST /api/reports/action/pdf`
+- **Excel (Download)**: `POST /api/reports/action/excel`
+- **Email (Send PDF)**: `POST /api/reports/action/email`
+
+### Request Body
+Use the following payload for all the above endpoints.  
+**Note**: `reportType` must be set to `sales-outstanding`.
+
+```json
+{
+  "reportType": "sales-outstanding", 
+
+  "filters": {
+    "customerVendor": "", // Optional
+    "dueDateRange": {
+      "from": "2026-02-01",
+      "to": "2026-02-28"
+    }
+  },
+  "options": {
+    "page": 1,
+    "limit": 50,
+    "sortBy": "daysOverdue", // Default
+    "sortOrder": "desc" // asc | desc
+  },
+
+  "reportTitle": "Sales Outstanding Report",
+  
+  // For Email Action Only
+  "email": "user@example.com",
+  "message": "Please find attached report."
+}
+```

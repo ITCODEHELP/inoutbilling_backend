@@ -3,10 +3,7 @@ const mongoose = require('mongoose');
 
 class InwardPaymentReportModel {
     /**
-     * Generate Inward Payment Report based on filters and options
-     * @param {Object} filters - Filter criteria
-     * @param {Object} options - Pagination and sorting options
-     * @returns {Object} Report data with pagination info
+     * Generate Inward Payment Report
      */
     static async getInwardPaymentReport(filters, options) {
         try {
@@ -17,8 +14,7 @@ class InwardPaymentReportModel {
                 fromDate,
                 toDate,
                 staffId,
-                selectedColumns,
-                invoiceSeries // Optional filter if applicable
+                selectedColumns
             } = filters;
 
             const {
@@ -28,36 +24,36 @@ class InwardPaymentReportModel {
                 sortOrder = 'desc'
             } = options;
 
-            // 1. Build Query
             const query = { userId: new mongoose.Types.ObjectId(userId) };
 
-            // Date Range Filter
+            // FIX: Date Range (Handle End of Day for toDate)
             if (fromDate || toDate) {
                 query.paymentDate = {};
-                if (fromDate) query.paymentDate.$gte = new Date(fromDate);
-                if (toDate) query.paymentDate.$lte = new Date(toDate);
+                if (fromDate) {
+                    query.paymentDate.$gte = new Date(fromDate);
+                }
+                if (toDate) {
+                    const endDate = new Date(toDate);
+                    endDate.setHours(23, 59, 59, 999); // Set to end of day
+                    query.paymentDate.$lte = endDate;
+                }
             }
 
-            // Payment Type Filter
+            // FIX: Payment Type (Case Insensitive)
             if (paymentType && paymentType !== 'ALL') {
-                // Ensure array for $in operator
                 const types = Array.isArray(paymentType) ? paymentType : [paymentType];
-                // Map frontend display types to schema enum values
-                // Schema Enum: ['cash', 'cheque', 'online', 'bank', 'tds', 'bad_debit', 'currency_exchange_loss']
-                const validTypes = types.map(t => t.toLowerCase().replace('bad_debts_kasar', 'bad_debit'));
-                query.paymentType = { $in: validTypes };
+                // Use regex for case insensitive match for each type
+                const regexConditions = types.map(t => new RegExp(`^${t}$`, 'i'));
+                query.paymentType = { $in: regexConditions };
             }
 
-            // Customer/Vendor Filter (Search by Company Name)
+            // Customer/Vendor Filter
             if (customerVendor) {
-                // Using regex for case-insensitive partial match
                 query.companyName = { $regex: customerVendor, $options: 'i' };
             }
 
             // Staff Filter
             if (staffId) {
-                // Schema doesn't explicitly show staffId, but adding query as requested.
-                // Ensuring ObjectId if it's an ID string
                 if (mongoose.Types.ObjectId.isValid(staffId)) {
                     query.staffId = new mongoose.Types.ObjectId(staffId);
                 } else {
@@ -65,129 +61,112 @@ class InwardPaymentReportModel {
                 }
             }
 
-            // 2. Build Projection
-            // Default fields needed for processing + requested columns
-            // Always fetch lean data
+            // DB Fields to fetch
+            const dbFields = new Set(['_id', 'userId', 'receiptPrefix', 'receiptNo', 'receiptPostfix', 'paymentDate', 'companyName', 'paymentType', 'amount', 'remarks', 'gstinPan']);
 
-            const fieldMapping = {
-                'Date': 'paymentDate',
-                'Particulars': 'companyName',
-                'Payment Type': 'paymentType',
-                'Remarks': 'remarks',
-                'Vch Type': 'receiptPrefix', // Logic needed: VchType is mostly "Receipt" or derived
-                'Vch No': 'receiptNo',
-                'Amount': 'amount',
-                'Contact Person': 'customFields.contactPerson', // Speculative mapping
-                'PAN NO': 'gstinPan',
-                'GST NO': 'gstinPan',
-                'Created By': 'userId', // Needs population
-                'Attachment': 'attachment'
-            };
-
-            const dbFields = new Set(['_id', 'userId', 'receiptPrefix', 'receiptNo', 'receiptPostfix', 'paymentDate', 'companyName', 'paymentType', 'amount', 'remarks', 'gstinPan', 'attachment']);
-
-            // 3. Execution
             const skip = (page - 1) * limit;
-
             const sortOptions = {};
             sortOptions[sortBy] = sortOrder === 'asc' ? 1 : -1;
 
-            // Using lean() for read-only performance
-            const [data, total] = await Promise.all([
+            // Calculate Total Amount (Aggregation)
+            const totalPipeline = [
+                { $match: query },
+                { $group: { _id: null, totalAmount: { $sum: '$amount' } } }
+            ];
+
+            const [data, total, totalResult] = await Promise.all([
                 InwardPayment.find(query)
                     .select(Array.from(dbFields).join(' '))
-                    .populate('userId', 'name') // Minimal population for 'Created By'
+                    .populate('userId', 'name')
                     .sort(sortOptions)
                     .skip(skip)
                     .limit(limit)
                     .lean(),
-                InwardPayment.countDocuments(query)
+                InwardPayment.countDocuments(query),
+                InwardPayment.aggregate(totalPipeline)
             ]);
 
-            // 4. Transform Data
-            // Map DB results to the requested Report Columns structure
-            const reportData = data.map(record => {
-                const mappedRecord = {};
+            const totalAmount = totalResult.length > 0 ? totalResult[0].totalAmount : 0;
 
-                // Helper to format Date
-                const formatDate = (d) => d ? new Date(d).toISOString().split('T')[0] : '';
+            // Map to Report Structure
+            const defaultColumns = InwardPaymentReportModel.getFilterMetadata().columns;
+            const columnsToMap = selectedColumns && selectedColumns.length > 0 ? selectedColumns : defaultColumns;
 
-                // Helper for Vch Type
-                const getVchType = (r) => 'Receipt'; // Inward Payment is Receipt
-
-                // Default columns if none selected (or map all available)
-                const columnsToMap = selectedColumns && selectedColumns.length > 0 ? selectedColumns : Object.keys(fieldMapping);
+            const mappedData = data.map(record => {
+                const row = {};
 
                 columnsToMap.forEach(col => {
                     switch (col) {
                         case 'Date':
-                            mappedRecord[col] = formatDate(record.paymentDate);
+                            row[col] = record.paymentDate ? new Date(record.paymentDate).toISOString().split('T')[0] : '';
                             break;
                         case 'Particulars':
-                            mappedRecord[col] = record.companyName;
+                            row[col] = record.companyName || '';
                             break;
                         case 'Payment Type':
-                            mappedRecord[col] = String(record.paymentType).toUpperCase();
+                            row[col] = record.paymentType ? String(record.paymentType).toUpperCase() : '';
                             break;
                         case 'Remarks':
-                            mappedRecord[col] = record.remarks || '';
+                            row[col] = record.remarks || '';
                             break;
                         case 'Vch Type':
-                            mappedRecord[col] = getVchType(record);
+                            row[col] = 'Receipt';
                             break;
                         case 'Vch No':
-                            mappedRecord[col] = `${record.receiptPrefix || ''}${record.receiptNo}${record.receiptPostfix || ''}`; // Combine prefix/postfix
+                            row[col] = `${record.receiptPrefix || ''}${record.receiptNo}${record.receiptPostfix || ''}`;
                             break;
                         case 'Amount':
-                            mappedRecord[col] = record.amount;
+                            row[col] = record.amount || 0;
                             break;
                         case 'Contact Person':
-                            mappedRecord[col] = ''; // Not available in standard schema
+                            row[col] = '';
                             break;
                         case 'PAN NO':
                         case 'GST NO':
-                            mappedRecord[col] = record.gstinPan || '';
+                            row[col] = record.gstinPan || '';
                             break;
                         case 'Created By':
-                            mappedRecord[col] = record.userId?.name || 'Unknown';
+                            row[col] = record.userId?.name || 'Unknown';
                             break;
                         default:
-                            mappedRecord[col] = '';
+                            // Ignore unknown columns
+                            break;
                     }
                 });
-
-                return mappedRecord;
+                return row;
             });
+
+            // Append Total Row if 'Amount' column matches or if no columns selected (default includes Amount)
+            // But user said: "Total respects selectedColumns (if Amount not selected, do not show total)"
+            const isAmountSelected = columnsToMap.includes('Amount');
+
+            if (isAmountSelected) {
+                const totalRow = {
+                    isTotalRow: true,
+                    // label: 'Total', // User didn't ask for label in Inward Payment part, but usually good practice. 
+                    // User Example: { "isTotalRow": true, "Amount": totalAmount }
+                    Amount: totalAmount
+                };
+                mappedData.push(totalRow);
+            }
 
             return {
                 success: true,
                 data: {
-                    docs: reportData,
+                    docs: mappedData,
                     totalDocs: total,
                     limit: Number(limit),
                     totalPages: Math.ceil(total / limit),
-                    page: Number(page),
-                    pagingCounter: (page - 1) * limit + 1,
-                    hasPrevPage: page > 1,
-                    hasNextPage: page < Math.ceil(total / limit),
-                    prevPage: page > 1 ? page - 1 : null,
-                    nextPage: page < Math.ceil(total / limit) ? page + 1 : null
+                    page: Number(page)
                 }
             };
 
         } catch (error) {
             console.error('Error in getInwardPaymentReport:', error);
-            return {
-                success: false,
-                message: 'Failed to generate report',
-                error: error.message
-            };
+            return { success: false, message: 'Failed to generate report', error: error.message };
         }
     }
 
-    /**
-     * Get Filter Metadata for UI
-     */
     static getFilterMetadata() {
         return {
             paymentTypes: ['cash', 'cheque', 'online', 'bank', 'tds', 'bad_debit', 'currency_exchange_loss'],

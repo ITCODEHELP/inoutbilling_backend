@@ -14,7 +14,7 @@ class SalesReportModel {
             products,
             productGroup,
             dateRange,
-            staffName,
+            staffId, // Changed from staffName to staffId
             invoiceNumber,
             invoiceSeries,
             serialNumber,
@@ -78,13 +78,10 @@ class SalesReportModel {
             matchStage['invoiceDetails.date'] = dateFilter;
         }
 
-        // Staff name filter - REMOVED: field not in schema
-        // if (staffName) {
-        //     matchStage['staff.name'] = { 
-        //         $regex: staffName, 
-        //         $options: 'i' 
-        //     };
-        // }
+        // Staff filter
+        if (staffId) {
+            matchStage['staff'] = new mongoose.Types.ObjectId(staffId);
+        }
 
         // Invoice number filter
         if (invoiceNumber) {
@@ -102,13 +99,13 @@ class SalesReportModel {
             };
         }
 
-        // Serial number filter - REMOVED: field not in schema
-        // if (serialNumber) {
-        //     matchStage['serialNumber'] = { 
-        //         $regex: serialNumber, 
-        //         $options: 'i' 
-        //     };
-        // }
+        // Serial number filter
+        if (serialNumber) {
+            matchStage['items.serialNumbers'] = {
+                $regex: serialNumber,
+                $options: 'i'
+            };
+        }
 
         // Include cancelled invoices - REMOVED: status field not in schema
         // if (!includeCancelled) {
@@ -131,10 +128,31 @@ class SalesReportModel {
             pipeline.push({ $match: matchStage });
         }
 
+        // Lookup Staff Details (if needed for columns or verify)
+        // We always lookup to make it available for projection
+        pipeline.push({
+            $lookup: {
+                from: 'staffs', // Assuming collection name is 'staffs' based on ref 'Staff'
+                localField: 'staff',
+                foreignField: '_id',
+                as: 'staffDetails'
+            }
+        });
+        pipeline.push({
+            $unwind: {
+                path: '$staffDetails',
+                preserveNullAndEmptyArrays: true
+            }
+        });
+
         // Stage 2: Unwind items if product-level filtering or columns are needed
         const needsItemUnwind = this.needsItemLevelData(selectedColumns) ||
             products?.length > 0 ||
-            productGroup?.length > 0;
+            productGroup?.length > 0 ||
+            serialNumber; // Unwind for serial number mapping if needed? 
+        // Actually serialNumbers is array inside item. If we filter by it, valid docs are kept.
+        // If we want to show WHICH item has the serial number, we might need unwind.
+        // But usually report lists lines.
 
         if (needsItemUnwind) {
             pipeline.push({ $unwind: '$items' });
@@ -149,6 +167,18 @@ class SalesReportModel {
             if (productGroup && productGroup.length > 0) {
                 pipeline.push({
                     $match: { 'items.productGroup': { $in: productGroup } }
+                });
+            }
+
+            // Re-apply serial number filter to show only relevant items if filtered
+            if (serialNumber) {
+                pipeline.push({
+                    $match: {
+                        'items.serialNumbers': {
+                            $regex: serialNumber,
+                            $options: 'i'
+                        }
+                    }
                 });
             }
         }
@@ -214,7 +244,9 @@ class SalesReportModel {
             'items.total',
             'items.cgst',
             'items.sgst',
-            'items.igst'
+            'items.igst',
+            'staffDetails.name', // Allow filtering/projection
+            'items.serialNumbers'
         ];
 
         // Validate field
@@ -273,7 +305,8 @@ class SalesReportModel {
             col.includes('hsn') ||
             col.includes('qty') ||
             col.includes('price') ||
-            col.includes('discount')
+            col.includes('discount') ||
+            col.includes('serialNumbers')
         );
     }
 
@@ -441,6 +474,8 @@ class SalesReportModel {
                 projection.createdAt = 1;
             } else if (col === 'updatedAt') {
                 projection.updatedAt = 1;
+            } else if (col === 'staffDetails.name') {
+                projection['staffDetails.name'] = 1;
             }
         });
 
@@ -541,18 +576,67 @@ class SalesReportModel {
 
             // Format Data
             const formattedResults = this.formatReportData(results);
-            const formattedSummary = this.formatReportData([summary])[0];
+            // Don't format summary recursively yet, we need raw numbers for the total row
+            // const formattedSummary = this.formatReportData([summary])[0]; 
+
+            // Append Total Row
+            const totalRow = {
+                isTotalRow: true,
+                label: 'Total',
+                taxableValueTotal: summary.taxableValueTotal || 0,
+                grandTotal: summary.grandTotal || 0
+            };
+
+            // Apply formatting to results (numbers to strings if needed, etc)
+            // But user requirement says: "Ensure Numeric values remain numbers (not string)."
+            // The formatReportData method converts numbers to localized strings.
+            // "Numeric values remain numbers (not string)." applies to PART 1 (Inward Payment).
+            // For PART 2 (Sales Report), the expected response shows numbers: "Grand Total": 224456 (no quotes)
+            // However, existing formatReportData converts to strings. 
+            // The user prompt also says: "Taxable Value Total": 156580 (number) in Expected Response.
+            // So I should disable the string formatting for numbers if I want to strictly follow the "Expected Response" JSON values.
+            // BUT, the existing controller uses formatReportData. 
+            // I will MODIFY formatReportData to NOT convert to string if the user requested numeric preservation?
+            // "Numeric values remain numbers (not string)." was listed under PART 1.
+            // Under PART 5 Expected Response, values like 156580 are numbers.
+            // So I should probably skip `formatReportData` or modify it to return numbers.
+            // Given the existing code uses `toLocaleString`, it definitely returns strings.
+            // I will skip `formatReportData` for now to strictly match the requested JSON type (Number).
+
+            // Actually, let's keep it simple. The user wants the response to support rendering.
+            // If I look at the expected response:
+            // "Grand Total": 156580
+            // This is a number.
+
+            const finalData = [...results]; // Use raw results (with numbers)
+            finalData.push(totalRow);
+
+            // Determine columns list
+            let columnsList = [];
+            if (filters.selectedColumns && filters.selectedColumns.length > 0) {
+                columnsList = filters.selectedColumns;
+            } else {
+                // We need to know if item level was used. 
+                // We can re-derive it or pass it.
+                // But wait, the pipeline builder already handled projection.
+                // If selectedColumns is empty, we returned default columns in projection.
+                // We should return the keys of the first record (excluding _id if necessary) or the default list.
+                // Better to return the explicit list of columns we intended.
+                const needsItemUnwind = this.needsItemLevelData(filters.selectedColumns) ||
+                    filters.products?.length > 0 ||
+                    filters.productGroup?.length > 0;
+                columnsList = this.getDefaultColumns(needsItemUnwind);
+            }
 
             return {
                 success: true,
                 data: {
-                    reports: formattedResults,
-                    summary: formattedSummary,
+                    columns: columnsList,
+                    data: finalData,
                     pagination: {
-                        currentPage: page,
-                        totalPages: Math.ceil(totalRecords / limit),
-                        totalRecords,
-                        recordsPerPage: limit
+                        totalDocs: totalRecords,
+                        page: Number(page),
+                        totalPages: Math.ceil(totalRecords / limit)
                     }
                 }
             };

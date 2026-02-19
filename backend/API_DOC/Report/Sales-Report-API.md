@@ -28,44 +28,6 @@ POST /api/reports/sales
 Generates a sales report based on provided filters and customization options. Supports advanced filtering, grouping, and column selection.
 
 ### Request Body
-
-```json
-{
-    "filters": {
-        "customerVendor": "Company Name",
-        "products": ["Product A", "Product B"],
-        "productGroup": ["Group 1", "Group 2"],
-        "dateRange": {
-            "from": "2024-01-01",
-            "to": "2024-12-31"
-        },
-        "staffName": "John Doe",
-        "invoiceNumber": "INV-001",
-        "invoiceSeries": "INV",
-        "serialNumber": "SN123456",
-        "includeCancelled": false,
-        "groupByCustomer": false,
-        "groupByCurrency": false,
-        "advanceFilters": [
-            {
-                "field": "totals.grandTotal",
-                "operator": "greaterThan",
-                "value": 1000
-            },
-            {
-                "field": "invoiceDetails.date",
-                "operator": "between",
-                "value": ["2024-01-01", "2024-06-30"]
-            }
-        ],
-        "selectedColumns": [
-            "customerInformation.ms",
-            "invoiceDetails.invoiceNumber",
-            "invoiceDetails.date",
-            "totals.grandTotal",
-            "items.productName",
-            "items.qty"
-        ]
     },
     "options": {
         "page": 1,
@@ -847,3 +809,52 @@ Use the following JSON payload to test the export endpoints.
 ```
 
 > **Note**: The `email` and `message` fields are only required for the **Email Report** endpoint (`POST /api/reports/sales/email`). For other endpoints, these fields are ignored.
+
+---
+
+## Report Actions (Print, PDF, Excel, Email)
+
+You can generate Print Views, PDFs, Excel files, or Email this report using the **Report Action Engine**.
+
+### Endpoints
+- **Print (HTML)**: `POST /api/reports/action/print`
+- **PDF (Download)**: `POST /api/reports/action/pdf`
+- **Excel (Download)**: `POST /api/reports/action/excel`
+- **Email (Send PDF)**: `POST /api/reports/action/email`
+
+### Request Body
+Use the following payload for all the above endpoints.  
+**Note**: `reportType` must be set to `sales`.
+
+    ```json
+    {
+    "reportType": "sales", 
+
+    "filters": {
+        "customerVendor": "", // Optional
+        "products": [], // Optional
+        "productGroup": [], // Optional
+        "staffId": "", // Optional (ObjectId)
+        "invoiceNumber": "", // Optional
+        "invoiceSeries": "", // Optional
+        "serialNumber": "", // Optional
+        "selectedColumns": [], // Optional
+        "dateRange": {
+        "from": "2026-02-01",
+        "to": "2026-02-28"
+        }
+    },
+    "options": {
+        "page": 1,
+        "limit": 50,
+        "sortBy": "invoiceDetails.date", // Default
+        "sortOrder": "desc" // asc | desc
+    },
+
+    "reportTitle": "Sales Report",
+    
+    // For Email Action Only
+    "email": "user@example.com",
+    "message": "Please find attached report."
+    }
+    ```

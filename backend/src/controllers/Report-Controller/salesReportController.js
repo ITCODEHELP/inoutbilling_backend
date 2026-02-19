@@ -382,11 +382,40 @@ class SalesReportController {
 
             const result = await SalesReportModel.getSalesReport(filters, reportOptions);
 
-            if (!result.success || !result.data.reports || result.data.reports.length === 0) {
+            if (!result.success || !result.data.data || result.data.data.length === 0) {
                 return res.status(400).json({ success: false, message: 'No data available to generate report' });
             }
 
-            const html = generateNewSalesReportHtml(result.data, filters, req.user);
+            // Adapt new data structure for legacy export helpers
+            // The new structure has 'data' array with a 'totalRow' at the end.
+            // Helpers expect { reports: [], summary: {} }
+            const allData = result.data.data;
+            const pagination = result.data.pagination;
+
+            let reports = [];
+            let totalRow = {};
+
+            if (allData.length > 0) {
+                const lastItem = allData[allData.length - 1];
+                if (lastItem.isTotalRow) {
+                    totalRow = lastItem;
+                    reports = allData.slice(0, -1);
+                } else {
+                    reports = allData;
+                }
+            }
+
+            const legacyData = {
+                reports: reports,
+                summary: {
+                    totalInvoices: pagination.totalDocs,
+                    taxableValueTotal: totalRow.taxableValueTotal || 0,
+                    grandTotal: totalRow.grandTotal || 0,
+                    // Add other summary fields if helpers need them, but template uses mainly these
+                }
+            };
+
+            const html = generateNewSalesReportHtml(legacyData, filters, req.user);
             res.send(html);
 
         } catch (error) {
@@ -412,11 +441,37 @@ class SalesReportController {
 
             const result = await SalesReportModel.getSalesReport(filters, reportOptions);
 
-            if (!result.success || !result.data.reports || result.data.reports.length === 0) {
+            if (!result.success || !result.data.data || result.data.data.length === 0) {
                 return res.status(400).json({ success: false, message: 'No data available to generate report' });
             }
 
-            const pdfBuffer = await generateNewSalesReportPdf(result.data, filters, req.user);
+            // Adapt for legacy helper
+            const allData = result.data.data;
+            const pagination = result.data.pagination;
+
+            let reports = [];
+            let totalRow = {};
+
+            if (allData.length > 0) {
+                const lastItem = allData[allData.length - 1];
+                if (lastItem.isTotalRow) {
+                    totalRow = lastItem;
+                    reports = allData.slice(0, -1);
+                } else {
+                    reports = allData;
+                }
+            }
+
+            const legacyData = {
+                reports: reports,
+                summary: {
+                    totalInvoices: pagination.totalDocs,
+                    taxableValueTotal: totalRow.taxableValueTotal || 0,
+                    grandTotal: totalRow.grandTotal || 0,
+                }
+            };
+
+            const pdfBuffer = await generateNewSalesReportPdf(legacyData, filters, req.user);
 
             res.set({
                 'Content-Type': 'application/pdf',
@@ -448,11 +503,37 @@ class SalesReportController {
 
             const result = await SalesReportModel.getSalesReport(filters, reportOptions);
 
-            if (!result.success || !result.data.reports || result.data.reports.length === 0) {
+            if (!result.success || !result.data.data || result.data.data.length === 0) {
                 return res.status(400).json({ success: false, message: 'No data available to generate report' });
             }
 
-            const buffer = await generateNewSalesReportExcel(result.data, filters, req.user);
+            // Adapt for legacy helper
+            const allData = result.data.data;
+            const pagination = result.data.pagination;
+
+            let reports = [];
+            let totalRow = {};
+
+            if (allData.length > 0) {
+                const lastItem = allData[allData.length - 1];
+                if (lastItem.isTotalRow) {
+                    totalRow = lastItem;
+                    reports = allData.slice(0, -1);
+                } else {
+                    reports = allData;
+                }
+            }
+
+            const legacyData = {
+                reports: reports,
+                summary: {
+                    totalInvoices: pagination.totalDocs,
+                    taxableValueTotal: totalRow.taxableValueTotal || 0,
+                    grandTotal: totalRow.grandTotal || 0,
+                }
+            };
+
+            const buffer = await generateNewSalesReportExcel(legacyData, filters, req.user);
 
             res.set({
                 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -499,14 +580,40 @@ class SalesReportController {
 
             const result = await SalesReportModel.getSalesReport(filters, reportOptions);
 
-            if (!result.success || !result.data.reports || result.data.reports.length === 0) {
+            if (!result.success || !result.data.data || result.data.data.length === 0) {
                 return res.status(400).json({ success: false, message: 'No data available to generate report' });
             }
+
+            // Adapt for legacy helper
+            const allData = result.data.data;
+            const pagination = result.data.pagination;
+
+            let reports = [];
+            let totalRow = {};
+
+            if (allData.length > 0) {
+                const lastItem = allData[allData.length - 1];
+                if (lastItem.isTotalRow) {
+                    totalRow = lastItem;
+                    reports = allData.slice(0, -1);
+                } else {
+                    reports = allData;
+                }
+            }
+
+            const legacyData = {
+                reports: reports,
+                summary: {
+                    totalInvoices: pagination.totalDocs,
+                    taxableValueTotal: totalRow.taxableValueTotal || 0,
+                    grandTotal: totalRow.grandTotal || 0,
+                }
+            };
 
             // Prepare email params
             const emailParams = { to, cc, bcc, subject, body };
 
-            await sendExportSalesReportEmail(result.data, filters, req.user, emailParams);
+            await sendExportSalesReportEmail(legacyData, filters, req.user, emailParams);
 
             res.json({ success: true, message: 'Email sent successfully' });
 

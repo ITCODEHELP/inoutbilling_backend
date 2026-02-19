@@ -1,10 +1,10 @@
 # Purchase Outstanding Report
 
 ## Endpoint: Generate Report
-\`POST /api/reports/purchase-outstanding\`
+`POST /api/reports/purchase-outstanding`
 
 ### Request Body
-\`\`\`json
+```json
 {
   "filters": {
     "customerVendor": "Partial Vendor Name",
@@ -18,10 +18,10 @@
     "sortOrder": "desc"
   }
 }
-\`\`\`
+```
 
 ### Response
-\`\`\`json
+```json
 {
   "success": true,
   "data": {
@@ -35,4 +35,46 @@
     ]
   }
 }
-\`\`\`
+```
+
+---
+
+## Report Actions (Print, PDF, Excel, Email)
+
+You can generate Print Views, PDFs, Excel files, or Email this report using the **Report Action Engine**.
+
+### Endpoints
+- **Print (HTML)**: `POST /api/reports/action/print`
+- **PDF (Download)**: `POST /api/reports/action/pdf`
+- **Excel (Download)**: `POST /api/reports/action/excel`
+- **Email (Send PDF)**: `POST /api/reports/action/email`
+
+### Request Body
+Use the following payload for all the above endpoints.  
+**Note**: `reportType` must be set to `purchase-outstanding`.
+
+```json
+{
+  "reportType": "purchase-outstanding", 
+
+  "filters": {
+    "customerVendor": "", 
+    "dueDateRange": {
+      "from": "2026-01-01",
+      "to": "2026-12-31"
+    }
+  },
+  "options": {
+    "page": 1,
+    "limit": 50,
+    "sortBy": "daysOverdue", 
+    "sortOrder": "desc" 
+  },
+
+  "reportTitle": "Purchase Outstanding Report",
+  
+  // For Email Action Only
+  "email": "user@example.com",
+  "message": "Please find attached report."
+}
+```
