@@ -20,7 +20,8 @@ class OtherDocumentReportModel {
                     number: 'quotationDetails.quotationNumber',
                     entity: 'customerInformation.ms',
                     prefix: 'quotationDetails.quotationPrefix',
-                    grandTotal: 'totals.grandTotal'
+                    grandTotal: 'totals.grandTotal',
+                    taxableValue: 'totals.totalTaxable'
                 }
             },
             proforma: {
@@ -30,7 +31,8 @@ class OtherDocumentReportModel {
                     number: 'proformaDetails.proformaNumber',
                     entity: 'customerInformation.ms',
                     prefix: 'proformaDetails.proformaPrefix',
-                    grandTotal: 'totals.grandTotal'
+                    grandTotal: 'totals.grandTotal',
+                    taxableValue: 'totals.totalTaxable'
                 }
             },
             deliveryChallan: {
@@ -40,7 +42,8 @@ class OtherDocumentReportModel {
                     number: 'deliveryChallanDetails.challanNumber',
                     entity: 'customerInformation.ms',
                     prefix: 'deliveryChallanDetails.challanPrefix',
-                    grandTotal: 'totals.grandTotal'
+                    grandTotal: 'totals.grandTotal',
+                    taxableValue: 'totals.totalTaxable'
                 }
             },
             purchaseOrder: {
@@ -50,7 +53,8 @@ class OtherDocumentReportModel {
                     number: 'purchaseOrderDetails.poNumber',
                     entity: 'vendorInformation.ms',
                     prefix: 'purchaseOrderDetails.poPrefix',
-                    grandTotal: 'totals.grandTotal'
+                    grandTotal: 'totals.grandTotal',
+                    taxableValue: 'totals.totalTaxable'
                 }
             },
             saleOrder: {
@@ -60,7 +64,8 @@ class OtherDocumentReportModel {
                     number: 'saleOrderDetails.soNumber',
                     entity: 'customerInformation.ms',
                     prefix: 'saleOrderDetails.soPrefix',
-                    grandTotal: 'totals.grandTotal'
+                    grandTotal: 'totals.grandTotal',
+                    taxableValue: 'totals.totalTaxable'
                 }
             },
             jobWork: {
@@ -70,7 +75,8 @@ class OtherDocumentReportModel {
                     number: 'jobWorkDetails.jwNumber',
                     entity: 'customerInformation.ms',
                     prefix: 'jobWorkDetails.jwPrefix',
-                    grandTotal: 'totals.grandTotal'
+                    grandTotal: 'totals.grandTotal',
+                    taxableValue: 'totals.totalTaxable'
                 }
             },
             creditNote: {
@@ -80,7 +86,8 @@ class OtherDocumentReportModel {
                     number: 'creditNoteDetails.cnNumber',
                     entity: 'customerInformation.ms',
                     prefix: 'creditNoteDetails.cnPrefix',
-                    grandTotal: 'totals.grandTotal'
+                    grandTotal: 'totals.grandTotal',
+                    taxableValue: 'totals.totalTaxable'
                 }
             },
             debitNote: {
@@ -88,9 +95,10 @@ class OtherDocumentReportModel {
                 paths: {
                     date: 'debitNoteDetails.dnDate',
                     number: 'debitNoteDetails.dnNumber',
-                    entity: 'vendorInformation.ms',
+                    entity: 'customerInformation.ms',
                     prefix: 'debitNoteDetails.dnPrefix',
-                    grandTotal: 'totals.grandTotal'
+                    grandTotal: 'totals.grandTotal',
+                    taxableValue: 'totals.totalTaxable'
                 }
             }
         };
@@ -100,7 +108,7 @@ class OtherDocumentReportModel {
     static async getOtherDocumentReport(filters = {}, options = {}) {
         try {
             const {
-                reportType,
+                documentType,
                 userId,
                 customerVendor,
                 products,
@@ -109,7 +117,9 @@ class OtherDocumentReportModel {
                 invoiceSeries,
                 fromDate,
                 toDate,
-                groupingOptions
+                groupingOptions,
+                staffId,
+                status
             } = filters;
 
             const { page = 1, limit = 50, sortBy = 'date', sortOrder = 'desc' } = options;
@@ -118,7 +128,7 @@ class OtherDocumentReportModel {
                 return { success: true, data: { docs: [], totalDocs: 0 } };
             }
 
-            const config = this.getModelConfig(reportType);
+            const config = this.getModelConfig(documentType);
             if (!config) {
                 return { success: true, data: { docs: [], totalDocs: 0 } };
             }
@@ -148,6 +158,51 @@ class OtherDocumentReportModel {
 
             if (invoiceSeries && paths.prefix) {
                 matchStage[paths.prefix] = { $regex: invoiceSeries, $options: 'i' };
+            }
+
+            if (staffId) {
+                if (mongoose.Types.ObjectId.isValid(staffId)) {
+                    matchStage.staff = { $in: [new mongoose.Types.ObjectId(staffId), staffId] };
+                } else {
+                    matchStage.staff = staffId;
+                }
+            }
+
+            if (status) {
+                // Ensure the model actually uses this status by checking its schema enum
+                let validStatuses = [];
+                let statusPath = model.schema.path('status');
+
+                // JobWork has status at jobWorkDetails.status
+                if (!statusPath && model.schema.path('jobWorkDetails.status')) {
+                    statusPath = model.schema.path('jobWorkDetails.status');
+                }
+
+                if (statusPath && statusPath.enumValues) {
+                    validStatuses = statusPath.enumValues;
+                }
+
+                let requestedStatuses = [];
+                if (Array.isArray(status)) {
+                    requestedStatuses = status;
+                } else if (typeof status === 'string' && status.includes(',')) {
+                    requestedStatuses = status.split(',').map(s => s.trim());
+                } else if (typeof status === 'string') {
+                    requestedStatuses = [status];
+                }
+
+                // Filter requested statuses against what's valid for this model
+                // If there are no enum restrictions, let it query everything.
+                let filteredStatuses = requestedStatuses;
+                if (validStatuses.length > 0) {
+                    filteredStatuses = requestedStatuses.filter(s => validStatuses.includes(s));
+                }
+
+                if (filteredStatuses.length > 0) {
+                    // Apply dynamically to root status or nested if needed
+                    const statusField = model.modelName === 'JobWork' ? 'jobWorkDetails.status' : 'status';
+                    matchStage[statusField] = { $in: filteredStatuses };
+                }
             }
 
             pipeline.push({ $match: matchStage });
@@ -192,9 +247,11 @@ class OtherDocumentReportModel {
             } else {
                 pipeline.push({
                     $project: {
+                        documentType: { $literal: documentType },
                         date: `$${paths.date}`,
                         number: `$${paths.number}`,
                         entityName: paths.entity ? `$${paths.entity}` : { $literal: '' },
+                        taxableValue: paths.taxableValue ? `$${paths.taxableValue}` : { $literal: 0 },
                         grandTotal: paths.grandTotal ? `$${paths.grandTotal}` : { $literal: 0 },
                         itemName: needsUnwind ? '$items.productName' : undefined,
                         itemQty: needsUnwind ? '$items.qty' : undefined,
@@ -239,6 +296,28 @@ class OtherDocumentReportModel {
             console.error('Other Document Report Error:', error);
             return { success: false, message: error.message };
         }
+    }
+    static getFilterMetadata(documentType = 'quotation') {
+        let docTypeLabel = 'Quotation';
+        if (documentType === 'jobWork') docTypeLabel = 'Job Work';
+        else if (documentType === 'proforma') docTypeLabel = 'Proforma Invoice';
+        else if (documentType === 'deliveryChallan') docTypeLabel = 'Delivery Challan';
+        else if (documentType === 'purchaseOrder') docTypeLabel = 'Purchase Order';
+        else if (documentType === 'saleOrder') docTypeLabel = 'Sale Order';
+        else if (documentType === 'creditNote') docTypeLabel = 'Credit Note';
+        else if (documentType === 'debitNote') docTypeLabel = 'Debit Note';
+
+        return {
+            groupingOptions: ['Product Name'],
+            columns: [
+                { field: 'documentType', label: 'Vch Type' },
+                { field: 'number', label: `${docTypeLabel} No` },
+                { field: 'date', label: `${docTypeLabel} Date` },
+                { field: 'entityName', label: 'Company Name' },
+                { field: 'taxableValue', label: 'Taxable Value Total' },
+                { field: 'grandTotal', label: 'Grand Total' }
+            ]
+        };
     }
 }
 

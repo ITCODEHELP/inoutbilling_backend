@@ -180,10 +180,17 @@ class ReportActionController {
                 else {
                     const strategy = REPORT_STRATEGIES[reportType];
                     if (strategy && strategy.model.getFilterMetadata) {
-                        const metadata = strategy.model.getFilterMetadata();
+                        const docType = filters ? filters.documentType : undefined;
+                        const metadata = strategy.model.getFilterMetadata(docType);
                         // Handle different metadata structures
                         if (metadata.columns && Array.isArray(metadata.columns)) {
-                            columnsToUse = metadata.columns.map(col => ({ field: col, label: col }));
+                            // Check if columns are already objects or just strings
+                            columnsToUse = metadata.columns.map(col => {
+                                if (typeof col === 'object' && col.field) {
+                                    return col;
+                                }
+                                return { field: col, label: col };
+                            });
                         } else if (metadata.availableColumns && metadata.availableColumns.invoiceLevel) {
                             // Helper for Sales Report structure if not returned in data
                             columnsToUse = metadata.availableColumns.invoiceLevel;

@@ -104,7 +104,7 @@ class OtherDocumentProductReportModel {
     static async getOtherDocumentProductReport(filters = {}, options = {}) {
         try {
             const {
-                reportType,
+                documentType,
                 userId,
                 customerVendor,
                 productGroup,
@@ -130,7 +130,7 @@ class OtherDocumentProductReportModel {
                 return { success: true, data: { docs: [], totalDocs: 0 } };
             }
 
-            const config = this.getModelConfig(reportType);
+            const config = this.getModelConfig(documentType);
             if (!config) {
                 return { success: true, data: { docs: [], totalDocs: 0 } };
             }
@@ -273,7 +273,12 @@ class OtherDocumentProductReportModel {
     static getFilterMetadata() {
         return {
             groupingOptions: ['Product Name', 'HSN', 'Product Group'],
-            columns: ['Product Name', 'Quantity', 'Amount', 'Avg Price']
+            columns: [
+                { field: '_id', label: 'Product Name' },
+                { field: 'totalQuantity', label: 'Quantity' },
+                { field: 'totalAmount', label: 'Amount' },
+                { field: 'avgPrice', label: 'Avg Price' }
+            ]
         };
     }
 }

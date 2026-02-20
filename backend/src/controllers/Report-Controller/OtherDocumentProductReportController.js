@@ -4,13 +4,22 @@ class OtherDocumentProductReportController {
 
     static async generateReport(req, res) {
         try {
-            const { filters = {}, options = {} } = req.body;
+            const { reportType, filters = {}, options = {} } = req.body;
 
             // Security
             filters.userId = req.user._id;
 
-            if (!filters.reportType) {
+            if (!reportType) {
                 return res.status(400).json({ success: false, message: 'Report Type is required' });
+            }
+
+            const validDocumentTypes = [
+                'quotation', 'jobWork', 'proforma', 'deliveryChallan',
+                'purchaseOrder', 'saleOrder', 'creditNote', 'debitNote', 'exportInvoice'
+            ];
+
+            if (!filters.documentType || !validDocumentTypes.includes(filters.documentType)) {
+                return res.status(400).json({ success: false, message: 'Invalid or missing filters.documentType' });
             }
 
             const result = await OtherDocumentProductReportModel.getOtherDocumentProductReport(filters, options);

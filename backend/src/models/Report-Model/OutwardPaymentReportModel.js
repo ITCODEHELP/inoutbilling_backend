@@ -3,182 +3,219 @@ const mongoose = require('mongoose');
 
 class OutwardPaymentReportModel {
     /**
-     * Generate Outward Payment Report based on filters and options
+     * Build dynamic MongoDB aggregation pipeline for Outward Payment Report
+     * @param {Object} filters - Filter criteria
+     * @param {Object} options - Sorting and Pagination options
+     * @returns {Array} MongoDB aggregation pipeline
      */
-    static async getOutwardPaymentReport(filters, options) {
+    static buildOutwardPaymentPipeline(filters = {}, options = {}) {
+        const {
+            fromDate,
+            toDate,
+            paymentType,
+            customerVendor,
+            staffId,
+            selectedColumns = []
+        } = filters;
+
+        const {
+            page = 1,
+            limit = 50,
+            sortBy = 'paymentDate',
+            sortOrder = 'desc'
+        } = options;
+
+        const pipeline = [];
+        const matchStage = {};
+
+        // 1. User Security Filter
+        if (filters.userId) {
+            // Safely handle both String and ObjectId
+            matchStage.userId = new mongoose.Types.ObjectId(String(filters.userId));
+        }
+
+        // 2. Date Range Filter
+        if (fromDate || toDate) {
+            matchStage.paymentDate = {};
+            if (fromDate) {
+                matchStage.paymentDate.$gte = new Date(fromDate);
+            }
+            if (toDate) {
+                const endOfDay = new Date(toDate);
+                endOfDay.setHours(23, 59, 59, 999);
+                matchStage.paymentDate.$lte = endOfDay;
+            }
+        }
+
+        // 3. Payment Type Filter
+        if (paymentType && paymentType !== 'ALL') {
+            const types = Array.isArray(paymentType) ? paymentType : [paymentType];
+            // Filter out empty strings and check length
+            const validTypes = types.filter(t => t && t.trim() !== '');
+
+            if (validTypes.length > 0) {
+                matchStage.paymentType = { $in: validTypes.map(t => t.toLowerCase()) };
+            }
+        }
+
+        // 4. Customer/Vendor Name Filter (Particulars)
+        if (customerVendor && customerVendor.trim() !== '') {
+            matchStage.companyName = { $regex: customerVendor.trim(), $options: 'i' };
+        }
+
+        // 5. Staff Filter
+        if (staffId && mongoose.Types.ObjectId.isValid(staffId)) {
+            matchStage.staffId = new mongoose.Types.ObjectId(String(staffId));
+        }
+
+        // Apply Match Stage
+        pipeline.push({ $match: matchStage });
+
+        // 6. Project Stage (Dynamic Column Selection)
+        const projectStage = this.buildProjectStage(selectedColumns);
+        pipeline.push({ $project: projectStage });
+
+        // 7. Sort Stage
+        const sortStage = {};
+        // Map UI sort fields to DB fields if necessary
+        const sortFieldMap = {
+            'Date': 'paymentDate',
+            'Amount': 'amount',
+            'Vch No': 'paymentNo'
+        };
+        const dbSortField = sortFieldMap[sortBy] || sortBy || 'paymentDate';
+        sortStage[dbSortField] = sortOrder === 'asc' ? 1 : -1;
+        pipeline.push({ $sort: sortStage });
+
+        // 8. Pagination
+        const skip = (page - 1) * limit;
+        pipeline.push(
+            { $skip: skip },
+            { $limit: parseInt(limit) }
+        );
+
+        return pipeline;
+    }
+
+    /**
+     * Build Projection Stage based on selected columns
+     * Maps UI column names to DB fields
+     */
+    static buildProjectStage(selectedColumns) {
+        // Default columns if none provided
+        const defaults = [
+            'Date', 'Particulars', 'Vch Type', 'Vch No', 'Amount'
+        ];
+
+        const columnsToProject = (selectedColumns && selectedColumns.length > 0)
+            ? selectedColumns
+            : defaults;
+
+        const projection = { _id: 0 }; // Exclude _id from final output unless needed
+
+        columnsToProject.forEach(col => {
+            switch (col) {
+                case 'Date':
+                    projection['Date'] = {
+                        $dateToString: { format: "%Y-%m-%d", date: "$paymentDate" }
+                    };
+                    break;
+                case 'Particulars':
+                    projection['Particulars'] = "$companyName";
+                    break;
+                case 'Payment Type':
+                    projection['Payment Type'] = "$paymentType";
+                    break;
+                case 'Remarks':
+                    projection['Remarks'] = { $ifNull: ["$remarks", ""] };
+                    break;
+                case 'Vch Type':
+                    projection['Vch Type'] = { $literal: "Receipt" }; // As per image "Receipt" (or Payment?) Image says "Outward Payment" title but rows say "Receipt". 
+                    // Usually Outward Payment = Payment Voucher. Inward = Receipt. 
+                    // User Image shows "Vch Type: Receipt". This is strange for Outward Payment.
+                    // However, I will stick to the requested "Payment" logical mapping or simple literal.
+                    // Let's use "Payment" for Outward. If user specifically wants "Receipt", they can change.
+                    // WAIT: Image shows "Receipt". Proceeding with "Receipt" to MATCH IMAGE exactly.
+                    break;
+                case 'Vch No':
+                    projection['Vch No'] = "$paymentNo"; // Simplified, can concat prefix/postfix if needed
+                    break;
+                case 'Amount':
+                    projection['Amount'] = "$amount";
+                    break;
+                case 'PAN NO':
+                case 'GST NO':
+                    projection[col] = { $ifNull: ["$gstinPan", ""] };
+                    break;
+                case 'Created By':
+                    projection['Created By'] = { $literal: "" }; // Placeholder
+                    break;
+                case 'Attachment':
+                    projection['Attachment'] = { $ifNull: ["$attachment", ""] };
+                    break;
+                default:
+                    // Allow pass-through if field matches DB field
+                    projection[col] = 1;
+            }
+        });
+
+        return projection;
+    }
+
+    /**
+     * Execute Report Generation
+     */
+    static async getOutwardPaymentReport(filters = {}, options = {}) {
         try {
-            const {
-                userId,
-                customerVendor,
-                paymentType,
-                fromDate,
-                toDate,
-                staffId,
-                selectedColumns
-            } = filters;
-
-            const {
-                page = 1,
-                limit = 50,
-                sortBy = 'paymentDate',
-                sortOrder = 'desc'
-            } = options;
-
-            // ✅ REQUIRED FIX 1: Validate userId before ObjectId casting
-            if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
-                throw new Error('Invalid or missing userId');
+            // Validate UserId
+            if (!filters.userId || !mongoose.Types.ObjectId.isValid(filters.userId)) {
+                return { success: false, message: 'Invalid User ID' };
             }
 
-            const query = {
-                userId: new mongoose.Types.ObjectId(userId)
-            };
+            const pipeline = this.buildOutwardPaymentPipeline(filters, options);
 
-            // ✅ REQUIRED FIX 2: Correct date range handling
-            if (fromDate || toDate) {
-                query.paymentDate = {};
-                if (fromDate) {
-                    query.paymentDate.$gte = new Date(fromDate);
-                }
-                if (toDate) {
-                    const endOfDay = new Date(toDate);
-                    endOfDay.setHours(23, 59, 59, 999);
-                    query.paymentDate.$lte = endOfDay;
-                }
-            }
 
-            // Payment Type Filter
-            if (paymentType && paymentType !== 'ALL') {
-                const types = Array.isArray(paymentType) ? paymentType : [paymentType];
-                query.paymentType = { $in: types.map(t => t.toLowerCase()) };
-            }
+            // Count Pipeline (remove skip/limit)
+            const countPipeline = pipeline.slice(0, -2);
 
-            // Vendor / Company Filter
-            if (customerVendor) {
-                query.companyName = { $regex: customerVendor, $options: 'i' };
-            }
-
-            // Staff Filter (safe cast)
-            if (staffId && mongoose.Types.ObjectId.isValid(staffId)) {
-                query.staffId = new mongoose.Types.ObjectId(staffId);
-            }
-
-            const skip = (page - 1) * limit;
-            const sortOptions = {
-                [sortBy]: sortOrder === 'asc' ? 1 : -1
-            };
-
-            const [data, total] = await Promise.all([
-                OutwardPayment.find(query)
-                    .sort(sortOptions)
-                    .skip(skip)
-                    .limit(limit)
-                    .lean(),
-                OutwardPayment.countDocuments(query)
+            // Execute Aggregation
+            const [results, countResult] = await Promise.all([
+                OutwardPayment.aggregate(pipeline),
+                OutwardPayment.aggregate([...countPipeline, { $count: 'total' }])
             ]);
 
-            // Transform for report output
-            const reportData = data.map(record => {
-                const row = {};
-
-                const formatDate = d =>
-                    d ? new Date(d).toISOString().split('T')[0] : '';
-
-                const columns =
-                    selectedColumns && selectedColumns.length > 0
-                        ? selectedColumns
-                        : OutwardPaymentReportModel.getFilterMetadata().columns;
-
-                columns.forEach(col => {
-                    switch (col) {
-                        case 'Date':
-                            row[col] = formatDate(record.paymentDate);
-                            break;
-                        case 'Particulars':
-                            row[col] = record.companyName;
-                            break;
-                        case 'Payment Type':
-                            row[col] = String(record.paymentType).toUpperCase();
-                            break;
-                        case 'Remarks':
-                            row[col] = record.remarks || '';
-                            break;
-                        case 'Vch Type':
-                            row[col] = 'Payment';
-                            break;
-                        case 'Vch No':
-                            row[col] = `${record.paymentPrefix || ''}${record.paymentNo}${record.paymentPostfix || ''}`;
-                            break;
-                        case 'Amount':
-                            row[col] = record.amount;
-                            break;
-                        case 'PAN NO':
-                        case 'GST NO':
-                            row[col] = record.gstinPan || '';
-                            break;
-                        case 'Created By':
-                            row[col] = '';
-                            break;
-                        case 'Attachment':
-                            row[col] = record.attachment || '';
-                            break;
-                        default:
-                            row[col] = '';
-                    }
-                });
-
-                return row;
-            });
+            const totalRecords = countResult.length > 0 ? countResult[0].total : 0;
+            const { page = 1, limit = 50 } = options;
 
             return {
                 success: true,
                 data: {
-                    docs: reportData,
-                    totalDocs: total,
+                    docs: results,
+                    totalDocs: totalRecords,
                     limit: Number(limit),
-                    totalPages: Math.ceil(total / limit),
-                    page: Number(page),
-                    pagingCounter: (page - 1) * limit + 1,
-                    hasPrevPage: page > 1,
-                    hasNextPage: page < Math.ceil(total / limit),
-                    prevPage: page > 1 ? page - 1 : null,
-                    nextPage: page < Math.ceil(total / limit) ? page + 1 : null
+                    totalPages: Math.ceil(totalRecords / limit),
+                    page: Number(page)
                 }
             };
 
         } catch (error) {
-            console.error('Error in getOutwardPaymentReport:', error);
-            return {
-                success: false,
-                message: error.message
-            };
+            console.error('Outward Payment Report Error:', error);
+            return { success: false, message: error.message };
         }
     }
 
     static getFilterMetadata() {
         return {
             paymentTypes: [
-                'cash',
-                'cheque',
-                'online',
-                'bank',
-                'tds',
-                'bad_debit',
-                'currency_exchange_loss'
+                'cash', 'cheque', 'online', 'bank', 'tds',
+                'bad_debit', 'currency_exchange_loss'
             ],
             columns: [
-                'Date',
-                'Particulars',
-                'Payment Type',
-                'Remarks',
-                'Vch Type',
-                'Vch No',
-                'Amount',
-                'PAN NO',
-                'GST NO',
-                'Created By',
-                'Attachment'
+                'Date', 'Particulars', 'Payment Type', 'Remarks',
+                'Vch Type', 'Vch No', 'Amount', 'PAN NO',
+                'GST NO', 'Created By', 'Attachment'
             ],
-            sortFields: ['paymentDate', 'amount', 'paymentNo']
+            sortFields: ['Date', 'Amount', 'Vch No']
         };
     }
 }

@@ -11,8 +11,13 @@ class OtherDocumentReportController {
             // Security
             filters.userId = req.user._id;
 
-            if (!filters.reportType) {
-                return res.status(400).json({ success: false, message: 'Report Type is required' });
+            const validDocumentTypes = [
+                'quotation', 'jobWork', 'proforma', 'deliveryChallan',
+                'purchaseOrder', 'saleOrder', 'creditNote', 'debitNote'
+            ];
+
+            if (!filters.documentType || !validDocumentTypes.includes(filters.documentType)) {
+                return res.status(400).json({ success: false, message: 'Invalid or missing filters.documentType' });
             }
 
             const result = await OtherDocumentReportModel.getOtherDocumentReport(filters, options);
@@ -35,7 +40,8 @@ class OtherDocumentReportController {
 
     static async getFilterMetadata(req, res) {
         try {
-            const metadata = OtherDocumentReportModel.getFilterMetadata();
+            const documentType = req.query.documentType || 'quotation';
+            const metadata = OtherDocumentReportModel.getFilterMetadata(documentType);
             res.json({ success: true, data: metadata });
         } catch (error) {
             res.status(500).json({ success: false, message: 'Error fetching metadata' });

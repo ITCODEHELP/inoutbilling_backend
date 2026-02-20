@@ -6,36 +6,53 @@
 ### Request Body
 ```json
 {
-  "filters": {
-    "customerVendor": "Company A",
-    "paymentType": ["cash", "cheque"],
-    "fromDate": "2026-01-01",
-    "toDate": "2026-01-31"
-  },
-  "options": {
-    "page": 1,
-    "limit": 50,
-    "sortBy": "paymentDate",
-    "sortOrder": "desc"
-  }
+    "filters": {
+        "fromDate": "2024-02-01",
+        "toDate": "2024-02-20",
+        "paymentType": ["ONLINE", "CASH"],
+        "selectedColumns": ["Date", "Particulars", "Vch Type", "Vch No", "Amount"] 
+    },
+    "options": {
+        "page": 1,
+        "limit": 50,
+        "sortBy": "Date",
+        "sortOrder": "desc"
+    }
 }
 ```
 
 ### Response
 ```json
 {
-  "success": true,
-  "data": {
-    "docs": [
-      {
-        "Date": "2026-01-15",
-        "Particulars": "Company A",
-        "Payment Type": "CASH",
-        "Vch No": "PAY-1001",
-        "Amount": 5000
-      }
-    ]
-  }
+    "success": true,
+    "data": {
+        "docs": [
+             {
+                "Date": "2024-02-13",
+                "Particulars": "Mumbai Electronics",
+                "Vch Type": "Receipt",
+                "Vch No": "1",
+                "Amount": 17700
+            },
+            {
+                "Date": "2024-02-13",
+                "Particulars": "Stationery Mart",
+                "Vch Type": "Receipt",
+                "Vch No": "2",
+                "Amount": 22400
+            }
+        ],
+        "totalDocs": 5,
+        "limit": 50,
+        "totalPages": 1,
+        "page": 1,
+        "pagingCounter": 1,
+        "hasPrevPage": false,
+        "hasNextPage": false,
+        "prevPage": null,
+        "nextPage": null
+    },
+    "message": "Report generated successfully"
 }
 ```
 

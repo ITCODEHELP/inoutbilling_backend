@@ -28,7 +28,7 @@ POST /api/reports/sales
 Generates a sales report based on provided filters and customization options. Supports advanced filtering, grouping, and column selection.
 
 ### Request Body
-    },
+    {,
     "options": {
         "page": 1,
         "limit": 50,

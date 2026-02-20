@@ -1,5 +1,5 @@
 const OutwardPaymentReportModel = require('../../models/Report-Model/OutwardPaymentReportModel');
-const User = require('../../models/User-Model/User');
+const mongoose = require('mongoose');
 
 class OutwardPaymentReportController {
 
@@ -18,6 +18,9 @@ class OutwardPaymentReportController {
                     message: 'Invalid payment type filtered'
                 });
             }
+
+            // Note: selectedColumns should be part of filters object from frontend request
+            // filters.selectedColumns = req.body.selectedColumns || filters.selectedColumns; (If passed separately)
 
             const result = await OutwardPaymentReportModel.getOutwardPaymentReport(filters, options);
 
@@ -38,13 +41,11 @@ class OutwardPaymentReportController {
     }
 
     static validateFilters(filters) {
-        // reuse same Enum list from Inward or Define here
         const validTypes = ['ALL', 'CASH', 'CHEQUE', 'ONLINE', 'BANK', 'TDS', 'BAD_DEBTS_KASAR',
             'cash', 'cheque', 'online', 'bank', 'tds', 'bad_debit', 'currency_exchange_loss'];
 
         if (filters.paymentType) {
             const types = Array.isArray(filters.paymentType) ? filters.paymentType : [filters.paymentType];
-            // Check if at least one valid type exists or strict check
             return types.every(t => validTypes.includes(t));
         }
         return true;

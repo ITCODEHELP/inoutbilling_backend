@@ -6,12 +6,18 @@
 ### Request Body
 ```json
 {
+  "reportType": "other-document",
   "filters": {
-    "reportType": "quotation", // [quotation, proforma, deliveryChallan, purchaseOrder, saleOrder, creditNote, debitNote, jobWork]
+    "documentType": "quotation", // [quotation, proforma, deliveryChallan, purchaseOrder, saleOrder, creditNote, debitNote, jobWork]
     "customerVendor": "Company Name",
-    "documentNumber": "QT-001",
+    "products": ["Product A", "Product B"],
+    "productGroup": ["Group 1", "Group 2"],
     "fromDate": "2026-01-01",
-    "toDate": "2026-01-31"
+    "toDate": "2026-01-31",
+    "staffId": "65ab123cdef...", // ObjectId of staff member
+    "documentNumber": "QT-001",
+    "status": "Active",
+    "invoiceSeries": "QT-"
   },
   "options": {
     "page": 1,
@@ -61,10 +67,16 @@ Use the following payload for all the above endpoints.
   "reportType": "other-document", 
 
   "filters": {
-    "reportType": "quotation", // Required: specific doc type
+    "documentType": "quotation", // Required: specific doc type
     "customerVendor": "",
+    "products": [],
+    "productGroup": [],
     "fromDate": "2026-01-01",
-    "toDate": "2026-12-31"
+    "toDate": "2026-12-31",
+    "staffId": "",
+    "documentNumber": "",
+    "status": "",
+    "invoiceSeries": ""
   },
   "options": {
     "page": 1,

@@ -6,8 +6,9 @@
 ### Request Body
 ```json
 {
+  "reportType": "other-document-product",
   "filters": {
-    "reportType": "quotation", // [quotation, proforma, deliveryChallan, purchaseOrder, saleOrder, creditNote, debitNote, jobWork]
+    "documentType": "quotation", // [quotation, proforma, deliveryChallan, purchaseOrder, saleOrder, creditNote, debitNote, jobWork]
     "customerVendor": "Company Name",
     "products": ["Product A"],
     "productGroup": ["Group 1"],
@@ -64,7 +65,7 @@ Use the following payload for all the above endpoints.
   "reportType": "other-document-product", 
 
   "filters": {
-    "reportType": "quotation", // Required
+    "documentType": "quotation", // Required
     "fromDate": "2026-01-01",
     "toDate": "2026-12-31"
   },
