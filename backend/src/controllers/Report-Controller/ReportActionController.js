@@ -161,7 +161,16 @@ class ReportActionController {
 
     static async handleAction(req, res, actionType) {
         try {
-            const { reportType, filters = {}, options = {}, reportTitle = 'Report', email, message } = req.body;
+            // console.log("Download API Hit. Action:", actionType);
+
+            if (!req.body.reportType) {
+                return res.status(400).json({
+                    success: false,
+                    message: "reportType is mandatory"
+                });
+            }
+
+            const { reportType, filters = {}, options = {}, reportTitle = 'Report', to, cc, bcc, subject, body } = req.body;
 
             // 1. Fetch Data
             const { records, summary, columns: fetchedColumns } = await ReportActionController.getReportData(reportType, filters, options, req.user);
@@ -213,8 +222,11 @@ class ReportActionController {
                 filters,
                 companyInfo: req.user,
                 summary,
-                email,
-                message
+                to,
+                cc,
+                bcc,
+                subject,
+                body
             };
 
             // 4. Execute Action
@@ -250,8 +262,8 @@ class ReportActionController {
 
     // --- Endpoints ---
     static async printReport(req, res) { await ReportActionController.handleAction(req, res, 'print'); }
-    static async downloadPdf(req, res) { await ReportActionController.handleAction(req, res, 'pdf'); }
-    static async downloadExcel(req, res) { await ReportActionController.handleAction(req, res, 'excel'); }
+    static async downloadReport(req, res) { await ReportActionController.handleAction(req, res, 'pdf'); }
+    static async exportExcelReport(req, res) { await ReportActionController.handleAction(req, res, 'excel'); }
     static async emailReport(req, res) { await ReportActionController.handleAction(req, res, 'email'); }
 }
 

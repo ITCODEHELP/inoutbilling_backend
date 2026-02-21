@@ -315,9 +315,9 @@ const generateReportExcel = async ({ data, columns, reportTitle, filters, compan
 // --- Email ---
 
 const sendReportEmail = async (params) => {
-    const { email, reportTitle, message, companyInfo } = params;
+    const { to, cc, bcc, subject, body, reportTitle, companyInfo } = params;
 
-    if (!email) throw new Error('Recipient email is required');
+    if (!to) throw new Error('Recipient email is required');
 
     const pdfBuffer = await generateReportPdf(params);
 
@@ -337,9 +337,11 @@ const sendReportEmail = async (params) => {
 
     const mailOptions = {
         from: `"${process.env.FROM_NAME}" <${process.env.FROM_EMAIL}>`,
-        to: email,
-        subject: `${reportTitle}`,
-        text: message || `Please find attached the ${reportTitle}.`,
+        to,
+        cc,
+        bcc,
+        subject: subject || `${reportTitle}`,
+        html: body || `<p>Please find attached the ${reportTitle}.</p>`,
         attachments: [
             {
                 filename,

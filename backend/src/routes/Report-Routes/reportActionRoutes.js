@@ -3,6 +3,8 @@ const router = express.Router();
 const ReportActionController = require('../../controllers/Report-Controller/ReportActionController');
 const { protect } = require('../../middlewares/authMiddleware');
 
+console.log("Report Action Routes Loaded");
+
 /**
  * @route   POST /api/reports/action/print
  * @desc    Generate HTML for printing any report
@@ -12,20 +14,20 @@ const { protect } = require('../../middlewares/authMiddleware');
 router.post('/action/print', protect, ReportActionController.printReport);
 
 /**
- * @route   POST /api/reports/action/pdf
+ * @route   POST /api/reports/action/download
  * @desc    Download PDF for any report
  * @access  Private
  * @body    { reportType, filters, options, columns, reportTitle }
  */
-router.post('/action/pdf', protect, ReportActionController.downloadPdf);
+router.post('/action/download', protect, ReportActionController.downloadReport);
 
 /**
- * @route   POST /api/reports/action/excel
+ * @route   POST /api/reports/action/export
  * @desc    Download Excel for any report
  * @access  Private
  * @body    { reportType, filters, options, columns, reportTitle }
  */
-router.post('/action/excel', protect, ReportActionController.downloadExcel);
+router.post('/action/export', protect, ReportActionController.exportExcelReport);
 
 /**
  * @route   POST /api/reports/action/email
