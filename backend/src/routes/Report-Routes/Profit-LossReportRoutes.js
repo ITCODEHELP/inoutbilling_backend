@@ -4,5 +4,6 @@ const ProfitLossReportController = require('../../controllers/Report-Controller/
 const { protect } = require('../../middlewares/authMiddleware');
 
 router.post('/profit-loss', protect, ProfitLossReportController.generateReport);
+router.post('/profit-loss/details', protect, ProfitLossReportController.getProfitLossDetails);
 
 module.exports = router;

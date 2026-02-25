@@ -4,6 +4,7 @@ const StockReportController = require('../../controllers/Report-Controller/Stock
 const { protect } = require('../../middlewares/authMiddleware');
 
 router.post('/stock', protect, StockReportController.generateReport);
+router.post('/stock/details', protect, StockReportController.getStockDetails);
 router.post('/stock/print', protect, StockReportController.printReport);
 router.post('/stock/email', protect, StockReportController.emailReport);
 router.post('/stock/export', protect, StockReportController.exportReport);

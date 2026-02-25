@@ -9,6 +9,8 @@ class StockReportModel {
     static async getStockReport(filters = {}, options = {}) {
         try {
             const {
+                productId,
+                productGroupId,
                 productName,
                 productGroup,
                 hsnCode,
@@ -16,6 +18,9 @@ class StockReportModel {
                 minStock,
                 maxStock,
                 hideZeroStock,
+                showSellValue = true,
+                showPurchaseValue = true,
+                documentType = 'Stock Report',
                 userId
             } = filters;
 
@@ -46,7 +51,9 @@ class StockReportModel {
             // 1. PRODUCT STREAM (Base)
             // Use Name as key.
             const productMatch = { userId: activeUserId, itemType: 'Product' };
+            if (productId) productMatch._id = new mongoose.Types.ObjectId(productId);
             if (productName) productMatch.name = { $regex: productName, $options: 'i' };
+            if (productGroupId) productMatch.productGroup = productGroupId;
             if (productGroup) productMatch.productGroup = { $regex: productGroup, $options: 'i' };
             if (hsnCode) productMatch.hsnSac = { $regex: hsnCode, $options: 'i' };
 
@@ -55,19 +62,16 @@ class StockReportModel {
                 $project: {
                     userId: 1,
                     type: { $literal: 'Product' },
+                    productId: '$_id',
                     name: '$name', // Key
                     productGroup: '$productGroup',
                     hsnSac: '$hsnSac',
+                    unit: '$unitOfMeasurement',
                     sellPrice: '$sellPrice',
                     purchasePrice: '$purchasePrice',
+                    lowStockAlert: { $ifNull: ['$lowStockAlert', 0] },
                     // Opening Stock
-                    qty: {
-                        $cond: [
-                            { $and: [{ $eq: ['$manageStock', true] }, { $eq: ['$stockType', 'Opening'] }] },
-                            { $ifNull: ['$qty', 0] },
-                            0
-                        ]
-                    }
+                    qty: { $ifNull: ['$availableQuantity', 0] }
                 }
             });
 
@@ -125,10 +129,13 @@ class StockReportModel {
                     _id: '$name', // Group by NAME
 
                     // Metadata from Product doc
-                    productGroup: { $first: '$productGroup' },
-                    hsnSac: { $first: '$hsnSac' },
-                    sellPrice: { $first: '$sellPrice' },
-                    purchasePrice: { $first: '$purchasePrice' },
+                    productId: { $max: '$productId' },
+                    productGroup: { $max: '$productGroup' },
+                    hsnSac: { $max: '$hsnSac' },
+                    unit: { $max: '$unit' },
+                    sellPrice: { $max: '$sellPrice' },
+                    purchasePrice: { $max: '$purchasePrice' },
+                    lowStockAlert: { $max: '$lowStockAlert' },
 
                     stock: { $sum: '$qty' }, // Sum Opening + Purchase - Sale (+/- Adjustments implicitly via qty)
 
@@ -137,14 +144,14 @@ class StockReportModel {
                 }
             });
 
-            // Filter orphans (transactions for products not in Product collection filters)
-            pipeline.push({ $match: { docPresent: 1 } });
+            // Remove orphan filter; rely strictly on base Product collection
+            // pipeline.push({ $match: { docPresent: 1 } });
 
             /* ---------------- PART 3: VALUES & FILTERS ---------------- */
 
             pipeline.push({
                 $addFields: {
-                    name: '$_id',
+                    productName: '$_id',
                     sellValue: { $multiply: ['$stock', { $ifNull: ['$sellPrice', 0] }] },
                     purchaseValue: { $multiply: ['$stock', { $ifNull: ['$purchasePrice', 0] }] }
                 }
@@ -161,17 +168,51 @@ class StockReportModel {
                 pipeline.push({ $match: { stock: { $lte: Number(maxStock) } } });
             }
 
+            // --- 'Low Stock Report' Filter ---
+            if (documentType === 'Low Stock Report' || documentType === 'Low Stock') {
+                pipeline.push({
+                    $addFields: {
+                        numericLowStock: { $convert: { input: '$lowStockAlert', to: 'double', onError: 0, onNull: 0 } },
+                        numericStock: { $convert: { input: '$stock', to: 'double', onError: 0, onNull: 0 } }
+                    }
+                });
+                pipeline.push({
+                    $match: {
+                        $expr: {
+                            $lte: ['$numericStock', '$numericLowStock']
+                        }
+                    }
+                });
+            }
+
+            // Cleanup explicitly unwanted fields
+            const finalProjection = {
+                _id: 0,
+                productId: 1,
+                productName: 1,
+                productGroup: 1,
+                hsnSac: 1,
+                unit: 1,
+                stock: 1
+            };
+
+            if (showSellValue) finalProjection.sellValue = 1;
+            if (showPurchaseValue) finalProjection.purchaseValue = 1;
+
+            pipeline.push({ $project: finalProjection });
+
             /* ---------------- PART 4: PAGINATION & TOTALS ---------------- */
 
             const sortStage = {};
             const mapSort = {
-                'name': 'name',
+                'name': 'productName',
+                'productName': 'productName',
                 'productGroup': 'productGroup',
                 'stock': 'stock',
                 'sellValue': 'sellValue',
                 'purchaseValue': 'purchaseValue'
             };
-            const sortKey = mapSort[sortBy] || 'name';
+            const sortKey = mapSort[sortBy] || 'productName';
             sortStage[sortKey] = sortOrder === 'asc' ? 1 : -1;
             pipeline.push({ $sort: sortStage });
 
@@ -186,9 +227,7 @@ class StockReportModel {
                         {
                             $group: {
                                 _id: null,
-                                totalStock: { $sum: '$stock' },
-                                totalSellValue: { $sum: '$sellValue' },
-                                totalPurchaseValue: { $sum: '$purchaseValue' }
+                                totalStockQty: { $sum: '$stock' }
                             }
                         }
                     ]
@@ -196,11 +235,20 @@ class StockReportModel {
             });
 
             const result = await Product.aggregate(pipeline).allowDiskUse(true);
-            const docs = result[0]?.docs || [];
+            const rawDocs = result[0]?.docs || [];
             const total = result[0]?.totalCount?.[0]?.total || 0;
-            const grandTotals = result[0]?.grandTotals?.[0] || { totalStock: 0, totalSellValue: 0, totalPurchaseValue: 0 };
+            const grandTotals = result[0]?.grandTotals?.[0] || { totalStockQty: 0 };
 
-            const userDetails = await User.findById(activeUserId).select('companyName address city state pincode phone email').lean();
+            // Remove null fields from docs mapping
+            const docs = rawDocs.map(doc => {
+                const cleaned = {};
+                for (const [key, value] of Object.entries(doc)) {
+                    if (value !== null) {
+                        cleaned[key] = value;
+                    }
+                }
+                return cleaned;
+            });
 
             return {
                 success: true,
@@ -208,19 +256,173 @@ class StockReportModel {
                     docs,
                     totalDocs: total,
                     limit: Number(limit),
-                    totalPages: Math.ceil(total / limit),
+                    totalPages: Math.ceil(total / limit) || 1,
                     page: Number(page),
-                    companyDetails: userDetails,
-                    totals: {
-                        totalStock: grandTotals.totalStock,
-                        totalSellValue: grandTotals.totalSellValue,
-                        totalPurchaseValue: grandTotals.totalPurchaseValue
+                    summary: {
+                        totalStockQty: grandTotals.totalStockQty
                     }
-                }
+                },
+                message: "Stock Report generated successfully"
             };
 
         } catch (error) {
             console.error('Stock Report Error:', error);
+            return { success: false, message: error.message };
+        }
+    }
+
+    static async getStockDetails(filters = {}, options = {}) {
+        try {
+            const { productId, productName, stockAsOnDate, userId } = filters;
+            const { page = 1, limit = 10 } = options;
+
+            if ((!productId && !productName) || !userId || !mongoose.Types.ObjectId.isValid(userId)) {
+                return { success: false, message: 'Invalid or missing product reference/userId' };
+            }
+
+            const activeUserId = new mongoose.Types.ObjectId(userId);
+            let product;
+            if (productId) {
+                product = await Product.findOne({ _id: productId, userId: activeUserId });
+            } else if (productName) {
+                // To safely construct ObjectID context, we lookup by name and user
+                product = await Product.findOne({ name: productName, userId: activeUserId });
+            }
+
+            // If product document does not exist, it might be an orphan from historical invoices.
+            // We can still drill down using the string name but start with 0 hard stock!
+            if (!product && !productName) {
+                return { success: false, message: 'Product not found and name not provided' };
+            }
+
+            const targetProductName = product ? product.name : productName;
+
+            // Date filtering
+            const dateMatch = {};
+            if (stockAsOnDate) {
+                const eod = new Date(stockAsOnDate);
+                eod.setUTCHours(23, 59, 59, 999);
+                dateMatch.$lte = eod;
+            }
+
+            // Fetch running aggregation
+            const pipeline = [];
+
+            // opening stock if exists
+            let openingStock = product ? (product.availableQuantity || 0) : 0;
+            let purchasePrice = product ? (product.purchasePrice || 0) : 0;
+
+            // 1. Purchase Invoices (Inward)
+            const purchaseMatch = { userId: activeUserId };
+            if (Object.keys(dateMatch).length > 0) purchaseMatch['invoiceDetails.date'] = dateMatch;
+
+            pipeline.push({
+                $unionWith: {
+                    coll: 'purchaseinvoices',
+                    pipeline: [
+                        { $match: purchaseMatch },
+                        { $unwind: '$items' },
+                        { $match: { 'items.productName': targetProductName } },
+                        {
+                            $project: {
+                                _id: 0,
+                                type: { $literal: 'Purchase' },
+                                docNo: '$invoiceDetails.invoiceNumber',
+                                date: '$invoiceDetails.date',
+                                quantityIn: { $ifNull: ['$items.qty', 0] },
+                                quantityOut: { $literal: 0 },
+                                price: { $ifNull: ['$items.price', 0] },
+                                total: { $ifNull: ['$items.total', 0] }
+                            }
+                        }
+                    ]
+                }
+            });
+
+            // 2. Sale Invoices (Outward)
+            const saleMatch = { userId: activeUserId };
+            if (Object.keys(dateMatch).length > 0) saleMatch['invoiceDetails.date'] = dateMatch;
+
+            pipeline.push({
+                $unionWith: {
+                    coll: 'saleinvoices',
+                    pipeline: [
+                        { $match: saleMatch },
+                        { $unwind: '$items' },
+                        { $match: { 'items.productName': targetProductName } },
+                        {
+                            $project: {
+                                _id: 0,
+                                type: { $literal: 'Sale' },
+                                docNo: '$invoiceDetails.invoiceNumber',
+                                date: '$invoiceDetails.date',
+                                quantityIn: { $literal: 0 },
+                                quantityOut: { $ifNull: ['$items.qty', 0] },
+                                price: { $ifNull: ['$items.price', 0] },
+                                total: { $ifNull: ['$items.total', 0] }
+                            }
+                        }
+                    ]
+                }
+            });
+
+            // We do not have a base collection started in this pipeline approach if it's purely $unionWith. 
+            // We use the User collection since activeUserId is guaranteed to exist.
+            const fullPipeline = [
+                { $match: { _id: activeUserId } }, // Guarantee exactly 1 doc 
+                { $limit: 1 },
+                {
+                    $project: {
+                        _id: 0,
+                        type: { $literal: 'Opening Stock' },
+                        docNo: { $literal: 'OPENING' },
+                        date: { $literal: new Date('1970-01-01') }, // way back
+                        quantityIn: { $literal: openingStock },
+                        quantityOut: { $literal: 0 },
+                        price: { $literal: purchasePrice },
+                        total: { $literal: openingStock * purchasePrice }
+                    }
+                },
+                ...pipeline,
+                { $sort: { date: 1 } }
+            ];
+
+            const transactions = await User.aggregate(fullPipeline).allowDiskUse(true);
+
+            // Calculate running balance purely in javascript since it's easier to paginate natively
+            let currentBalance = 0;
+            const computedTxs = transactions.map(tx => {
+                currentBalance = currentBalance + tx.quantityIn - tx.quantityOut;
+                return {
+                    ...tx,
+                    date: tx.date instanceof Date ? tx.date.toISOString().split('T')[0] : tx.date,
+                    balance: currentBalance
+                };
+            });
+
+            const finalStock = currentBalance;
+            const totalDocs = computedTxs.length;
+
+            // Manual pagination after sorting and computing balance
+            const pageNum = parseInt(page) || 1;
+            const limitNum = parseInt(limit) || 10;
+            const skip = (pageNum - 1) * limitNum;
+            const paginatedDocs = computedTxs.slice(skip, skip + limitNum);
+
+            return {
+                success: true,
+                data: {
+                    docs: paginatedDocs,
+                    totalDocs,
+                    summary: {
+                        finalStock
+                    }
+                },
+                message: "Stock details fetched successfully"
+            };
+
+        } catch (error) {
+            console.error('Stock Details Error:', error);
             return { success: false, message: error.message };
         }
     }
