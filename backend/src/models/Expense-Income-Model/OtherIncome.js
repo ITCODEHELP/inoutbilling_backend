@@ -14,6 +14,11 @@ const otherIncomeSchema = new mongoose.Schema({
         type: Date,
         required: [true, 'Income Date is required']
     },
+    staff: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Staff',
+        index: true
+    },
     category: {
         type: String,
         required: false,

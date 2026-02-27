@@ -102,36 +102,39 @@ class DailyExpensesReportModel {
             // If columns are provided, we project them. Else return all.
             // We must ensure we keep the fields needed for the frontend list even if not explicitly asked, 
             // but usually reports stick to what is asked. However, I'll default to all if empty.
+            // Add useful fields for display before projection
+            const addFieldsStage = {
+                $addFields: {
+                    staffName: '$staffDetails.name',
+                    expenseTitle: { $arrayElemAt: ['$items.name', 0] },
+                    expenseAmount: '$grandTotal',
+                    expenseCategory: '$category',
+                    expenseType: '$paymentType'
+                }
+            };
+
             if (options.selectedColumns && options.selectedColumns.length > 0) {
-                const projection = {};
-                options.selectedColumns.forEach(col => {
-                    projection[col] = 1;
-                });
-
-                // Ensure critical fields are always there if needed (like _id), but if user wants export, exact columns are better.
-                // However, usually Mongoose returns _id. Let's stick to what allows pagination.
-                // If the user selects specific columns, we project them.
-                // We'll also flatten `staff.name` into `staffName` if needed or keep structure.
-                // For simplicity, let's keep the document structure but only include root fields requested.
-                // If a requested field is nested (e.g. 'staffDetails.name'), handle it.
-
-                // Actually, let's enrich the final output with useful lookups before projection
-
-                // Add useful fields for display before projection
-                pipeline.push({
-                    $addFields: {
-                        staffName: '$staffDetails.name'
-                    }
-                });
-
-                // Apply projection
-                // pipeline.push({ $project: projection }); // Moving this after pagination to allow filtering on all fields
+                pipeline.push(addFieldsStage);
             } else {
-                pipeline.push({
-                    $addFields: {
-                        staffName: '$staffDetails.name'
-                    }
+                pipeline.push(addFieldsStage);
+            }
+
+            // Determine final projection
+            let finalProjection = {};
+            if (options.selectedColumns && options.selectedColumns.length > 0) {
+                options.selectedColumns.forEach(col => {
+                    finalProjection[col] = 1;
                 });
+            } else {
+                finalProjection = {
+                    expenseNo: 1,
+                    expenseTitle: 1,
+                    expenseAmount: 1,
+                    expenseCategory: 1,
+                    expenseDate: 1,
+                    expenseType: 1,
+                    staffName: 1
+                };
             }
 
             // Pagination
@@ -145,8 +148,16 @@ class DailyExpensesReportModel {
                     data: [
                         { $skip: skip },
                         { $limit: limit },
-                        // Clean up lookup artifacts if necessary, or just return enriched data
-                        { $project: { staffDetails: 0 } } // Remove the full staff object to keep payload light, we have staffName
+                        // Apply specific projection to clean up unused data
+                        { $project: finalProjection }
+                    ],
+                    summary: [
+                        {
+                            $group: {
+                                _id: null,
+                                totalExpenseAmount: { $sum: '$grandTotal' }
+                            }
+                        }
                     ]
                 }
             });
@@ -155,11 +166,15 @@ class DailyExpensesReportModel {
 
             const data = result[0].data;
             const total = result[0].metadata[0] ? result[0].metadata[0].total : 0;
+            const summaryData = result[0].summary[0] ? result[0].summary[0] : { totalExpenseAmount: 0 };
 
             return {
                 success: true,
                 data: {
                     expenses: data,
+                    summary: {
+                        totalExpenseAmount: summaryData.totalExpenseAmount
+                    },
                     pagination: {
                         total,
                         page,
@@ -177,6 +192,24 @@ class DailyExpensesReportModel {
                 error: error
             };
         }
+    }
+
+    /**
+     * Get available filter fields and columns for report exports
+     * @returns {Object} Available metadata
+     */
+    static getFilterMetadata() {
+        return {
+            columns: [
+                { field: 'expenseNo', label: 'Expense No.' },
+                { field: 'expenseTitle', label: 'Expense Title' },
+                { field: 'expenseAmount', label: 'Expense Amount', type: 'number' },
+                { field: 'expenseCategory', label: 'Expense Category' },
+                { field: 'expenseDate', label: 'Expense Date', type: 'date' },
+                { field: 'expenseType', label: 'Expense Type' },
+                { field: 'staffName', label: 'Staff Name' }
+            ]
+        };
     }
 }
 

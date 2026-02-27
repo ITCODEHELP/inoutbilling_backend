@@ -3,15 +3,18 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// Configure Multer for JSON file upload
+const excel = require('exceljs');
+
+// Configure Multer for Excel file upload
 const storage = multer.memoryStorage();
 const upload = multer({
     storage: storage,
     fileFilter: (req, file, cb) => {
-        if (path.extname(file.originalname).toLowerCase() === '.json') {
+        const ext = path.extname(file.originalname).toLowerCase();
+        if (ext === '.xlsx' || ext === '.xls') {
             cb(null, true);
         } else {
-            cb(new Error('Only .json files are allowed'));
+            cb(new Error('Upload valid Excel file. And Sheet Name should be B2B.'));
         }
     }
 }).single('gstr2bFile');
@@ -23,77 +26,99 @@ class GSTR2BReportController {
     static async uploadAndReconcile(req, res) {
         upload(req, res, async (err) => {
             if (err) {
-                return res.status(400).json({ success: false, message: err.message });
+                return res.status(400).json({ success: false, message: 'Upload valid Excel. And Sheet Name should be B2B.' });
             }
 
             if (!req.file) {
-                return res.status(400).json({ success: false, message: 'Please upload a GSTR-2B JSON file' });
+                return res.status(400).json({ success: false, message: 'Upload valid Excel. And Sheet Name should be B2B.' });
             }
 
             try {
                 const { fromDate, toDate } = req.body;
                 const userId = req.user._id;
 
-                // 1. Parse JSON content
-                const jsonContent = JSON.parse(req.file.buffer.toString());
+                // 1. Load Excel Workbook
+                const workbook = new excel.Workbook();
+                await workbook.xlsx.load(req.file.buffer);
 
-                // 2. Normalize GST JSON structure to flat list
-                // Standard GSTR-2B sections under 'itc_avl' or 'itc_unavl'
+                // 2. Check for exact 'B2B' sheet
+                const b2bSheet = workbook.getWorksheet('B2B');
+                if (!b2bSheet) {
+                    return res.status(400).json({ success: false, message: 'Upload valid Excel. And Sheet Name should be B2B.' });
+                }
+
                 const normalizedInvoices = [];
+                let headersRowIndex = -1;
+                let colMap = {};
 
-                const processSection = (sectionData) => {
-                    if (!sectionData) return;
-
-                    // B2B Section
-                    if (sectionData.b2b) {
-                        sectionData.b2b.forEach(vendor => {
-                            const ctin = vendor.ctin;
-                            vendor.inv.forEach(inv => {
-                                normalizedInvoices.push({
-                                    gstin: ctin,
-                                    invNo: inv.inum,
-                                    date: inv.idt, // DD-MM-YYYY or others, Model uses new Date()
-                                    taxable: inv.txval,
-                                    tax: (inv.iamt || 0) + (inv.camt || 0) + (inv.samt || 0) + (inv.csamt || 0),
-                                    section: 'B2B'
-                                });
+                // Find the header row by looking for 'gstin' or 'invoice num'
+                b2bSheet.eachRow((row, rowNumber) => {
+                    if (headersRowIndex === -1) {
+                        const rowValues = row.values.map(v => v ? String(v).toLowerCase().trim() : '');
+                        if (rowValues.some(v => v.includes('invoice num') || v.includes('gstin'))) {
+                            headersRowIndex = rowNumber;
+                            // Map columns
+                            row.eachCell((cell, colNumber) => {
+                                const val = String(cell.value || '').toLowerCase().trim();
+                                if (val.includes('gstin')) colMap.gstin = colNumber;
+                                if (val.includes('invoice')) {
+                                    if (val.includes('date')) colMap.date = colNumber;
+                                    else if (val.includes('num')) colMap.invNo = colNumber;
+                                    else if (!colMap.invNo) colMap.invNo = colNumber; // fallback
+                                }
+                                if (val.includes('date') && !val.includes('invoice')) colMap.date = colNumber;
+                                if (val.includes('taxable')) colMap.taxable = colNumber;
+                                if (val === 'igst' || val.includes('integrated tax')) colMap.igst = colNumber;
+                                if (val === 'cgst' || val.includes('central tax')) colMap.cgst = colNumber;
+                                if (val === 'sgst' || val.includes('state/ut tax')) colMap.sgst = colNumber;
+                                if (val === 'cess') colMap.cess = colNumber;
                             });
-                        });
-                    }
+                        }
+                    } else {
+                        // We are in data rows now.
+                        const gstin = row.getCell(colMap.gstin || -1).value;
+                        const invNo = row.getCell(colMap.invNo || -1).value;
 
-                    // CDNR Section
-                    if (sectionData.cdnr) {
-                        sectionData.cdnr.forEach(vendor => {
-                            const ctin = vendor.ctin;
-                            vendor.nt.forEach(nt => {
-                                normalizedInvoices.push({
-                                    gstin: ctin,
-                                    invNo: nt.nt_num,
-                                    date: nt.nt_dt,
-                                    taxable: nt.txval,
-                                    tax: (nt.iamt || 0) + (nt.camt || 0) + (nt.samt || 0) + (nt.csamt || 0),
-                                    section: 'CDNR'
-                                });
-                            });
-                        });
-                    }
-                };
+                        // Stop or skip if essential data is missing 
+                        if (!gstin || !invNo) return;
 
-                if (jsonContent.itc_avl) processSection(jsonContent.itc_avl);
-                if (jsonContent.itc_unavl) processSection(jsonContent.itc_unavl);
+                        let dateVal = row.getCell(colMap.date || -1).value;
 
-                // If JSON is not in standard GSTR-2B format but is a flat list (custom/simple)
-                if (normalizedInvoices.length === 0 && Array.isArray(jsonContent)) {
-                    jsonContent.forEach(item => {
+                        const parseNum = (val) => {
+                            if (!val) return 0;
+                            if (typeof val === 'number') return val;
+                            if (val.result) return Number(val.result);
+                            return Number(val.toString().replace(/,/g, '')) || 0;
+                        };
+
+                        const taxable = parseNum(row.getCell(colMap.taxable || -1).value);
+                        const igst = parseNum(row.getCell(colMap.igst || -1).value);
+                        const cgst = parseNum(row.getCell(colMap.cgst || -1).value);
+                        const sgst = parseNum(row.getCell(colMap.sgst || -1).value);
+                        const cess = parseNum(row.getCell(colMap.cess || -1).value);
+                        const totalTax = igst + cgst + sgst + cess;
+
+                        if (dateVal && dateVal instanceof Date) {
+                            dateVal = dateVal.toISOString().split('T')[0];
+                        } else if (dateVal && typeof dateVal === 'object' && dateVal.result) {
+                            dateVal = new Date(dateVal.result).toISOString().split('T')[0];
+                        } else if (dateVal) {
+                            dateVal = String(dateVal);
+                        }
+
                         normalizedInvoices.push({
-                            gstin: item.gstin,
-                            invNo: item.invNo || item.inum,
-                            date: item.date || item.idt,
-                            taxable: item.taxable || item.txval,
-                            tax: item.tax || ((item.iamt || 0) + (item.camt || 0) + (item.samt || 0)),
-                            section: 'Unknown'
+                            gstin: String(gstin).trim().toUpperCase(),
+                            invNo: String(invNo).trim(),
+                            date: dateVal,
+                            taxable: taxable,
+                            tax: totalTax,
+                            section: 'B2B'
                         });
-                    });
+                    }
+                });
+
+                if (normalizedInvoices.length === 0) {
+                    return res.status(400).json({ success: false, message: 'Upload valid Excel. And Sheet Name should be B2B.' });
                 }
 
                 // 3. Call Model to Reconcile
@@ -107,9 +132,11 @@ class GSTR2BReportController {
 
             } catch (error) {
                 console.error('GSTR2BReportController Error:', error);
-                res.status(500).json({
+
+                // If it fails to parse the Excel file, output the same valid format message.
+                res.status(400).json({
                     success: false,
-                    message: 'Failed to process file',
+                    message: 'Upload valid Excel. And Sheet Name should be B2B.',
                     error: error.message
                 });
             }
@@ -131,9 +158,18 @@ class GSTR2BReportController {
                 return res.status(400).json({ success: false, message: 'Results and status required' });
             }
 
-            const filteredData = status === 'All'
-                ? results
-                : results.filter(item => item.status === status);
+            let filteredData = results;
+
+            if (status === 'All') {
+                filteredData = results;
+            } else if (status === 'Matched') {
+                filteredData = results.filter(item => item.status === 'Exact Matched' || item.status === 'Partially Matched');
+            } else if (status === 'Not Matched') {
+                filteredData = results.filter(item => item.status === 'Missing in 2B' || item.status === 'Missing in Purchase');
+            } else {
+                // Specific statuses: 'Exact Matched', 'Partially Matched', 'Missing in 2B', 'Missing in Purchase'
+                filteredData = results.filter(item => item.status === status);
+            }
 
             res.status(200).json({
                 success: true,

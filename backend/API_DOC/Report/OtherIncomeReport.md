@@ -3,7 +3,7 @@
 Search other incomes with advanced filters and column selection.
 
 ## URL
-`POST /api/reports/other-income-report/search`
+`POST /api/reports/other-income-report/`
 
 ## Method
 `POST`
@@ -16,6 +16,7 @@ Search other incomes with advanced filters and column selection.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
+| `staffName` | String | No | Filter by staff name (uses lookup on Staff collection). |
 | `category` | String | No | Filter by category name (partial match). |
 | `title` | String | No | Filter by income item name (searches `items.incomeName`). |
 | `paymentType` | String | No | Filter by payment type (CASH, ONLINE, etc.). |
@@ -34,10 +35,11 @@ Search other incomes with advanced filters and column selection.
 ### Example Request
 ```json
 {
+    "staffName": "John",
     "category": "Sales",
     "fromDate": "2023-01-01",
     "toDate": "2023-01-31",
-    "selectedColumns": ["incomeDate", "incomeNo", "grandTotal"],
+    "selectedColumns": ["incomeDate", "incomeNo", "staffName", "grandTotal"],
     "advancedFilters": [
         {
             "field": "grandTotal",
@@ -63,6 +65,7 @@ Search other incomes with advanced filters and column selection.
                 "incomeNo": "INC-001",
                 "incomeDate": "2023-01-15T00:00:00.000Z",
                 "category": "Sales",
+                "staffName": "John Doe",
                 "grandTotal": 1500,
                 ...
             },

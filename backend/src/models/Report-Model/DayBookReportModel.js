@@ -27,6 +27,19 @@ class DayBookReportModel {
             const toDate = filters.toDate;
             const customerVendorName = filters.customerVendor;
 
+            // Helper to build Customer array $or condition
+            const buildCustomerMatch = (fieldName) => {
+                if (!customerVendorName) return {};
+
+                // If it's an array for multi-select
+                if (Array.isArray(customerVendorName) && customerVendorName.length > 0) {
+                    return { [fieldName]: { $in: customerVendorName.map(name => new RegExp(name, 'i')) } };
+                } else if (typeof customerVendorName === 'string' && customerVendorName.trim() !== '') {
+                    return { [fieldName]: { $regex: customerVendorName, $options: 'i' } };
+                }
+                return {};
+            };
+
             // Allow bypassing filters if Show All is requested
             // But usually Date range always applies in Day Book (Daily view)
             // 'Show All Documents' typically means ignore party/staff filters, but respect date.
@@ -36,15 +49,15 @@ class DayBookReportModel {
             // 1. Sales
             const salesQuery = { userId };
             if (fromDate || toDate) salesQuery['invoiceDetails.date'] = this.buildDateMatch(fromDate, toDate, 'invoiceDetails.date')['invoiceDetails.date'];
-            if (!filters.showAllDocuments && customerVendorName) {
-                salesQuery['customerInformation.ms'] = { $regex: customerVendorName, $options: 'i' };
+            if (!filters.showAllDocuments) {
+                Object.assign(salesQuery, buildCustomerMatch('customerInformation.ms'));
+                if (filters.staffId) {
+                    salesQuery.staff = new mongoose.Types.ObjectId(filters.staffId);
+                }
             }
-            // Filter by Staff if applicable? Sales schema has userId, but maybe not specific staff ref accessible easily for filtering without lookup.
-            // But prompt says "Staff filter should match staff reference". SaleInvoice usually doesn't store 'staffId' directly in top level schema shown?
-            // Checking schema: It has 'userId'. No 'staffId'. So ignoring staff filter for Sales unless implemented.
 
             queries.push(
-                SaleInvoice.find(salesQuery).lean().then(docs => docs.map(doc => ({
+                SaleInvoice.find(salesQuery).populate('staff', 'fullName').lean().then(docs => docs.map(doc => ({
                     date: doc.invoiceDetails.date,
                     voucherType: 'Sale Invoice',
                     voucherNo: doc.invoiceDetails.invoiceNumber,
@@ -59,8 +72,12 @@ class DayBookReportModel {
             // 2. Purchase
             const purchaseQuery = { userId };
             if (fromDate || toDate) purchaseQuery['invoiceDetails.date'] = this.buildDateMatch(fromDate, toDate, 'invoiceDetails.date')['invoiceDetails.date'];
-            if (!filters.showAllDocuments && customerVendorName) {
-                purchaseQuery['vendorInformation.ms'] = { $regex: customerVendorName, $options: 'i' };
+            if (!filters.showAllDocuments) {
+                Object.assign(purchaseQuery, buildCustomerMatch('vendorInformation.ms'));
+                // Assuming purchases might also have staff tracking, if not it just ignores if empty.
+                if (filters.staffId && PurchaseInvoice.schema && PurchaseInvoice.schema.paths.staff) {
+                    purchaseQuery.staff = new mongoose.Types.ObjectId(filters.staffId);
+                }
             }
 
             queries.push(
@@ -79,8 +96,11 @@ class DayBookReportModel {
             // 3. Inward Payments
             const inPayQuery = { userId };
             if (fromDate || toDate) Object.assign(inPayQuery, this.buildDateMatch(fromDate, toDate, 'paymentDate'));
-            if (!filters.showAllDocuments && customerVendorName) {
-                inPayQuery['companyName'] = { $regex: customerVendorName, $options: 'i' };
+            if (!filters.showAllDocuments) {
+                Object.assign(inPayQuery, buildCustomerMatch('companyName'));
+                if (filters.staffId && InwardPayment.schema && InwardPayment.schema.paths.staff) {
+                    inPayQuery.staff = new mongoose.Types.ObjectId(filters.staffId);
+                }
             }
 
             queries.push(
@@ -99,8 +119,11 @@ class DayBookReportModel {
             // 4. Outward Payments
             const outPayQuery = { userId };
             if (fromDate || toDate) Object.assign(outPayQuery, this.buildDateMatch(fromDate, toDate, 'paymentDate'));
-            if (!filters.showAllDocuments && customerVendorName) {
-                outPayQuery['companyName'] = { $regex: customerVendorName, $options: 'i' };
+            if (!filters.showAllDocuments) {
+                Object.assign(outPayQuery, buildCustomerMatch('companyName'));
+                if (filters.staffId && OutwardPayment.schema && OutwardPayment.schema.paths.staff) {
+                    outPayQuery.staff = new mongoose.Types.ObjectId(filters.staffId);
+                }
             }
 
             queries.push(
@@ -119,17 +142,6 @@ class DayBookReportModel {
             // 5. Daily Expenses
             const expenseQuery = { userId };
             if (fromDate || toDate) Object.assign(expenseQuery, this.buildDateMatch(fromDate, toDate, 'expenseDate'));
-            if (!filters.showAllDocuments) {
-                // Expenses might not have "customerVendor", but have 'party' (Vendor). 
-                // If filtering by party name, we'd need lookup. 
-                // For simplicity, if simple text match isn't available, we skip strict party filter or assume user knows expense doesn't always have named party.
-                // However, DailyExpense has 'party' ref. To filter by name, we'd need to search Vendors first?
-                // Given the constraints, we'll try to support if simple. Expense doesn't have a direct 'partyName' string except populated.
-                // We'll skip party filter for Expense for now unless 'showAllDocuments' is false? 
-                // Wait, if showAllDocuments is false, we MUST filter. If we can't filter by name easily (ref ID), we might exclude unless we do lookup.
-                // But prompt says "if user searches without selecting any filter...".
-                // We will populate party and filter in JS for Expense/Staff logic if needed.
-            }
 
             // Staff Filter
             // Expense has 'staff' ref. If filters.staffId is present, we filter by it.
@@ -170,7 +182,7 @@ class DayBookReportModel {
             );
 
 
-            // Execute all
+            // Executive all
             const results = await Promise.all(queries);
             const flatData = results.flat();
 
@@ -178,8 +190,14 @@ class DayBookReportModel {
             let filteredData = flatData;
 
             if (!filters.showAllDocuments && customerVendorName) {
-                const regex = new RegExp(customerVendorName, 'i');
-                filteredData = filteredData.filter(d => regex.test(d.partyName));
+                if (Array.isArray(customerVendorName) && customerVendorName.length > 0) {
+                    filteredData = filteredData.filter(d =>
+                        customerVendorName.some(name => new RegExp(name, 'i').test(d.partyName))
+                    );
+                } else if (typeof customerVendorName === 'string' && customerVendorName.trim() !== '') {
+                    const regex = new RegExp(customerVendorName, 'i');
+                    filteredData = filteredData.filter(d => regex.test(d.partyName));
+                }
             }
 
             // Sorting by Date Desc
@@ -198,6 +216,24 @@ class DayBookReportModel {
                 error: error
             };
         }
+    }
+
+    /**
+     * Get available filter fields and columns for report exports
+     * @returns {Object} Available metadata
+     */
+    static getFilterMetadata() {
+        return {
+            columns: [
+                { field: 'date', label: 'Date', type: 'date' },
+                { field: 'voucherType', label: 'Voucher Type' },
+                { field: 'voucherNo', label: 'Voucher No.' },
+                { field: 'partyName', label: 'Party Name' },
+                { field: 'amount', label: 'Amount', type: 'number' },
+                { field: 'paymentType', label: 'Payment Type' },
+                { field: 'type', label: 'Type' } // Debit/Credit
+            ]
+        };
     }
 }
 

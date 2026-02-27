@@ -3,7 +3,7 @@
 Fetch daily transaction records (Sales, Purchase, Expenses, Incomes, Payments) based on date and filters.
 
 ## URL
-`POST /api/reports/day-book/search`
+`POST /api/reports/day-book/`
 
 ## Method
 `POST`

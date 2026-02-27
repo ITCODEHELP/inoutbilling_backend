@@ -3,7 +3,7 @@
 Search daily expenses with advanced filters and column selection.
 
 ## URL
-`POST /api/reports/daily-expenses-report/search`
+`POST /api/reports/daily-expenses-report/`
 
 ## Method
 `POST`
@@ -37,8 +37,8 @@ Search daily expenses with advanced filters and column selection.
 {
     "staffName": "John",
     "category": "Travel",
-    "fromDate": "2023-01-01",
-    "toDate": "2023-01-31",
+    "fromDate": "2021-01-01",
+    "toDate": "2026-02-26",
     "selectedColumns": ["expenseDate", "expenseNo", "grandTotal", "staffName"],
     "advancedFilters": [
         {

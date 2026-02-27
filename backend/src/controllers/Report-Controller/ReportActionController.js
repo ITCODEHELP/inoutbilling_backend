@@ -20,6 +20,8 @@ const StockReportModel = require('../../models/Report-Model/StockReportModel');
 const ProductReportModel = require('../../models/Report-Model/ProductReportModel');
 const DailyExpensesReportModel = require('../../models/Report-Model/DailyExpensesReportModel');
 const OtherIncomeReportModel = require('../../models/Report-Model/OtherIncomeReportModel');
+const GSTR1ReportModel = require('../../models/Report-Model/GSTR1ReportModel');
+const GSTR3BReportModel = require('../../models/Report-Model/GSTR3BReportModel');
 
 /**
  * STRATEGY MAP
@@ -47,6 +49,9 @@ const REPORT_STRATEGIES = {
     'product': { model: ProductReportModel, method: 'getProductReport' },
     'daily-expenses': { model: DailyExpensesReportModel, method: 'getDailyExpensesReport' },
     'other-income': { model: OtherIncomeReportModel, method: 'getOtherIncomeReport' },
+    'gstr1': { model: GSTR1ReportModel, method: 'getGSTR1ReportActionData' },
+    'gstr3': { model: GSTR3BReportModel, method: 'getReportActionData' },
+    'gstr3b': { model: GSTR3BReportModel, method: 'getReportActionData' },
 };
 
 class ReportActionController {
@@ -69,14 +74,22 @@ class ReportActionController {
         if (!data || data.length === 0) return [];
 
         const firstRecord = data[0];
-        // Flatten to get all possible fields
-        const keys = ReportActionController.getLeafPaths(firstRecord);
+
+        // Use Object.keys first to preserve literal order returned by aggregation $project
+        let keys = Object.keys(firstRecord);
+
+        // If there's nested objects, fallback to paths. 
+        // For StockReport, it's flat so Object.keys keeps 'productName' before 'stock'.
+        if (keys.some(k => typeof firstRecord[k] === 'object' && firstRecord[k] !== null && !(firstRecord[k] instanceof Date))) {
+            keys = ReportActionController.getLeafPaths(firstRecord);
+        }
 
         // Filter out technical fields and unnecessary large objects
         const filteredKeys = keys.filter(k =>
             !k.startsWith('_') &&
             !k.includes('password') &&
             !k.includes('__v') &&
+            !k.includes('productId') && // Hide ID columns
             !k.includes('items') // Exclude array items if flattened
         );
 
@@ -98,7 +111,7 @@ class ReportActionController {
         filters.userId = user._id;
         const exportOptions = { ...options, page: 1, limit: 1000000 };
         // Execute Model Method
-        const result = await strategy.model[strategy.method](filters, exportOptions);
+        const result = await strategy.model[strategy.method](filters, exportOptions, user);
 
         if (!result.success) {
             throw new Error(result.message || 'Failed to fetch report data');
@@ -143,11 +156,19 @@ class ReportActionController {
             };
         } else {
             // Standard Structure for other reports
-            records = result.data.docs || [];
+            records = result.data.docs || result.data.expenses || result.data.incomes || result.data.records || [];
+
+            // Pass flags by injecting them into the first record if they exist (expected by helper)
+            if (records.length > 0) {
+                if (result.data.gstr3bMode) records[0].gstr3bMode = true;
+                if (result.data.gstr1Mode) records[0].gstr1Mode = true;
+            }
+
             summary = result.data.summary || {};
+            columns = result.data.columns || []; // Capture explicitly provided columns
             pagination = {
-                totalDocs: result.data.totalDocs,
-                page: result.data.page
+                totalDocs: result.data.totalDocs || (result.data.pagination ? result.data.pagination.total : 0),
+                page: result.data.page || (result.data.pagination ? result.data.pagination.page : 1)
             };
         }
 
@@ -161,8 +182,6 @@ class ReportActionController {
 
     static async handleAction(req, res, actionType) {
         try {
-            // console.log("Download API Hit. Action:", actionType);
-
             if (!req.body.reportType) {
                 return res.status(400).json({
                     success: false,
@@ -170,7 +189,15 @@ class ReportActionController {
                 });
             }
 
-            const { reportType, filters = {}, options = {}, reportTitle = 'Report', to, cc, bcc, subject, body } = req.body;
+            const { reportType, options = {}, reportTitle = 'Report', to, cc, bcc, subject, body } = req.body;
+            let { filters = {} } = req.body;
+
+            // Robust fallback: if frontend passes filters at the root level instead of inside 'filters' object
+            if (req.body.fromDate && !filters.fromDate) filters.fromDate = req.body.fromDate;
+            if (req.body.toDate && !filters.toDate) filters.toDate = req.body.toDate;
+            if (req.body.section && !filters.section) filters.section = req.body.section;
+            if (req.body.isQuarterly !== undefined && filters.isQuarterly === undefined) filters.isQuarterly = req.body.isQuarterly;
+            if (req.body.quarterly !== undefined && filters.isQuarterly === undefined) filters.isQuarterly = req.body.quarterly;
 
             // 1. Fetch Data
             const { records, summary, columns: fetchedColumns } = await ReportActionController.getReportData(reportType, filters, options, req.user);

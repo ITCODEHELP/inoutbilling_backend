@@ -85,6 +85,7 @@ const otherIncomeReportRoutes = require('./routes/Report-Routes/OtherIncomeRepor
 const dayBookReportRoutes = require('./routes/Report-Routes/DayBookReportRoutes');
 const gstr1ReportRoutes = require('./routes/Report-Routes/GSTR1ReportRoutes');
 const gstr2bReportRoutes = require('./routes/Report-Routes/GSTR2BReportRoutes');
+const gstr3bReportRoutes = require('./routes/Report-Routes/GSTR3BReportRoutes');
 const dashboardRoutes = require('./routes/Dashboard-Routes/DashboardRoutes');
 const referralRoutes = require('./routes/Setting-Page-Routes/ReferralRoutes');
 const whatsappRoutes = require('./routes/Setting-Page-Routes/whatsappRoutes');
@@ -205,6 +206,7 @@ app.use('/api/reports', otherIncomeReportRoutes);
 app.use('/api/reports', dayBookReportRoutes);
 app.use('/api/reports', gstr1ReportRoutes);
 app.use('/api/reports', gstr2bReportRoutes);
+app.use('/api/reports', gstr3bReportRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/referral', referralRoutes);
 app.use('/api/whatsapp', whatsappRoutes);

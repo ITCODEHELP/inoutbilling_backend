@@ -3,7 +3,7 @@ const router = express.Router();
 const ReportActionController = require('../../controllers/Report-Controller/ReportActionController');
 const { protect } = require('../../middlewares/authMiddleware');
 
-console.log("Report Action Routes Loaded");
+// console.log("Report Action Routes Loaded");
 
 /**
  * @route   POST /api/reports/action/print

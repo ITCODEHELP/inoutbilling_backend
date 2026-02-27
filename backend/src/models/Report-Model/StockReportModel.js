@@ -52,10 +52,16 @@ class StockReportModel {
             // Use Name as key.
             const productMatch = { userId: activeUserId, itemType: 'Product' };
             if (productId) productMatch._id = new mongoose.Types.ObjectId(productId);
-            if (productName) productMatch.name = { $regex: productName, $options: 'i' };
+            if (productName && typeof productName === 'string') productMatch.name = { $regex: productName, $options: 'i' };
             if (productGroupId) productMatch.productGroup = productGroupId;
-            if (productGroup) productMatch.productGroup = { $regex: productGroup, $options: 'i' };
-            if (hsnCode) productMatch.hsnSac = { $regex: hsnCode, $options: 'i' };
+            if (productGroup) {
+                if (Array.isArray(productGroup) && productGroup.length > 0) {
+                    productMatch.productGroup = { $in: productGroup };
+                } else if (typeof productGroup === 'string' && productGroup.trim() !== '') {
+                    productMatch.productGroup = { $regex: productGroup, $options: 'i' };
+                }
+            }
+            if (hsnCode && typeof hsnCode === 'string') productMatch.hsnSac = { $regex: hsnCode, $options: 'i' };
 
             pipeline.push({ $match: productMatch });
             pipeline.push({
@@ -90,7 +96,8 @@ class StockReportModel {
                                 userId: 1,
                                 type: { $literal: 'Tx' },
                                 name: '$items.productName', // Match by Name
-                                qty: { $multiply: [{ $ifNull: ['$items.qty', 0] }, -1] }
+                                qty: { $multiply: [{ $ifNull: ['$items.qty', 0] }, -1] },
+                                sellPrice: '$items.price'
                             }
                         }
                     ]
@@ -112,7 +119,8 @@ class StockReportModel {
                                 userId: 1,
                                 type: { $literal: 'Tx' },
                                 name: '$items.productName', // Match by Name
-                                qty: { $ifNull: ['$items.qty', 0] }
+                                qty: { $ifNull: ['$items.qty', 0] },
+                                purchasePrice: '$items.price'
                             }
                         }
                     ]
@@ -152,8 +160,30 @@ class StockReportModel {
             pipeline.push({
                 $addFields: {
                     productName: '$_id',
-                    sellValue: { $multiply: ['$stock', { $ifNull: ['$sellPrice', 0] }] },
-                    purchaseValue: { $multiply: ['$stock', { $ifNull: ['$purchasePrice', 0] }] }
+                    sellValue: {
+                        $multiply: [
+                            { $convert: { input: '$stock', to: 'double', onError: 0, onNull: 0 } },
+                            { $convert: { input: '$sellPrice', to: 'double', onError: 0, onNull: 0 } }
+                        ]
+                    },
+                    purchaseValue: {
+                        $multiply: [
+                            { $convert: { input: '$stock', to: 'double', onError: 0, onNull: 0 } },
+                            { $convert: { input: '$purchasePrice', to: 'double', onError: 0, onNull: 0 } }
+                        ]
+                    }
+                }
+            });
+
+            // Prevent negative zeros (-0) formatting issues
+            pipeline.push({
+                $addFields: {
+                    sellValue: {
+                        $cond: [{ $eq: ['$sellValue', 0] }, 0, '$sellValue']
+                    },
+                    purchaseValue: {
+                        $cond: [{ $eq: ['$purchaseValue', 0] }, 0, '$purchaseValue']
+                    }
                 }
             });
 
@@ -190,14 +220,13 @@ class StockReportModel {
                 _id: 0,
                 productId: 1,
                 productName: 1,
+                stock: 1,
                 productGroup: 1,
                 hsnSac: 1,
                 unit: 1,
-                stock: 1
+                sellValue: 1,
+                purchaseValue: 1
             };
-
-            if (showSellValue) finalProjection.sellValue = 1;
-            if (showPurchaseValue) finalProjection.purchaseValue = 1;
 
             pipeline.push({ $project: finalProjection });
 
@@ -227,7 +256,9 @@ class StockReportModel {
                         {
                             $group: {
                                 _id: null,
-                                totalStockQty: { $sum: '$stock' }
+                                totalStockQty: { $sum: '$stock' },
+                                totalSellValue: { $sum: '$sellValue' },
+                                totalPurchaseValue: { $sum: '$purchaseValue' }
                             }
                         }
                     ]
@@ -242,8 +273,13 @@ class StockReportModel {
             // Remove null fields from docs mapping
             const docs = rawDocs.map(doc => {
                 const cleaned = {};
+
+                // Explicitly order properties for the frontend/export
+                if (doc.productName !== undefined) cleaned.productName = doc.productName;
+                if (doc.stock !== undefined) cleaned.stock = doc.stock;
+
                 for (const [key, value] of Object.entries(doc)) {
-                    if (value !== null) {
+                    if (value !== null && key !== 'productName' && key !== 'stock') {
                         cleaned[key] = value;
                     }
                 }
@@ -259,7 +295,9 @@ class StockReportModel {
                     totalPages: Math.ceil(total / limit) || 1,
                     page: Number(page),
                     summary: {
-                        totalStockQty: grandTotals.totalStockQty
+                        totalStockQty: grandTotals.totalStockQty || 0,
+                        totalSellValue: grandTotals.totalSellValue || 0,
+                        totalPurchaseValue: grandTotals.totalPurchaseValue || 0
                     }
                 },
                 message: "Stock Report generated successfully"

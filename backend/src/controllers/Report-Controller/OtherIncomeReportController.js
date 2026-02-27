@@ -10,8 +10,8 @@ class OtherIncomeReportController {
                 fromDate,
                 toDate,
                 advancedFilters,
-                selectedColumns
-                // staffName - Not applicable for OtherIncome as per schema
+                selectedColumns,
+                staffName
             } = req.body;
 
             const { page, limit } = req.query;
@@ -23,7 +23,8 @@ class OtherIncomeReportController {
                 paymentType,
                 fromDate,
                 toDate,
-                advancedFilters
+                advancedFilters,
+                staffName
             };
 
             const options = {

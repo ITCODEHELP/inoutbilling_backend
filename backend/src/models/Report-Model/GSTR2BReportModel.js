@@ -120,12 +120,24 @@ class GSTR2BReportModel {
             });
 
             // 5. Calculate Summary
+            const exactMatched = reconciliationResults.filter(r => r.status === 'Exact Matched').length;
+            const partiallyMatched = reconciliationResults.filter(r => r.status === 'Partially Matched').length;
+            const missingInPurchase = reconciliationResults.filter(r => r.status === 'Missing in Purchase').length;
+            const missingIn2B = reconciliationResults.filter(r => r.status === 'Missing in 2B').length;
+
+            const matched = exactMatched + partiallyMatched;
+            const notMatched = missingInPurchase + missingIn2B;
+            const all = reconciliationResults.length;
+
             const summary = {
-                exactMatched: reconciliationResults.filter(r => r.status === 'Exact Matched').length,
-                partiallyMatched: reconciliationResults.filter(r => r.status === 'Partially Matched').length,
-                missingInPurchase: reconciliationResults.filter(r => r.status === 'Missing in Purchase').length,
-                missingIn2B: reconciliationResults.filter(r => r.status === 'Missing in 2B').length,
-                totalRecords: reconciliationResults.length
+                all: all,
+                notMatched: notMatched,
+                missingIn2B: missingIn2B,
+                missingInPurchase: missingInPurchase,
+                partiallyMatched: partiallyMatched,
+                matched: matched,
+                exactMatched: exactMatched,
+                totalRecords: all
             };
 
             return {

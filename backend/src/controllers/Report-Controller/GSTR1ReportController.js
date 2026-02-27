@@ -52,9 +52,11 @@ class GSTR1ReportController {
                     break;
                 case 'AT':
                 case 'ATADJ':
-                case 'EXEMP':
                     // Returning empty placeholders for these if specific logic not yet mapped
                     data = [];
+                    break;
+                case 'EXEMP':
+                    data = await GSTR1ReportModel.getEXEMPData(userId, fromDate, toDate, userState);
                     break;
                 default:
                     return res.status(400).json({ success: false, message: 'Invalid section' });

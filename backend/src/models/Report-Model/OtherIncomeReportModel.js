@@ -13,6 +13,19 @@ class OtherIncomeReportModel {
                 });
             }
 
+            // 1.5 Lookup Staff for Staff Name functionality
+            pipeline.push({
+                $lookup: {
+                    from: 'staffs',
+                    localField: 'staff',
+                    foreignField: '_id',
+                    as: 'staffDetails'
+                }
+            });
+            pipeline.push({
+                $unwind: { path: '$staffDetails', preserveNullAndEmptyArrays: true }
+            });
+
             // 2. Date Range Filter (incomeDate)
             if (filters.fromDate || filters.toDate) {
                 const dateMatch = {};
@@ -42,11 +55,12 @@ class OtherIncomeReportModel {
                 });
             }
 
-            // 6. Staff Name Filter (Note: OtherIncome schema doesn't seem to have valid staff ref, 
-            // but keeping logic placeholder or ignoring if not present to avoid crash. 
-            // If user explicitly asks, we might need to check if it's there. 
-            // For now, if provided and not in schema, it would return empty results if we strictly match.)
-            // Logic: The schema provided implies NO staff field.
+            // 6. Staff Name Filter
+            if (filters.staffName) {
+                pipeline.push({
+                    $match: { 'staffDetails.name': new RegExp(filters.staffName, 'i') }
+                });
+            }
 
             // 7. Advanced Filters
             if (filters.advancedFilters && Array.isArray(filters.advancedFilters)) {
@@ -84,12 +98,36 @@ class OtherIncomeReportModel {
             }
 
             // 9. Projection (Selected Columns)
-            // Default projection or specific columns
+            const addFieldsStage = {
+                $addFields: {
+                    otherIncomeNo: '$incomeNo',
+                    otherIncomeTitle: { $arrayElemAt: ['$items.incomeName', 0] },
+                    otherIncomeAmount: '$grandTotal',
+                    otherIncomeCategory: '$category',
+                    otherIncomeDate: '$incomeDate',
+                    otherIncomeType: '$paymentType',
+                    staffName: '$staffDetails.name'
+                }
+            };
+
+            pipeline.push(addFieldsStage);
+
+            // Determine final projection
+            let finalProjection = {};
             if (options.selectedColumns && options.selectedColumns.length > 0) {
-                // If user wants specific columns, we could use $project.
-                // However, often better to return full document or let frontend handle.
-                // But for optimization/export, $project is good.
-                // pipeline.push({ $project: ... });
+                options.selectedColumns.forEach(col => {
+                    finalProjection[col] = 1;
+                });
+            } else {
+                finalProjection = {
+                    otherIncomeNo: 1,
+                    otherIncomeTitle: 1,
+                    otherIncomeAmount: 1,
+                    otherIncomeCategory: 1,
+                    otherIncomeDate: 1,
+                    otherIncomeType: 1,
+                    staffName: 1
+                };
             }
 
             // Pagination
@@ -102,7 +140,16 @@ class OtherIncomeReportModel {
                     metadata: [{ $count: "total" }],
                     data: [
                         { $skip: skip },
-                        { $limit: limit }
+                        { $limit: limit },
+                        { $project: finalProjection }
+                    ],
+                    summary: [
+                        {
+                            $group: {
+                                _id: null,
+                                totalOtherIncomeAmount: { $sum: '$grandTotal' }
+                            }
+                        }
                     ]
                 }
             });
@@ -111,11 +158,15 @@ class OtherIncomeReportModel {
 
             const data = result[0].data;
             const total = result[0].metadata[0] ? result[0].metadata[0].total : 0;
+            const summaryData = result[0].summary[0] ? result[0].summary[0] : { totalOtherIncomeAmount: 0 };
 
             return {
                 success: true,
                 data: {
                     incomes: data,
+                    summary: {
+                        totalOtherIncomeAmount: summaryData.totalOtherIncomeAmount
+                    },
                     pagination: {
                         total,
                         page,
@@ -133,6 +184,24 @@ class OtherIncomeReportModel {
                 error: error
             };
         }
+    }
+
+    /**
+     * Get available filter fields and columns for report exports
+     * @returns {Object} Available metadata
+     */
+    static getFilterMetadata() {
+        return {
+            columns: [
+                { field: 'otherIncomeNo', label: 'Other Income No.' },
+                { field: 'otherIncomeTitle', label: 'Other Income Title' },
+                { field: 'otherIncomeAmount', label: 'Other Income Amount', type: 'number' },
+                { field: 'otherIncomeCategory', label: 'Other Income Category' },
+                { field: 'otherIncomeDate', label: 'Other Income Date', type: 'date' },
+                { field: 'otherIncomeType', label: 'Other Income Type' },
+                { field: 'staffName', label: 'Staff Name' }
+            ]
+        };
     }
 }
 

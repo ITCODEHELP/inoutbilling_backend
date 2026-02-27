@@ -18,14 +18,14 @@ class DayBookReportController {
             // If 'date' provided, use it for both from/to or specific day
             let effectiveFrom = fromDate;
             let effectiveTo = toDate;
-            if (date) {
+            if (date && date.trim() !== '') {
                 effectiveFrom = date;
                 effectiveTo = date;
             }
 
             const filters = {
                 userId: req.user._id,
-                customerVendor,
+                customerVendor, // Pass raw (could be string or array)
                 fromDate: effectiveFrom,
                 toDate: effectiveTo,
                 staffId,
